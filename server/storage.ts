@@ -631,81 +631,92 @@ SEED_DATA.events[1].tasks = generateTasksForEvent(SEED_DATA.events[1].name, SEED
 SEED_DATA.events[2].tasks = generateTasksForEvent(SEED_DATA.events[2].name, SEED_DATA.events[2].date);
 
 // --- Database Helper Functions ---
-export function getDb(): DatabaseShape {
+function normalizeDb(db: any): DatabaseShape {
+  // Ensure lists are initialized
+  if (!db.events) db.events = [];
+  if (!db.assets) db.assets = [];
+  if (!db.volunteers) db.volunteers = [];
+  if (!db.auditLogs) db.auditLogs = [];
+  if (!db.debriefs) db.debriefs = [];
+  if (!db.activities) db.activities = JSON.parse(JSON.stringify(SEED_DATA.activities || []));
+  if (!db.lanes) {
+    db.lanes = [
+      { id: 'Strategy', name: 'Strategy', leadName: 'Joy' },
+      { id: 'Finance', name: 'Finance', leadName: 'Bea' },
+      { id: 'Multimedia', name: 'Multimedia', leadName: 'Tech Crew' },
+      { id: 'Logistics', name: 'Logistics', leadName: 'Operations' }
+    ];
+  }
+
+  // Ensure all events have docs
+  db.events.forEach((evt: MinistryEvent) => {
+    if (!evt.docs) {
+      evt.docs = JSON.parse(JSON.stringify(DEFAULT_DOCS));
+    }
+  });
+
+  if (!db.ideas) {
+    db.ideas = JSON.parse(JSON.stringify(SEED_DATA.ideas));
+  }
+  if (db.scratchpad === undefined) {
+    db.scratchpad = SEED_DATA.scratchpad;
+  }
+  if (!db.collabTable) {
+    db.collabTable = SEED_DATA.collabTable;
+  }
+  if (!db.attachedDocs) {
+    db.attachedDocs = SEED_DATA.attachedDocs;
+  }
+  if (!db.driveFolderId) {
+    db.driveFolderId = 'root';
+  }
+  if (!db.driveFolderName) {
+    db.driveFolderName = 'Community Relations';
+  }
+  if (!db.inventory) {
+    db.inventory = JSON.parse(JSON.stringify(SEED_DATA.inventory));
+  }
+  if (!db.reservations) {
+    db.reservations = JSON.parse(JSON.stringify(SEED_DATA.reservations));
+  }
+  if (!db.expenses) {
+    db.expenses = JSON.parse(JSON.stringify(SEED_DATA.expenses));
+  }
+
+  // Ensure all events have budget caps
+  db.events.forEach((evt: MinistryEvent) => {
+    if (evt.budgetCap === undefined) {
+      if (evt.id === 'evt_1') evt.budgetCap = 500;
+      else if (evt.id === 'evt_2') evt.budgetCap = 1200;
+      else if (evt.id === 'evt_3') evt.budgetCap = 300;
+      else evt.budgetCap = 500; // Default budget cap
+    }
+  });
+
+  return db as DatabaseShape;
+}
+
+function initializeDatabase(): DatabaseShape {
   try {
     if (!fs.existsSync(DB_FILE)) {
       fs.writeFileSync(DB_FILE, JSON.stringify(SEED_DATA, null, 2));
-      return SEED_DATA as unknown as DatabaseShape;
+      const db = JSON.parse(JSON.stringify(SEED_DATA));
+      return normalizeDb(db);
     }
     const raw = fs.readFileSync(DB_FILE, 'utf-8');
     const db = JSON.parse(raw);
-    
-    // Ensure lists are initialized
-    if (!db.events) db.events = [];
-    if (!db.assets) db.assets = [];
-    if (!db.volunteers) db.volunteers = [];
-    if (!db.auditLogs) db.auditLogs = [];
-    if (!db.debriefs) db.debriefs = [];
-    if (!db.activities) db.activities = JSON.parse(JSON.stringify(SEED_DATA.activities || []));
-    if (!db.lanes) {
-      db.lanes = [
-        { id: 'Strategy', name: 'Strategy', leadName: 'Joy' },
-        { id: 'Finance', name: 'Finance', leadName: 'Bea' },
-        { id: 'Multimedia', name: 'Multimedia', leadName: 'Tech Crew' },
-        { id: 'Logistics', name: 'Logistics', leadName: 'Operations' }
-      ];
-    }
-
-    // Ensure all events have docs
-    db.events.forEach((evt: MinistryEvent) => {
-      if (!evt.docs) {
-        evt.docs = JSON.parse(JSON.stringify(DEFAULT_DOCS));
-      }
-    });
-
-    if (!db.ideas) {
-      db.ideas = JSON.parse(JSON.stringify(SEED_DATA.ideas));
-    }
-    if (db.scratchpad === undefined) {
-      db.scratchpad = SEED_DATA.scratchpad;
-    }
-    if (!db.collabTable) {
-      db.collabTable = SEED_DATA.collabTable;
-    }
-    if (!db.attachedDocs) {
-      db.attachedDocs = SEED_DATA.attachedDocs;
-    }
-    if (!db.driveFolderId) {
-      db.driveFolderId = 'root';
-    }
-    if (!db.driveFolderName) {
-      db.driveFolderName = 'Community Relations';
-    }
-    if (!db.inventory) {
-      db.inventory = JSON.parse(JSON.stringify(SEED_DATA.inventory));
-    }
-    if (!db.reservations) {
-      db.reservations = JSON.parse(JSON.stringify(SEED_DATA.reservations));
-    }
-    if (!db.expenses) {
-      db.expenses = JSON.parse(JSON.stringify(SEED_DATA.expenses));
-    }
-
-    // Ensure all events have budget caps
-    db.events.forEach((evt: MinistryEvent) => {
-      if (evt.budgetCap === undefined) {
-        if (evt.id === 'evt_1') evt.budgetCap = 500;
-        else if (evt.id === 'evt_2') evt.budgetCap = 1200;
-        else if (evt.id === 'evt_3') evt.budgetCap = 300;
-        else evt.budgetCap = 500; // Default budget cap
-      }
-    });
-
-    return db as DatabaseShape;
+    return normalizeDb(db);
   } catch (error) {
     console.error('Error reading/writing DB_FILE, fallback to memory', error);
-    return SEED_DATA as unknown as DatabaseShape;
+    const db = JSON.parse(JSON.stringify(SEED_DATA));
+    return normalizeDb(db);
   }
+}
+
+let cachedDb: DatabaseShape = initializeDatabase();
+
+export function getDb(): DatabaseShape {
+  return cachedDb;
 }
 
 let isWriting = false;
@@ -731,6 +742,7 @@ function triggerWrite() {
 }
 
 export function saveDb(data: DatabaseShape) {
+  cachedDb = data;
   pendingData = data;
   triggerWrite();
 }

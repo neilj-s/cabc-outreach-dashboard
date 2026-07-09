@@ -1,11 +1,11 @@
 import express from 'express';
-import { getDb, saveDb, broadcast } from '../storage';
+import { getDb, saveDb, broadcast, requireAuth } from '../storage';
 import { extractFileId, getOrRefreshDriveToken, encryptToken } from '../driveHelpers';
 import { AttachedDoc } from '../../src/types';
 
 const router = express.Router();
 
-router.post('/store-token', (req, res) => {
+router.post('/store-token', requireAuth, (req, res) => {
   const db = getDb();
   const { accessToken, refreshToken, expiresIn } = req.body;
   if (!accessToken) {
