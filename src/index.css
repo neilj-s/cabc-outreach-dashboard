@@ -1,0 +1,51 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Lora:ital,wght@0,400..700;1,400..700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Lora", serif;
+  --font-display: "Playfair Display", serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+/* Base resets with modern defaults */
+html, body {
+  background-color: #faf8f4; /* Rich Warm Ivory */
+  color: #1e293b; /* Classic Deep Charcoal */
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Headers & high-contrast titles */
+h1, h2, h3, h4, .font-sans-header {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+/* Code block & numeric elements styling */
+pre, code, .font-mono {
+  font-family: var(--font-mono) !important;
+}
+
+/* Custom interactive selections */
+::selection {
+  background-color: #f5ebd6; /* Soft Gold/Wheat selection background */
+  color: #856637; /* Burnished Gold text */
+}
+
+/* Styled scrollbars for a premium desktop feel */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Ministry Management Dashboard",
+  "description": "A comprehensive full-stack management suite featuring a reverse-timeline generator, Day-Of asset tracker, server-managed OAuth, real-time push-synced webhooks, and deep chronological audit logs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
