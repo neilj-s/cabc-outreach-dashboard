@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { 
@@ -27,10 +27,25 @@ import {
   ChevronRight,
   LayoutGrid,
   List,
-  Upload, Copy
+  Upload, Copy,
+  Coins,
+  TrendingUp
 } from 'lucide-react';
-import { LaneDetail, MinistryEvent, RecentActivity, Volunteer, MilestoneKey, MinistryLane } from '../types';
+import { LaneDetail, MinistryEvent, RecentActivity, Volunteer, MilestoneKey, MinistryLane, Expense } from '../types';
 import ConfirmDialog from './ConfirmDialog';
+import { apiFetch } from '../lib/api';
+import {
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend
+} from 'recharts';
 
 interface SummaryData {
   totalEvents: number;
@@ -61,6 +76,7 @@ interface DashboardOverviewProps {
   onAddTask?: (eventId: string, taskData: { title: string; description: string; milestoneKey: MilestoneKey; lane: MinistryLane; dueDate: string; assignedTo?: string }) => Promise<void>;
   onCreateVolunteer?: (volunteerData: Omit<Volunteer, 'id'>) => Promise<void>;
   onUploadCompleted?: () => Promise<void>;
+  loading?: boolean;
 }
 
 const CITIES = [
@@ -91,9 +107,37 @@ function DashboardOverview({
   onCloneEvent,
   onAddTask,
   onCreateVolunteer,
-  onUploadCompleted
+  onUploadCompleted,
+  loading = false
  }: DashboardOverviewProps) {
   const [selectedCity, setSelectedCity] = React.useState(CITIES[0]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [expensesLoading, setExpensesLoading] = useState<boolean>(true);
+
+  useEffect(() => {
+    let active = true;
+    const fetchExpenses = async () => {
+      try {
+        const res = await apiFetch('/api/expenses');
+        if (res.ok) {
+          const data = await res.json();
+          if (active) {
+            setExpenses(data);
+          }
+        }
+      } catch (err) {
+        console.error("Error loading expenses in DashboardOverview:", err);
+      } finally {
+        if (active) {
+          setExpensesLoading(false);
+        }
+      }
+    };
+    fetchExpenses();
+    return () => {
+      active = false;
+    };
+  }, [selectedEventId]); // re-fetch on selected event change just to keep it fresh
 
   // Reusable Confirmation Dialog state
   const [confirmState, setConfirmState] = React.useState<{
@@ -621,6 +665,349 @@ function DashboardOverview({
           </div>
         </div>
 
+        {/* EVENT SCOPE GLANCEABLE VISUALIZATIONS */}
+        {(() => {
+          const formatHumanDate = (dateStr: string) => {
+            if (!dateStr) return '';
+            const [y, m, d] = dateStr.split('-');
+            const dateObj = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
+            return dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+          };
+
+          const budgetCap = tickerEvent?.budgetCap || 0;
+          const eventExpenses = tickerEvent ? expenses.filter(exp => exp.eventId === tickerEvent.id) : [];
+          const totalSpent = eventExpenses.reduce((sum, exp) => sum + exp.cost, 0);
+          const remainingBudget = Math.max(0, budgetCap - totalSpent);
+          const overBudget = totalSpent > budgetCap;
+
+          const hasBudgetData = budgetCap > 0 || totalSpent > 0;
+
+          // 2. Volunteers count by role
+          const roleCounts: Record<string, number> = {};
+          if (tickerEvent) {
+            volunteers.forEach(vol => {
+              const assignment = vol.eventAssignments?.[tickerEvent.id];
+              if (assignment?.role) {
+                const role = assignment.role;
+                roleCounts[role] = (roleCounts[role] || 0) + 1;
+              }
+            });
+          }
+          const rolesData = Object.entries(roleCounts).map(([role, count]) => ({
+            role,
+            count
+          })).sort((a, b) => b.count - a.count);
+
+          const hasVolunteersData = rolesData.length > 0;
+
+          // 3. Task milestones
+          const milestoneOrder: MilestoneKey[] = [
+            '12_weeks_out',
+            '10_weeks_out',
+            '8_weeks_out',
+            '4_weeks_out',
+            '2_weeks_out'
+          ];
+          const milestoneLabels: Record<MilestoneKey, string> = {
+            '12_weeks_out': '12W',
+            '10_weeks_out': '10W',
+            '8_weeks_out': '8W',
+            '4_weeks_out': '4W',
+            '2_weeks_out': '2W'
+          };
+          const milestoneFullLabels: Record<MilestoneKey, string> = {
+            '12_weeks_out': '12 Weeks Out',
+            '10_weeks_out': '10 Weeks Out',
+            '8_weeks_out': '8 Weeks Out',
+            '4_weeks_out': '4 Weeks Out',
+            '2_weeks_out': '2 Weeks Out'
+          };
+          const milestoneTasksData = milestoneOrder.map(key => {
+            const milestoneTasks = tickerEvent ? (tickerEvent.tasks || []).filter(t => t.milestoneKey === key) : [];
+            const total = milestoneTasks.length;
+            const completed = milestoneTasks.filter(t => t.completed).length;
+            return {
+              key,
+              label: milestoneLabels[key],
+              fullName: milestoneFullLabels[key],
+              completed,
+              remaining: total - completed,
+              total
+            };
+          });
+
+          const totalTasksCount = tickerEvent?.tasks?.length || 0;
+          const hasTasksData = totalTasksCount > 0;
+
+          const spentData = [
+            { name: 'Spent', value: totalSpent, color: '#856637' },
+            { name: 'Remaining', value: overBudget ? 0 : remainingBudget, color: '#efe9dc' }
+          ];
+
+          return (
+            <div className="bg-[#fcfaf7] border border-[#e2dcd0] rounded-2xl p-5 shadow-sm space-y-4 animate-fadeIn">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#efe0c2] pb-3 gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-[#f5ebd6] text-[#856637] rounded-xl border border-[#efe0c2]">
+                    <TrendingUp size={20} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[9px] font-bold uppercase tracking-[0.15em] text-[#856637] bg-[#f5ebd6]/60 border border-[#efe0c2] px-2 py-0.5 rounded-full">
+                        Scope Dashboard
+                      </span>
+                      {tickerEvent && (
+                        <span className="text-[9px] font-mono font-bold uppercase text-slate-400">
+                          ID: {tickerEvent.id.substring(0, 8)}...
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="text-lg font-serif font-black text-slate-800 mt-1 flex items-center gap-1.5">
+                      {tickerEvent ? tickerEvent.name : 'No Event Scope Active'}
+                    </h3>
+                  </div>
+                </div>
+
+                {/* Scope selector */}
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Scope:</span>
+                  <select
+                    value={selectedEventId || ''}
+                    onChange={(e) => onSelectEvent?.(e.target.value)}
+                    className="text-xs font-bold border border-[#efe0c2] bg-[#fcfaf7] rounded-lg px-2.5 py-1.5 text-slate-700 cursor-pointer focus:ring-1 focus:ring-[#c2aa80] focus:outline-none"
+                  >
+                    <option value="">-- All Events Scope --</option>
+                    {events.map(evt => (
+                      <option key={evt.id} value={evt.id}>
+                        {evt.name} ({evt.date})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {loading ? (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* CHART 1 SKELETON */}
+                  <div className="bg-white border border-[#e2dcd0]/80 rounded-xl p-4 flex flex-col justify-between h-[256px] space-y-3 animate-pulse">
+                    <div className="space-y-2">
+                      <div className="h-4 bg-[#efe9dc]/70 rounded w-1/2"></div>
+                      <div className="h-3 bg-[#efe9dc]/50 rounded w-1/3"></div>
+                    </div>
+                    <div className="h-[140px] bg-[#fcfaf7] border border-dashed border-[#e2dcd0] rounded-xl flex items-center justify-center">
+                      <div className="w-10 h-10 rounded-full border-4 border-[#efe9dc] border-t-transparent animate-spin"></div>
+                    </div>
+                    <div className="flex justify-between items-center pt-2 border-t border-slate-50">
+                      <div className="h-3.5 bg-[#efe9dc]/70 rounded w-1/4"></div>
+                      <div className="h-3.5 bg-[#efe9dc]/70 rounded w-1/4"></div>
+                    </div>
+                  </div>
+                  {/* CHART 2 SKELETON */}
+                  <div className="bg-white border border-[#e2dcd0]/80 rounded-xl p-4 flex flex-col justify-between h-[256px] space-y-3 animate-pulse">
+                    <div className="space-y-2">
+                      <div className="h-4 bg-[#efe9dc]/70 rounded w-1/2"></div>
+                      <div className="h-3 bg-[#efe9dc]/50 rounded w-1/3"></div>
+                    </div>
+                    <div className="h-[140px] bg-[#fcfaf7] border border-dashed border-[#e2dcd0] rounded-xl flex items-center justify-center">
+                      <div className="w-10 h-10 rounded-full border-4 border-[#efe9dc] border-t-transparent animate-spin"></div>
+                    </div>
+                    <div className="flex justify-between items-center pt-2 border-t border-slate-50">
+                      <div className="h-3.5 bg-[#efe9dc]/70 rounded w-1/4"></div>
+                      <div className="h-3.5 bg-[#efe9dc]/70 rounded w-1/4"></div>
+                    </div>
+                  </div>
+                  {/* CHART 3 SKELETON */}
+                  <div className="bg-white border border-[#e2dcd0]/80 rounded-xl p-4 flex flex-col justify-between h-[256px] space-y-3 animate-pulse">
+                    <div className="space-y-2">
+                      <div className="h-4 bg-[#efe9dc]/70 rounded w-1/2"></div>
+                      <div className="h-3 bg-[#efe9dc]/50 rounded w-1/3"></div>
+                    </div>
+                    <div className="h-[140px] bg-[#fcfaf7] border border-dashed border-[#e2dcd0] rounded-xl flex items-center justify-center">
+                      <div className="w-10 h-10 rounded-full border-4 border-[#efe9dc] border-t-transparent animate-spin"></div>
+                    </div>
+                    <div className="flex justify-between items-center pt-2 border-t border-slate-50">
+                      <div className="h-3.5 bg-[#efe9dc]/70 rounded w-1/4"></div>
+                      <div className="h-3.5 bg-[#efe9dc]/70 rounded w-1/4"></div>
+                    </div>
+                  </div>
+                </div>
+              ) : !tickerEvent ? (
+                <div className="py-8 text-center border border-dashed border-[#e2dcd0] rounded-xl bg-white text-slate-405 text-xs">
+                  Please create or select an event scope to see visual analytics.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* CHART 1: Budget Analysis */}
+                  <div className="bg-white border border-[#e2dcd0]/80 rounded-xl p-4 flex flex-col justify-between space-y-3">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-[#856637] font-sans flex items-center gap-1">
+                          <Coins size={14} /> Budget Ledger
+                        </h4>
+                        <p className="text-[10px] text-slate-400 mt-0.5">Spent vs Remaining Cap</p>
+                      </div>
+                      {budgetCap > 0 && (
+                        <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full ${overBudget ? 'bg-rose-100 text-rose-750 border border-rose-200' : 'bg-emerald-100 text-emerald-800 border border-emerald-200'}`}>
+                          {overBudget ? 'Over Budget' : 'On Track'}
+                        </span>
+                      )}
+                    </div>
+
+                    {hasBudgetData ? (
+                      <div className="relative h-[140px] w-full flex items-center justify-center">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={spentData}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={45}
+                              outerRadius={60}
+                              paddingAngle={3}
+                              dataKey="value"
+                            >
+                              {spentData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.color} />
+                              ))}
+                            </Pie>
+                            <Tooltip formatter={(value) => `$${value}`} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none mt-1">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none">Spent</span>
+                          <span className="text-sm font-extrabold text-slate-800 font-mono mt-0.5 leading-none">
+                            {budgetCap > 0 ? `${Math.round((totalSpent / budgetCap) * 100)}%` : `$${totalSpent}`}
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="h-[140px] flex flex-col items-center justify-center bg-[#fcfaf7] border border-dashed border-[#e2dcd0] rounded-xl p-4 text-center">
+                        <span className="text-xs text-slate-400 font-medium">No budget limit or expenses yet</span>
+                        <p className="text-[9px] text-slate-400 mt-0.5">Define a budgetCap or add expenses to populate.</p>
+                      </div>
+                    )}
+
+                    <div className="flex justify-between items-center text-[11px] font-medium text-slate-600 pt-2 border-t border-slate-50">
+                      <div className="flex flex-col">
+                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Budget Limit</span>
+                        <span className="text-slate-800 font-mono font-bold">${budgetCap.toLocaleString()}</span>
+                      </div>
+                      <div className="flex flex-col text-right">
+                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Spent</span>
+                        <span className={`${overBudget ? 'text-rose-650 font-bold' : 'text-[#856637]'} font-mono font-bold`}>
+                          ${totalSpent.toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* CHART 2: Volunteer Roles Counts */}
+                  <div className="bg-white border border-[#e2dcd0]/80 rounded-xl p-4 flex flex-col justify-between space-y-3">
+                    <div>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-[#856637] font-sans flex items-center gap-1">
+                        <Users size={14} /> Volunteer Assignments
+                      </h4>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Count of volunteers per role</p>
+                    </div>
+
+                    {hasVolunteersData ? (
+                      <div className="h-[140px] w-full relative">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart
+                            data={rolesData.slice(0, 5)}
+                            layout="vertical"
+                            margin={{ top: 5, right: 10, left: -25, bottom: 5 }}
+                          >
+                            <XAxis type="number" hide />
+                            <YAxis 
+                              type="category" 
+                              dataKey="role" 
+                              tick={{ fill: '#64748b', fontSize: 9, fontWeight: 550 }}
+                              axisLine={false}
+                              tickLine={false}
+                              width={70}
+                            />
+                            <Tooltip 
+                              cursor={{ fill: 'rgba(133, 102, 55, 0.04)' }}
+                              contentStyle={{ fontSize: 11, background: '#fff', border: '1px solid #e2dcd0', borderRadius: 8 }}
+                            />
+                            <Bar dataKey="count" fill="#856637" radius={[0, 4, 4, 0]} barSize={10} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    ) : (
+                      <div className="h-[140px] flex flex-col items-center justify-center bg-[#fcfaf7] border border-dashed border-[#e2dcd0] rounded-xl p-4 text-center">
+                        <span className="text-xs text-slate-400 font-medium">No volunteers assigned</span>
+                        <p className="text-[9px] text-slate-400 mt-0.5">Assign roles to volunteers for this event.</p>
+                      </div>
+                    )}
+
+                    <div className="flex justify-between items-center text-[11px] font-medium text-slate-600 pt-2 border-t border-slate-50">
+                      <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Total Rostered</span>
+                      <span className="text-slate-800 font-mono font-bold">
+                        {volunteers.filter(v => v.eventAssignments?.[tickerEvent.id]).length} volunteers
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* CHART 3: Task Completion by Milestones */}
+                  <div className="bg-white border border-[#e2dcd0]/80 rounded-xl p-4 flex flex-col justify-between space-y-3">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-[#856637] font-sans flex items-center gap-1">
+                          <Check size={14} /> Milestones Tracker
+                        </h4>
+                        <p className="text-[10px] text-slate-400 mt-0.5">Tasks progress by deadline key</p>
+                      </div>
+                    </div>
+
+                    {hasTasksData ? (
+                      <div className="h-[140px] w-full relative">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart
+                            data={milestoneTasksData}
+                            margin={{ top: 10, right: 10, left: -25, bottom: 5 }}
+                          >
+                            <XAxis 
+                              dataKey="label" 
+                              tick={{ fill: '#64748b', fontSize: 9, fontWeight: 550 }}
+                              axisLine={false}
+                              tickLine={false}
+                            />
+                            <YAxis 
+                              tick={{ fill: '#64748b', fontSize: 9, fontWeight: 550 }}
+                              axisLine={false}
+                              tickLine={false}
+                              allowDecimals={false}
+                            />
+                            <Tooltip 
+                              contentStyle={{ fontSize: 11, background: '#fff', border: '1px solid #e2dcd0', borderRadius: 8 }}
+                            />
+                            <Bar dataKey="completed" name="Completed" stackId="a" fill="#1e293b" barSize={14} />
+                            <Bar dataKey="remaining" name="Remaining" stackId="a" fill="#efe9dc" radius={[3, 3, 0, 0]} barSize={14} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    ) : (
+                      <div className="h-[140px] flex flex-col items-center justify-center bg-[#fcfaf7] border border-dashed border-[#e2dcd0] rounded-xl p-4 text-center">
+                        <span className="text-xs text-slate-400 font-medium">No tasks found for milestones</span>
+                        <p className="text-[9px] text-slate-400 mt-0.5">Tasks will show up once generated or added.</p>
+                      </div>
+                    )}
+
+                    <div className="flex justify-between items-center text-[11px] font-medium text-slate-600 pt-2 border-t border-slate-50">
+                      <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Overall Progress</span>
+                      <span className="text-slate-800 font-mono font-bold">
+                        {tickerEvent.tasks?.filter(t => t.completed).length || 0} / {totalTasksCount} completed
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
         {viewMode === 'grid' && (
           <div className="bg-[#fcfaf7] border border-[#e2dcd0] rounded-xl p-4 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition duration-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="relative flex-1 max-w-md">
@@ -671,7 +1058,27 @@ function DashboardOverview({
 
         {viewMode === 'grid' ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {filteredEvents.map((event) => {
+            {loading ? (
+              Array.from({ length: 3 }).map((_, idx) => (
+                <div 
+                  key={`skeleton-event-card-${idx}`}
+                  className="bg-[#fcfaf7] p-6 rounded-2xl border border-[#e2dcd0] shadow-sm animate-pulse flex flex-col justify-between h-56"
+                >
+                  <div className="space-y-2">
+                    <div className="h-5 bg-[#efe9dc]/70 rounded w-3/4"></div>
+                    <div className="h-3.5 bg-[#efe9dc]/50 rounded w-1/4"></div>
+                  </div>
+                  <div className="h-8 bg-[#efe9dc]/60 rounded-xl w-1/2"></div>
+                  <div className="space-y-3 mt-4">
+                    <div className="h-2 bg-[#efe9dc]/50 rounded-full w-full"></div>
+                    <div className="flex justify-between">
+                      <div className="h-3 bg-[#efe9dc]/50 rounded w-1/4"></div>
+                      <div className="h-3 bg-[#efe9dc]/50 rounded w-1/8"></div>
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : filteredEvents.map((event) => {
               // Calculate days out relative to target date (2026-07-06)
               const [y1, m1, dd1] = event.date.split('-');
               const eventDate = new Date(parseInt(y1, 10), parseInt(m1, 10) - 1, parseInt(dd1, 10));
@@ -769,13 +1176,40 @@ function DashboardOverview({
                 </div>
               );
             })}
-            {filteredEvents.length === 0 && (
+            {!loading && filteredEvents.length === 0 && (
               <div className="col-span-3 p-8 text-center border border-dashed border-[#e2dcd0] rounded-2xl bg-[#fcfaf7] text-slate-400 text-xs">
                 {events.length === 0 
                   ? "No events scheduled yet. Create an event in the reverse-timeline."
                   : "No events match your search/filter criteria."}
               </div>
             )}
+          </div>
+        ) : loading ? (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 bg-[#fcfaf7] border border-[#e2dcd0] rounded-2xl p-6 shadow-sm animate-pulse">
+            {/* Left Column: Grid Skeleton */}
+            <div className="lg:col-span-2 space-y-4">
+              <div className="h-12 bg-[#efe9dc]/50 rounded-xl"></div>
+              <div className="grid grid-cols-7 gap-1.5 text-center">
+                {Array.from({ length: 7 }).map((_, i) => (
+                  <div key={i} className="h-4 bg-[#efe9dc]/30 rounded"></div>
+                ))}
+              </div>
+              <div className="grid grid-cols-7 gap-1.5">
+                {Array.from({ length: 28 }).map((_, i) => (
+                  <div key={i} className="aspect-square bg-[#efe9dc]/40 rounded-xl border border-[#efe9dc]/20"></div>
+                ))}
+              </div>
+            </div>
+            {/* Right Column: Agenda Detail Skeleton */}
+            <div className="bg-[#faf8f4] border border-[#e2dcd0] rounded-xl p-5 flex flex-col justify-between h-[360px]">
+              <div className="space-y-3">
+                <div className="h-4 bg-[#efe9dc]/60 rounded w-1/3"></div>
+                <div className="h-6 bg-[#efe9dc]/60 rounded w-1/2"></div>
+                <div className="h-2 bg-[#efe9dc]/30 rounded w-1/4 mt-1"></div>
+              </div>
+              <div className="h-[180px] bg-[#efe9dc]/30 rounded-lg border border-dashed border-[#efe9dc]/55"></div>
+              <div className="h-3 bg-[#efe9dc]/55 rounded w-full"></div>
+            </div>
           </div>
         ) : (
           /* OPTION 1: Monthly Master Calendar Grid View */
@@ -986,89 +1420,138 @@ function DashboardOverview({
       <div className="space-y-6">
           
           {/* Metric Cards Grid (Operational Warnings) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Burnout Tracker */}
-            <div 
-              onClick={() => setShowBurnoutModal(true)}
-              onMouseEnter={() => setHoveredBurnout(true)}
-              onMouseLeave={() => setHoveredBurnout(false)}
-              className="bg-[#fcfaf7] p-5 rounded-xl border border-[#e2dcd0] shadow-sm hover:shadow-md hover:-translate-y-1 hover:border-[#c2aa80] transition duration-200 cursor-pointer group relative"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">BURNOUT WARNINGS</p>
-                  <h3 className="text-2xl font-bold text-slate-800 mt-1">{overallocatedLeads.length}</h3>
+          {loading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Burnout Tracker Skeleton */}
+              <div className="bg-[#fcfaf7] p-5 rounded-xl border border-[#e2dcd0] shadow-sm animate-pulse space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-2 flex-1">
+                    <div className="h-3 bg-[#efe9dc]/70 rounded w-1/2"></div>
+                    <div className="h-8 bg-[#efe9dc]/70 rounded w-1/4"></div>
+                  </div>
+                  <div className="w-12 h-12 bg-[#efe9dc]/50 rounded-lg"></div>
                 </div>
-                <div className={`p-3 rounded-lg transition ${
-                  overallocatedLeads.length > 0 
-                    ? 'bg-rose-50 text-rose-650 group-hover:bg-rose-600 group-hover:text-[#faf8f4]' 
-                    : 'bg-[#faf8f4] text-slate-600 border border-[#e2dcd0] group-hover:bg-[#f5ebd6] group-hover:text-[#856637]'
-                }`}>
-                  <AlertTriangle size={20} />
-                </div>
+                <div className="h-3 bg-[#efe9dc]/50 rounded w-3/4"></div>
+                <div className="h-2.5 bg-[#efe9dc]/50 rounded w-1/3"></div>
               </div>
-              <p className="text-xs text-slate-500 mt-4 leading-normal">
-                {overallocatedLeads.length > 0 
-                  ? `${overallocatedLeads.length} Ministry Leads allocated beyond weekly capacity/task targets.`
-                  : 'All Ministry Leads are operating within safe workloads.'
-                }
-              </p>
-              <p className="text-[10px] text-amber-800 font-extrabold mt-1.5 underline">
-                Click card to view Leads details &amp; active counts
-              </p>
 
-              {/* Inline Hover Popover */}
-              {hoveredBurnout && (
-                <div className="absolute left-0 right-0 top-full mt-2 bg-white border border-[#efe0c2] p-4 rounded-xl shadow-xl z-50 animate-fadeIn space-y-2 pointer-events-none">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-[#856637] border-b border-[#efe0c2] pb-1">
-                    Coordinators Allocation Status
-                  </p>
-                  {leadStatsList.length === 0 ? (
-                    <p className="text-[10px] text-slate-400 italic">No coordinators assigned to any lanes.</p>
-                  ) : (
-                    <div className="space-y-1.5">
-                      {leadStatsList.map((lead, idx) => {
-                        const isOver = lead.activeTasksCount > 15 || lead.weeklyHours > 20;
-                        return (
-                          <div key={idx} className="flex justify-between items-center text-[10px] font-medium">
-                            <span className="text-slate-700">{lead.leadName}</span>
-                            <span className={isOver ? 'text-rose-650 font-bold' : 'text-slate-500'}>
-                              {lead.activeTasksCount} Tasks ({lead.weeklyHours}h) {isOver ? '🚨' : '✓'}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+              {/* Total Volunteers Skeleton */}
+              <div className="bg-[#fcfaf7] p-5 rounded-xl border border-[#e2dcd0] shadow-sm animate-pulse space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-2 flex-1">
+                    <div className="h-3 bg-[#efe9dc]/70 rounded w-1/2"></div>
+                    <div className="h-8 bg-[#efe9dc]/70 rounded w-1/4"></div>
+                  </div>
+                  <div className="w-12 h-12 bg-[#efe9dc]/50 rounded-lg"></div>
                 </div>
-              )}
-            </div>
-
-            {/* Simplified Ministry Total Volunteers */}
-            <div 
-              onClick={() => onNavigate('volunteers')}
-              className="bg-[#fcfaf7] p-5 rounded-xl border border-[#e2dcd0] shadow-sm hover:shadow-md hover:-translate-y-1 hover:border-[#c2aa80] transition duration-200 cursor-pointer group"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider font-sans">Total Volunteers</p>
-                  <h3 className="text-2xl font-bold text-slate-800 mt-1">{summary.totalVolunteers}</h3>
-                </div>
-                <div className="p-3 bg-[#faf8f4] text-slate-600 border border-[#e2dcd0] group-hover:bg-[#f5ebd6] group-hover:text-[#856637] rounded-lg transition">
-                  <Users size={20} />
-                </div>
+                <div className="h-3 bg-[#efe9dc]/50 rounded w-3/4"></div>
+                <div className="h-2.5 bg-[#efe9dc]/50 rounded w-1/3"></div>
               </div>
-              <p className="text-xs text-slate-500 mt-4 leading-normal">
-                Total registered volunteers across all active ministry rosters.
-              </p>
-              <p className="text-[10px] text-[#856637] font-extrabold mt-1.5 underline">
-                Click to open Volunteer Registry
-              </p>
             </div>
-          </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Burnout Tracker */}
+              <div 
+                onClick={() => setShowBurnoutModal(true)}
+                onMouseEnter={() => setHoveredBurnout(true)}
+                onMouseLeave={() => setHoveredBurnout(false)}
+                className="bg-[#fcfaf7] p-5 rounded-xl border border-[#e2dcd0] shadow-sm hover:shadow-md hover:-translate-y-1 hover:border-[#c2aa80] transition duration-200 cursor-pointer group relative"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">BURNOUT WARNINGS</p>
+                    <h3 className="text-2xl font-bold text-slate-800 mt-1">{overallocatedLeads.length}</h3>
+                  </div>
+                  <div className={`p-3 rounded-lg transition ${
+                    overallocatedLeads.length > 0 
+                      ? 'bg-rose-50 text-rose-650 group-hover:bg-rose-600 group-hover:text-[#faf8f4]' 
+                      : 'bg-[#faf8f4] text-slate-600 border border-[#e2dcd0] group-hover:bg-[#f5ebd6] group-hover:text-[#856637]'
+                  }`}>
+                    <AlertTriangle size={20} />
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500 mt-4 leading-normal">
+                  {overallocatedLeads.length > 0 
+                    ? `${overallocatedLeads.length} Ministry Leads allocated beyond weekly capacity/task targets.`
+                    : 'All Ministry Leads are operating within safe workloads.'
+                  }
+                </p>
+                <p className="text-[10px] text-amber-800 font-extrabold mt-1.5 underline">
+                  Click card to view Leads details &amp; active counts
+                </p>
+
+                {/* Inline Hover Popover */}
+                {hoveredBurnout && (
+                  <div className="absolute left-0 right-0 top-full mt-2 bg-white border border-[#efe0c2] p-4 rounded-xl shadow-xl z-50 animate-fadeIn space-y-2 pointer-events-none">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-[#856637] border-b border-[#efe0c2] pb-1">
+                      Coordinators Allocation Status
+                    </p>
+                    {leadStatsList.length === 0 ? (
+                      <p className="text-[10px] text-slate-400 italic">No coordinators assigned to any lanes.</p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {leadStatsList.map((lead, idx) => {
+                          const isOver = lead.activeTasksCount > 15 || lead.weeklyHours > 20;
+                          return (
+                            <div key={idx} className="flex justify-between items-center text-[10px] font-medium">
+                              <span className="text-slate-700">{lead.leadName}</span>
+                              <span className={isOver ? 'text-rose-650 font-bold' : 'text-slate-500'}>
+                                {lead.activeTasksCount} Tasks ({lead.weeklyHours}h) {isOver ? '🚨' : '✓'}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Simplified Ministry Total Volunteers */}
+              <div 
+                onClick={() => onNavigate('volunteers')}
+                className="bg-[#fcfaf7] p-5 rounded-xl border border-[#e2dcd0] shadow-sm hover:shadow-md hover:-translate-y-1 hover:border-[#c2aa80] transition duration-200 cursor-pointer group"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider font-sans">Total Volunteers</p>
+                    <h3 className="text-2xl font-bold text-slate-800 mt-1">{summary.totalVolunteers}</h3>
+                  </div>
+                  <div className="p-3 bg-[#faf8f4] text-slate-600 border border-[#e2dcd0] group-hover:bg-[#f5ebd6] group-hover:text-[#856637] rounded-lg transition">
+                    <Users size={20} />
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500 mt-4 leading-normal">
+                  Total registered volunteers across all active ministry rosters.
+                </p>
+                <p className="text-[10px] text-[#856637] font-extrabold mt-1.5 underline">
+                  Click to open Volunteer Registry
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Weather summary widget */}
-          <div className="bg-[#fcfaf7] rounded-xl border border-[#e2dcd0] p-6 shadow-sm hover:shadow-md hover:-translate-y-1 transition duration-200 space-y-4">
+          {loading ? (
+            <div className="bg-[#fcfaf7] rounded-xl border border-[#e2dcd0] p-6 shadow-sm animate-pulse space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#efe0c2]/60 pb-3">
+                <div className="space-y-2 flex-1">
+                  <div className="h-5 bg-[#efe9dc]/70 rounded w-1/3"></div>
+                  <div className="h-3 bg-[#efe9dc]/50 rounded w-1/2"></div>
+                </div>
+                <div className="h-8 bg-[#efe9dc]/50 rounded w-24"></div>
+              </div>
+              <div className="p-4 rounded-xl border border-[#efe0c2] bg-white flex flex-col md:flex-row justify-between gap-4">
+                <div className="space-y-2 flex-1">
+                  <div className="h-4 bg-[#efe9dc]/60 rounded w-1/4"></div>
+                  <div className="h-5 bg-[#efe9dc]/60 rounded w-1/2"></div>
+                  <div className="h-3 bg-[#efe9dc]/50 rounded w-1/3"></div>
+                </div>
+                <div className="h-16 bg-[#efe9dc]/40 rounded-lg w-full md:w-48"></div>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-[#fcfaf7] rounded-xl border border-[#e2dcd0] p-6 shadow-sm hover:shadow-md hover:-translate-y-1 transition duration-200 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#efe0c2]/60 pb-3">
               <div>
                 <h3 className="text-lg font-serif font-bold text-[#1e293b] flex items-center gap-2">
@@ -1239,6 +1722,7 @@ function DashboardOverview({
               </div>
             )}
           </div>
+          )}
 
           {/* Quick Lane Reference Card */}
           <div className="bg-[#fcfaf7] rounded-xl border border-[#e2dcd0] p-6 shadow-sm hover:shadow-md hover:-translate-y-1 transition duration-200 space-y-4">

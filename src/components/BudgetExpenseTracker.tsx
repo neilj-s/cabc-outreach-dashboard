@@ -1,6 +1,7 @@
 import { apiFetch } from "../lib/api";
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useNotification } from '../context/NotificationContext';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { 
   TrendingUp, 
@@ -33,6 +34,7 @@ import { MinistryEvent, Expense } from '../types';
 interface BudgetExpenseTrackerProps {
   events: MinistryEvent[];
   onUploadCompleted?: () => void;
+  loading?: boolean;
 }
 
 const CATEGORIES = ['Food', 'Supplies', 'Marketing', 'Other'] as const;
@@ -40,12 +42,27 @@ const AUTOSAVE_KEY = 'budgetLedger_draft';
 
 function BudgetExpenseTracker({
   events,
-  onUploadCompleted
+  onUploadCompleted,
+  loading: parentLoading = false
 }: BudgetExpenseTrackerProps) {
+  const { showNotification } = useNotification();
+  const pendingExpensesRef = React.useRef<Map<string, { timeoutId: NodeJS.Timeout; expense: Expense }>>(new Map());
+  const pendingBulkDeletesRef = React.useRef<Map<string, { timeoutId: NodeJS.Timeout; expenses: Expense[] }>>(new Map());
+
+  // Clean up pending timeouts on unmount
+  useEffect(() => {
+    return () => {
+      pendingExpensesRef.current.forEach(val => clearTimeout(val.timeoutId));
+      pendingBulkDeletesRef.current.forEach(val => clearTimeout(val.timeoutId));
+    };
+  }, []);
+
   const [selectedEventId, setSelectedEventId] = useState<string>('');
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  const isCurrentlyLoading = parentLoading || loading;
 
   // Filter and search states
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -324,27 +341,52 @@ function BudgetExpenseTracker({
   };
 
   // Delete expense
-  const handleDeleteExpense = async (id: string, desc: string) => {
-    
-    let __isConfirmed = true;
-    try {
-      __isConfirmed = window.confirm(`Are you sure you want to delete this expense record: "${desc}"?`);
-    } catch (e) {
-      console.warn('window.confirm blocked by iframe sandbox, defaulting to true');
-    }
-    if (!__isConfirmed) {
-      return;
-    }
-    
+  const handleDeleteExpense = (id: string, desc: string) => {
+    const expenseToDelete = expenses.find(exp => exp.id === id);
+    if (!expenseToDelete) return;
 
-    try {
-      const res = await apiFetch(`/api/expenses/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete expense record.');
-      await fetchExpenses();
-      if (onUploadCompleted) onUploadCompleted();
-    } catch (err: any) {
-      alert(err.message || 'Could not delete expense.');
+    // Optimistically remove from state
+    setExpenses(prev => prev.filter(exp => exp.id !== id));
+
+    const timeoutId = setTimeout(async () => {
+      try {
+        const res = await apiFetch(`/api/expenses/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Failed to delete expense record.');
+        pendingExpensesRef.current.delete(id);
+        if (onUploadCompleted) onUploadCompleted();
+      } catch (err: any) {
+        const msg = err.message || 'Could not delete expense.';
+        showNotification(msg, 'error');
+        // Restore on server failure
+        setExpenses(prev => {
+          if (prev.some(exp => exp.id === id)) return prev;
+          return [...prev, expenseToDelete];
+        });
+      }
+    }, 5000);
+
+    const existing = pendingExpensesRef.current.get(id);
+    if (existing) {
+      clearTimeout(existing.timeoutId);
     }
+
+    pendingExpensesRef.current.set(id, { timeoutId, expense: expenseToDelete });
+
+    showNotification(`Expense "${desc}" removed.`, 'success', {
+      label: 'Undo',
+      onClick: () => {
+        const pending = pendingExpensesRef.current.get(id);
+        if (pending) {
+          clearTimeout(pending.timeoutId);
+          setExpenses(prev => {
+            if (prev.some(exp => exp.id === id)) return prev;
+            return [...prev, pending.expense];
+          });
+          pendingExpensesRef.current.delete(id);
+          showNotification(`Restored "${desc}"`, 'success');
+        }
+      }
+    });
   };
 
   // Form submission
@@ -352,7 +394,7 @@ function BudgetExpenseTracker({
     e.preventDefault();
     const parsedCost = parseFloat(formCost);
     if (!formDescription.trim() || isNaN(parsedCost) || parsedCost <= 0 || !formPurchaser.trim() || !formDate) {
-      alert('Please fill out all required fields with valid values.');
+      showNotification('Please fill out all required fields with valid values.', 'error');
       return;
     }
 
@@ -394,8 +436,15 @@ function BudgetExpenseTracker({
       }
       await fetchExpenses();
       if (onUploadCompleted) onUploadCompleted();
+      showNotification(
+        editingExpense 
+          ? `Expense "${formDescription}" updated successfully!` 
+          : `Expense "${formDescription}" saved successfully!`, 
+        'success'
+      );
     } catch (err: any) {
-      alert(err.message || 'Error occurred while saving expense.');
+      const msg = err.message || 'Error occurred while saving expense.';
+      showNotification(msg, 'error');
     } finally {
       setIsSaving(false);
     }
@@ -426,29 +475,70 @@ function BudgetExpenseTracker({
     setSelectedExpenseIds(next);
   };
 
-  const handleBulkDelete = async () => {
+  const handleBulkDelete = () => {
     if (selectedExpenseIds.size === 0) return;
-    
-    let __isConfirmed = true;
-    try {
-      __isConfirmed = window.confirm(`Are you sure you want to delete ${selectedExpenseIds.size} expenses?`);
-    } catch (e) {
-      console.warn('window.confirm blocked by iframe sandbox, defaulting to true');
-    }
-    if (!__isConfirmed) return;
-    
 
-    try {
-      // For simplicity, running them in sequence or parallel
-      await Promise.all(Array.from(selectedExpenseIds).map(id => 
-        apiFetch(`/api/expenses/${id}`, { method: 'DELETE' })
-      ));
-      setSelectedExpenseIds(new Set());
-      await fetchExpenses();
-      if (onUploadCompleted) onUploadCompleted();
-    } catch (err: any) {
-      alert('Error during bulk delete: ' + err.message);
+    const idsToDelete = Array.from(selectedExpenseIds);
+    const expensesToDelete = expenses.filter(exp => selectedExpenseIds.has(exp.id));
+    const deletedCount = selectedExpenseIds.size;
+
+    // Clear selection
+    setSelectedExpenseIds(new Set());
+
+    // Optimistically remove from state
+    setExpenses(prev => prev.filter(exp => !idsToDelete.includes(exp.id)));
+
+    const batchId = Math.random().toString(36).substring(2, 9);
+
+    const timeoutId = setTimeout(async () => {
+      try {
+        await Promise.all(idsToDelete.map(id => 
+          apiFetch(`/api/expenses/${id}`, { method: 'DELETE' })
+        ));
+        pendingBulkDeletesRef.current.delete(batchId);
+        if (onUploadCompleted) onUploadCompleted();
+      } catch (err: any) {
+        showNotification('Error during bulk delete: ' + err.message, 'error');
+        // Restore on server failure
+        setExpenses(prev => {
+          const newExpenses = [...prev];
+          expensesToDelete.forEach(exp => {
+            if (!newExpenses.some(e => e.id === exp.id)) {
+              newExpenses.push(exp);
+            }
+          });
+          return newExpenses;
+        });
+      }
+    }, 5000);
+
+    const existing = pendingBulkDeletesRef.current.get(batchId);
+    if (existing) {
+      clearTimeout(existing.timeoutId);
     }
+
+    pendingBulkDeletesRef.current.set(batchId, { timeoutId, expenses: expensesToDelete });
+
+    showNotification(`${deletedCount} expenses removed.`, 'success', {
+      label: 'Undo',
+      onClick: () => {
+        const pending = pendingBulkDeletesRef.current.get(batchId);
+        if (pending) {
+          clearTimeout(pending.timeoutId);
+          setExpenses(prev => {
+            const newExpenses = [...prev];
+            pending.expenses.forEach(exp => {
+              if (!newExpenses.some(e => e.id === exp.id)) {
+                newExpenses.push(exp);
+              }
+            });
+            return newExpenses;
+          });
+          pendingBulkDeletesRef.current.delete(batchId);
+          showNotification(`Restored ${deletedCount} expenses`, 'success');
+        }
+      }
+    });
   };
 
   const handleBulkRecategorize = async () => {
@@ -462,12 +552,14 @@ function BudgetExpenseTracker({
           body: JSON.stringify({ category: bulkCategoryTarget })
         })
       ));
+      const updatedCount = selectedExpenseIds.size;
       setSelectedExpenseIds(new Set());
       setIsBulkCategoryModalOpen(false);
       await fetchExpenses();
       if (onUploadCompleted) onUploadCompleted();
+      showNotification(`Successfully recategorized ${updatedCount} expenses to ${bulkCategoryTarget}!`, 'success');
     } catch (err: any) {
-      alert('Error during bulk update: ' + err.message);
+      showNotification('Error during bulk update: ' + err.message, 'error');
     }
   };
 
@@ -943,10 +1035,60 @@ function BudgetExpenseTracker({
         )}
 
         {/* Ledger Table */}
-        {loading ? (
-          <div className="flex flex-col items-center justify-center py-12 text-slate-400 space-y-2">
-            <div className="w-6 h-6 border-2 border-[#856637] border-t-transparent rounded-full animate-spin" />
-            <span className="text-xs uppercase tracking-wider font-semibold">Synchronizing Expense Log...</span>
+        {isCurrentlyLoading ? (
+          <div className="space-y-4 animate-pulse">
+            <div className="overflow-x-auto rounded-xl border border-slate-100">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+                    <th className="p-3.5 pl-4 w-10">
+                      <div className="w-4 h-4 bg-[#efe9dc]/70 rounded"></div>
+                    </th>
+                    <th className="p-3.5">Description</th>
+                    <th className="p-3.5">Category</th>
+                    <th className="p-3.5">Cost</th>
+                    <th className="p-3.5">Purchaser</th>
+                    <th className="p-3.5">Purchase Date</th>
+                    <th className="p-3.5 text-center">Receipt Status</th>
+                    <th className="p-3.5 text-right pr-4">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {Array.from({ length: 5 }).map((_, idx) => (
+                    <tr key={idx} className="hover:bg-slate-50/50">
+                      <td className="p-3.5 pl-4">
+                        <div className="w-4 h-4 bg-[#efe9dc]/50 rounded"></div>
+                      </td>
+                      <td className="p-3.5 max-w-xs space-y-1.5">
+                        <div className="h-3.5 bg-[#efe9dc]/70 rounded w-2/3"></div>
+                        <div className="h-2 bg-[#efe9dc]/50 rounded w-1/3"></div>
+                      </td>
+                      <td className="p-3.5">
+                        <div className="h-5 bg-[#efe9dc]/60 rounded-full w-16"></div>
+                      </td>
+                      <td className="p-3.5">
+                        <div className="h-4 bg-[#efe9dc]/70 rounded w-12"></div>
+                      </td>
+                      <td className="p-3.5 space-y-1">
+                        <div className="h-3 bg-[#efe9dc]/60 rounded w-20"></div>
+                      </td>
+                      <td className="p-3.5">
+                        <div className="h-3 bg-[#efe9dc]/50 rounded w-24"></div>
+                      </td>
+                      <td className="p-3.5 text-center">
+                        <div className="h-5 bg-[#efe9dc]/50 rounded-full w-28 mx-auto"></div>
+                      </td>
+                      <td className="p-3.5 text-right pr-4">
+                        <div className="flex items-center justify-end gap-1">
+                          <div className="w-6 h-6 bg-[#efe9dc]/50 rounded"></div>
+                          <div className="w-6 h-6 bg-[#efe9dc]/50 rounded"></div>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         ) : filteredExpenses.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-slate-400 border-2 border-dashed border-slate-100 rounded-2xl">

@@ -1,6 +1,7 @@
 import { apiFetch } from "./lib/api";
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { NotificationProvider, useNotification } from './context/NotificationContext';
 import { 
   LayoutDashboard, 
   Calendar, 
@@ -143,7 +144,8 @@ const recalculateSummary = (
   };
 };
 
-export default function App() {
+function MainApp() {
+  const { showNotification } = useNotification();
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [events, setEvents] = useState<MinistryEvent[]>([]);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
@@ -181,6 +183,19 @@ export default function App() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState<boolean>(false);
+
+  const pendingVolunteersRef = useRef<Map<string, { timeoutId: NodeJS.Timeout; volunteer: Volunteer }>>(new Map());
+  const pendingEventsRef = useRef<Map<string, { timeoutId: NodeJS.Timeout; event: MinistryEvent }>>(new Map());
+  const pendingDebriefsRef = useRef<Map<string, { timeoutId: NodeJS.Timeout; debrief: Debrief }>>(new Map());
+
+  // Clean up pending timeouts on unmount
+  useEffect(() => {
+    return () => {
+      pendingVolunteersRef.current.forEach(val => clearTimeout(val.timeoutId));
+      pendingEventsRef.current.forEach(val => clearTimeout(val.timeoutId));
+      pendingDebriefsRef.current.forEach(val => clearTimeout(val.timeoutId));
+    };
+  }, []);
 
   // Click outside listener for Settings dropdown
   useEffect(() => {
@@ -396,10 +411,12 @@ export default function App() {
       const newEvt = await res.json();
       setEvents(prev => [...prev, newEvt]);
       setSelectedEventId(newEvt.id);
+      showNotification(`Event "${name}" generated successfully!`, 'success');
     } catch (err) {
-      alert("Error generating event timeline");
+      const msg = err instanceof Error ? err.message : "Error generating event timeline";
+      showNotification(msg, 'error');
     }
-  }, []);
+  }, [showNotification]);
 
   const handleCloneEvent = useCallback(async (id: string, newDate: string) => {
     try {
@@ -413,23 +430,65 @@ export default function App() {
       setEvents(prev => [...prev, newEvt]);
       setSelectedEventId(newEvt.id);
       setSelectedYear(new Date(newDate).getFullYear());
+      showNotification(`Event cloned to ${newDate} successfully!`, 'success');
     } catch (err) {
-      alert("Error cloning event");
+      const msg = err instanceof Error ? err.message : "Error cloning event";
+      showNotification(msg, 'error');
     }
-  }, []);
+  }, [showNotification]);
 
-  const handleDeleteEvent = useCallback(async (id: string) => {
-    try {
-      const res = await apiFetch(`/api/events/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error();
-      if (selectedEventId === id) {
-        setSelectedEventId(null);
-      }
-      setEvents(prev => prev.filter(evt => evt.id !== id));
-    } catch (err) {
-      alert("Error removing event");
+  const handleDeleteEvent = useCallback((id: string) => {
+    const eventToDelete = events.find(evt => evt.id === id);
+    if (!eventToDelete) return;
+
+    // Remove from UI immediately (optimistic UI)
+    setEvents(prev => prev.filter(evt => evt.id !== id));
+    if (selectedEventId === id) {
+      setSelectedEventId(null);
     }
-  }, [selectedEventId]);
+
+    // Set timeout to delete after 5 seconds
+    const timeoutId = setTimeout(async () => {
+      try {
+        const res = await apiFetch(`/api/events/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error("Could not remove event");
+        pendingEventsRef.current.delete(id);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Error removing event";
+        showNotification(msg, 'error');
+        // Restore on server failure
+        setEvents(prev => {
+          if (prev.some(evt => evt.id === id)) return prev;
+          return [...prev, eventToDelete];
+        });
+      }
+    }, 5000);
+
+    // Cancel any existing pending delete for the same ID, just in case
+    const existing = pendingEventsRef.current.get(id);
+    if (existing) {
+      clearTimeout(existing.timeoutId);
+    }
+
+    pendingEventsRef.current.set(id, { timeoutId, event: eventToDelete });
+
+    showNotification(`Event "${eventToDelete.name}" removed.`, 'success', {
+      label: 'Undo',
+      onClick: () => {
+        const pending = pendingEventsRef.current.get(id);
+        if (pending) {
+          clearTimeout(pending.timeoutId);
+          setEvents(prev => {
+            if (prev.some(evt => evt.id === id)) return prev;
+            return [...prev, pending.event];
+          });
+          setSelectedEventId(id);
+          pendingEventsRef.current.delete(id);
+          showNotification(`Restored "${eventToDelete.name}"`, 'success');
+        }
+      }
+    });
+  }, [events, selectedEventId, showNotification]);
 
   const handleToggleTask = useCallback(async (eventId: string, taskId: string, completed: boolean) => {
     try {
@@ -562,13 +621,15 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedData)
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) throw new Error("Could not update volunteer profile");
       const updatedVol = await res.json();
       setVolunteers(prev => prev.map(vol => vol.id === id ? updatedVol : vol));
+      showNotification(`Volunteer "${updatedVol.name}" profile updated successfully!`, 'success');
     } catch (err) {
-      console.error(err);
+      const msg = err instanceof Error ? err.message : "Error updating volunteer profile";
+      showNotification(msg, 'error');
     }
-  }, []);
+  }, [showNotification]);
 
   const handleCreateVolunteer = useCallback(async (volunteerData: Omit<Volunteer, 'id'>) => {
     try {
@@ -577,23 +638,62 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(volunteerData)
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) throw new Error("Could not compile volunteer profile");
       const newVol = await res.json();
       setVolunteers(prev => [...prev, newVol]);
+      showNotification(`Volunteer "${newVol.name}" profile compiled successfully!`, 'success');
     } catch (err) {
-      alert("Error compiling volunteer profile");
+      const msg = err instanceof Error ? err.message : "Error compiling volunteer profile";
+      showNotification(msg, 'error');
     }
-  }, []);
+  }, [showNotification]);
 
-  const handleRemoveVolunteer = useCallback(async (id: string) => {
-    try {
-      const res = await apiFetch(`/api/volunteers/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error();
-      setVolunteers(prev => prev.filter(vol => vol.id !== id));
-    } catch (err) {
-      console.error(err);
+  const handleRemoveVolunteer = useCallback((id: string) => {
+    const volunteerToDelete = volunteers.find(vol => vol.id === id);
+    if (!volunteerToDelete) return;
+
+    // Optimistic remove
+    setVolunteers(prev => prev.filter(vol => vol.id !== id));
+
+    const timeoutId = setTimeout(async () => {
+      try {
+        const res = await apiFetch(`/api/volunteers/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error("Could not remove volunteer");
+        pendingVolunteersRef.current.delete(id);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Error removing volunteer";
+        showNotification(msg, 'error');
+        // Restore on server failure
+        setVolunteers(prev => {
+          if (prev.some(vol => vol.id === id)) return prev;
+          return [...prev, volunteerToDelete];
+        });
+      }
+    }, 5000);
+
+    const existing = pendingVolunteersRef.current.get(id);
+    if (existing) {
+      clearTimeout(existing.timeoutId);
     }
-  }, []);
+
+    pendingVolunteersRef.current.set(id, { timeoutId, volunteer: volunteerToDelete });
+
+    showNotification(`Volunteer "${volunteerToDelete.name}" removed.`, 'success', {
+      label: 'Undo',
+      onClick: () => {
+        const pending = pendingVolunteersRef.current.get(id);
+        if (pending) {
+          clearTimeout(pending.timeoutId);
+          setVolunteers(prev => {
+            if (prev.some(v => v.id === id)) return prev;
+            return [...prev, pending.volunteer];
+          });
+          pendingVolunteersRef.current.delete(id);
+          showNotification(`Restored "${volunteerToDelete.name}"`, 'success');
+        }
+      }
+    });
+  }, [volunteers, showNotification]);
 
   // --- Event Documents Check ---
   const handleUpdateEventDocs = useCallback(async (eventId: string, docs: EventDoc[]) => {
@@ -606,10 +706,12 @@ export default function App() {
       if (!res.ok) throw new Error("Could not update docs checklist");
       const updatedEvent = await res.json();
       setEvents(prev => prev.map(evt => evt.id === eventId ? updatedEvent : evt));
+      showNotification('Custom documents checklist updated.', 'success');
     } catch (err) {
-      console.error(err);
+      const msg = err instanceof Error ? err.message : "Error updating documents checklist";
+      showNotification(msg, 'error');
     }
-  }, []);
+  }, [showNotification]);
 
   // --- Debrief Actions ---
   const handleCreateDebrief = useCallback(async (data: Omit<Debrief, 'id'>) => {
@@ -622,10 +724,12 @@ export default function App() {
       if (!res.ok) throw new Error("Could not file debrief");
       const newDebrief = await res.json();
       setDebriefs(prev => [...prev, newDebrief]);
+      showNotification(`Debrief for "${newDebrief.name}" filed successfully!`, 'success');
     } catch (err) {
-      alert("Error filing debrief");
+      const msg = err instanceof Error ? err.message : "Error filing debrief";
+      showNotification(msg, 'error');
     }
-  }, []);
+  }, [showNotification]);
 
   const handleUpdateDebrief = useCallback(async (id: string, data: Partial<Debrief>) => {
     try {
@@ -637,20 +741,59 @@ export default function App() {
       if (!res.ok) throw new Error("Could not update debrief");
       const updatedDebrief = await res.json();
       setDebriefs(prev => prev.map(d => d.id === id ? updatedDebrief : d));
+      showNotification(`Debrief for "${updatedDebrief.name}" updated successfully!`, 'success');
     } catch (err) {
-      console.error(err);
+      const msg = err instanceof Error ? err.message : "Error updating debrief";
+      showNotification(msg, 'error');
     }
-  }, []);
+  }, [showNotification]);
 
-  const handleDeleteDebrief = useCallback(async (id: string) => {
-    try {
-      const res = await apiFetch(`/api/debriefs/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error();
-      setDebriefs(prev => prev.filter(d => d.id !== id));
-    } catch (err) {
-      console.error(err);
+  const handleDeleteDebrief = useCallback((id: string) => {
+    const debriefToDelete = debriefs.find(d => d.id === id);
+    if (!debriefToDelete) return;
+
+    // Optimistic remove
+    setDebriefs(prev => prev.filter(d => d.id !== id));
+
+    const timeoutId = setTimeout(async () => {
+      try {
+        const res = await apiFetch(`/api/debriefs/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error("Could not remove debrief");
+        pendingDebriefsRef.current.delete(id);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Error removing debrief";
+        showNotification(msg, 'error');
+        // Restore on server failure
+        setDebriefs(prev => {
+          if (prev.some(d => d.id === id)) return prev;
+          return [...prev, debriefToDelete];
+        });
+      }
+    }, 5000);
+
+    const existing = pendingDebriefsRef.current.get(id);
+    if (existing) {
+      clearTimeout(existing.timeoutId);
     }
-  }, []);
+
+    pendingDebriefsRef.current.set(id, { timeoutId, debrief: debriefToDelete });
+
+    showNotification(`Debrief for "${debriefToDelete.name}" removed.`, 'success', {
+      label: 'Undo',
+      onClick: () => {
+        const pending = pendingDebriefsRef.current.get(id);
+        if (pending) {
+          clearTimeout(pending.timeoutId);
+          setDebriefs(prev => {
+            if (prev.some(d => d.id === id)) return prev;
+            return [...prev, pending.debrief];
+          });
+          pendingDebriefsRef.current.delete(id);
+          showNotification(`Restored debrief for "${debriefToDelete.name}"`, 'success');
+        }
+      }
+    });
+  }, [debriefs, showNotification]);
 
   // --- Reset Database Action ---
   // Reusable Confirmation Dialog state
@@ -823,19 +966,6 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
-  // Render loading state
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-50 text-slate-900 font-sans flex flex-col items-center justify-center p-8">
-        <div className="text-center space-y-4">
-          <div className="w-10 h-10 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto" />
-          <h2 className="text-xl font-bold tracking-tight text-slate-800">Initializing MinistryOS Hub...</h2>
-          <p className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Loading Community Relations Roster & Database</p>
-        </div>
-      </div>
-    );
-  }
-
   // Layout-independent tabs configuration
   const tabsList = [
     { id: 'dashboard', label: 'Command Overview', icon: <LayoutDashboard size={14} /> },
@@ -870,6 +1000,7 @@ export default function App() {
             onAddTask={handleAddTask}
             onCreateVolunteer={handleCreateVolunteer}
             onUploadCompleted={triggerFreshSync}
+            loading={loading}
           />
         );
       case 'timeline':
@@ -919,6 +1050,7 @@ export default function App() {
           <BudgetExpenseTracker
             events={filteredEvents}
             onUploadCompleted={triggerFreshSync}
+            loading={loading}
           />
         );
       case 'volunteers':
@@ -931,6 +1063,7 @@ export default function App() {
             onUpdateVolunteer={handleUpdateVolunteer}
             onCreateVolunteer={handleCreateVolunteer}
             onRemoveVolunteer={handleRemoveVolunteer}
+            loading={loading}
           />
         );
       case 'debriefs':
@@ -940,6 +1073,7 @@ export default function App() {
             onCreateDebrief={handleCreateDebrief}
             onUpdateDebrief={handleUpdateDebrief}
             onDeleteDebrief={handleDeleteDebrief}
+            loading={loading}
           />
         );
       default:
@@ -1196,5 +1330,13 @@ export default function App() {
         onCancel={() => confirmState?.resolve(false)}
       />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <NotificationProvider>
+      <MainApp />
+    </NotificationProvider>
   );
 }

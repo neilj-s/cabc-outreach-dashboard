@@ -411,17 +411,7 @@ export default function ReverseTimeline({
                         type="button"
                         onClick={async (e) => {
                           e.stopPropagation();
-                          
-    let __isConfirmed = true;
-    try {
-      __isConfirmed = window.confirm(`Delete event "${evt.name}" and all generated tasks?`);
-    } catch (e) {
-      console.warn('window.confirm blocked by iframe sandbox, defaulting to true');
-    }
-    if (__isConfirmed) {
-    
-                            await onDeleteEvent(evt.id);
-                          }
+                          await onDeleteEvent(evt.id);
                         }}
                         className={`absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded transition cursor-pointer ${
                           selectedEvent?.id === evt.id 

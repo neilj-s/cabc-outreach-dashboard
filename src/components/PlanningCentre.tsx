@@ -1,6 +1,7 @@
 import { apiFetch } from "../lib/api";
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useNotification } from '../context/NotificationContext';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { 
   Lightbulb, Copy, 
@@ -85,7 +86,7 @@ function PlanningCentre({
   triggerFreshSync,
   onUpdateEvent
 }: PlanningCentreProps) {
-  
+  const { showNotification } = useNotification();
   
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -748,9 +749,6 @@ function PlanningCentre({
   const [convDocEventId, setConvDocEventId] = useState<string>('');
   
 
-  // Local feedback notifications
-  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-
   // Fetch initial ideas and scratchpad contents
   const fetchPlanningData = async () => {
     try {
@@ -788,11 +786,6 @@ function PlanningCentre({
       setConvTaskDueDate(events[0].date);
     }
   }, [events]);
-
-  const showNotification = (message: string, type: 'success' | 'error') => {
-    setNotification({ message, type });
-    setTimeout(() => setNotification(null), 4000);
-  };
 
   // Upvote Idea
   const handleUpvoteIdea = async (ideaId: string, currentVotes: number) => {
@@ -1379,24 +1372,6 @@ function PlanningCentre({
   return (
     <div className="space-y-6">
       
-      {/* Local Notification banner */}
-      <AnimatePresence>
-        {notification && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className={`p-3.5 rounded-xl text-xs font-semibold shadow-sm text-center ${
-              notification.type === 'success' 
-                ? 'bg-[#f5ebd6] border border-[#efe0c2] text-[#856637]' 
-                : 'bg-rose-50 border border-rose-200 text-rose-950'
-            }`}
-          >
-            {notification.message}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {/* Centralized Document Hub Workspace */}
       <div className="max-w-4xl mx-auto space-y-6">
 

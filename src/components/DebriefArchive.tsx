@@ -23,13 +23,15 @@ interface DebriefArchiveProps {
   onCreateDebrief: (data: Omit<Debrief, 'id'>) => Promise<void>;
   onUpdateDebrief: (id: string, data: Partial<Debrief>) => Promise<void>;
   onDeleteDebrief: (id: string) => Promise<void>;
+  loading?: boolean;
 }
 
 export default function DebriefArchive({
   debriefs,
   onCreateDebrief,
   onUpdateDebrief,
-  onDeleteDebrief
+  onDeleteDebrief,
+  loading = false
 }: DebriefArchiveProps) {
   const [showForm, setShowForm] = useState(false);
 
@@ -301,7 +303,51 @@ export default function DebriefArchive({
       )}
 
       {/* Debriefs Listing */}
-      {debriefs.length === 0 ? (
+      {loading ? (
+        <div className="space-y-4 animate-pulse">
+          {Array.from({ length: 3 }).map((_, idx) => (
+            <div key={idx} className="bg-[#fcfaf7] rounded-xl border border-[#e2dcd0] p-6 shadow-sm space-y-4">
+              <div className="flex justify-between items-start gap-4">
+                <div className="space-y-2 flex-1">
+                  <div className="h-4 bg-[#efe9dc]/70 rounded w-1/3"></div>
+                  <div className="h-3 bg-[#efe9dc]/50 rounded w-1/4"></div>
+                </div>
+                <div className="flex gap-1.5">
+                  <div className="w-7 h-7 bg-[#efe9dc]/50 rounded-lg"></div>
+                  <div className="w-7 h-7 bg-[#efe9dc]/50 rounded-lg"></div>
+                </div>
+              </div>
+
+              {/* Tabular Metrics Skeleton */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-[#faf8f4] rounded-xl border border-[#efe0c2]/60">
+                {Array.from({ length: 4 }).map((_, mIdx) => (
+                  <div key={mIdx} className="space-y-2">
+                    <div className="h-2.5 bg-[#efe9dc]/60 rounded w-1/2"></div>
+                    <div className="h-5 bg-[#efe9dc]/70 rounded w-1/3"></div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Written Feedbacks Skeleton */}
+              <div className="space-y-3.5 pt-1.5">
+                <div className="space-y-2">
+                  <div className="h-5 bg-[#efe9dc]/55 rounded-full w-24"></div>
+                  <div className="h-3 bg-[#efe9dc]/50 rounded w-3/4"></div>
+                </div>
+                <div className="space-y-2">
+                  <div className="h-5 bg-[#efe9dc]/55 rounded-full w-36"></div>
+                  <div className="h-3 bg-[#efe9dc]/50 rounded w-2/3"></div>
+                </div>
+              </div>
+
+              <div className="border-t border-[#efe0c2] pt-3 flex items-center justify-between">
+                <div className="h-3 bg-[#efe9dc]/50 rounded w-1/4"></div>
+                <div className="h-2.5 bg-[#efe9dc]/40 rounded w-1/6"></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : debriefs.length === 0 ? (
         <div className="bg-[#fcfaf7] rounded-xl border border-[#e2dcd0] py-16 text-center text-slate-400">
           <Activity size={48} className="mx-auto text-[#c2aa80] mb-3" />
           <h3 className="font-serif font-bold text-slate-700 text-sm">No debriefs filed yet</h3>
@@ -386,13 +432,7 @@ export default function DebriefArchive({
                   </button>
                   <button
                     onClick={async () => {
-                      const isConfirmed = await confirmAction(
-                        "Delete Debrief",
-                        `Are you sure you want to permanently delete the debrief for "${d.name}"?`
-                      );
-                      if (isConfirmed) {
-                        onDeleteDebrief(d.id);
-                      }
+                      onDeleteDebrief(d.id);
                     }}
                     className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
                     title="Delete Debrief"

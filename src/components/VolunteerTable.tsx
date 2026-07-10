@@ -116,6 +116,7 @@ interface VolunteerTableProps {
   onUpdateVolunteer: (id: string, updatedData: Partial<Volunteer>) => Promise<void>;
   onCreateVolunteer: (volunteerData: Omit<Volunteer, 'id'>) => Promise<void>;
   onRemoveVolunteer: (id: string) => Promise<void>;
+  loading?: boolean;
 }
 
 function VolunteerTable({
@@ -125,7 +126,8 @@ function VolunteerTable({
   onSelectEvent,
   onUpdateVolunteer,
   onCreateVolunteer,
-  onRemoveVolunteer
+  onRemoveVolunteer,
+  loading = false
 }: VolunteerTableProps) {
   // View mode state: roster mapping vs compact directory
   const [viewMode, setViewMode] = useState<'roster' | 'directory'>('roster');
@@ -1110,7 +1112,38 @@ function VolunteerTable({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs text-slate-700 bg-white">
-              {volunteers.length === 0 ? (
+              {loading ? (
+                Array.from({ length: 5 }).map((_, idx) => (
+                  <tr key={idx} className="animate-pulse">
+                    <td className="p-4 w-12 text-center">
+                      <div className="w-4 h-4 bg-[#efe9dc]/70 rounded mx-auto"></div>
+                    </td>
+                    <td className="p-4 space-y-2">
+                      <div className="h-3.5 bg-[#efe9dc]/70 rounded w-2/3"></div>
+                      <div className="h-2.5 bg-[#efe9dc]/50 rounded w-1/2"></div>
+                    </td>
+                    <td className="p-4">
+                      <div className="h-6 bg-[#efe9dc]/60 rounded-full w-24"></div>
+                    </td>
+                    <td className="p-4">
+                      <div className="h-6 bg-[#efe9dc]/60 rounded-full w-20"></div>
+                    </td>
+                    <td className="p-4 text-center">
+                      <div className="h-3.5 bg-[#efe9dc]/40 rounded w-8 mx-auto"></div>
+                    </td>
+                    <td className="p-4 space-y-1.5">
+                      <div className="h-3 bg-[#efe9dc]/60 rounded w-16"></div>
+                      <div className="h-2 bg-[#efe9dc]/40 rounded w-24"></div>
+                    </td>
+                    <td className="p-4 text-right">
+                      <div className="flex justify-end gap-1.5">
+                        <div className="w-7 h-7 bg-[#efe9dc]/50 rounded-lg"></div>
+                        <div className="w-7 h-7 bg-[#efe9dc]/50 rounded-lg"></div>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              ) : volunteers.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="text-center py-10 text-slate-400 font-sans italic">
                     No volunteers registered in this ministry yet.
@@ -1319,13 +1352,7 @@ function VolunteerTable({
 
                             <button
                               onClick={async () => {
-                                const isConfirmed = await confirmAction(
-                                  "Remove Volunteer",
-                                  `Remove volunteer "${vol.name}" from ministry registry?`
-                                );
-                                if (isConfirmed) {
-                                  await onRemoveVolunteer(vol.id);
-                                }
+                                await onRemoveVolunteer(vol.id);
                               }}
                               className="p-1 text-slate-300 hover:text-rose-600 rounded transition cursor-pointer"
                               title="Delete Volunteer"
@@ -1725,7 +1752,37 @@ function VolunteerTable({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#e2dcd0] text-xs text-slate-750 bg-white">
-                  {sortedDirectoryVolunteers.length === 0 ? (
+                  {loading ? (
+                    Array.from({ length: 5 }).map((_, idx) => (
+                      <tr key={idx} className="animate-pulse">
+                        <td className="py-3 px-3 w-12 text-center">
+                          <div className="w-5 h-4 bg-[#efe9dc]/70 rounded mx-auto"></div>
+                        </td>
+                        <td className="py-3 px-3 space-y-2">
+                          <div className="h-3.5 bg-[#efe9dc]/70 rounded w-2/3"></div>
+                          <div className="h-2.5 bg-[#efe9dc]/50 rounded w-1/2"></div>
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className="h-6 bg-[#efe9dc]/60 rounded-full w-24"></div>
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className="h-6 bg-[#efe9dc]/60 rounded-full w-20"></div>
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className="h-6 bg-[#efe9dc]/50 rounded-full w-24"></div>
+                        </td>
+                        <td className="py-3 px-3 space-y-1.5">
+                          <div className="h-3 bg-[#efe9dc]/60 rounded w-16"></div>
+                        </td>
+                        <td className="py-3 px-3 text-right">
+                          <div className="flex justify-end gap-1.5">
+                            <div className="w-7 h-7 bg-[#efe9dc]/50 rounded-lg"></div>
+                            <div className="w-7 h-7 bg-[#efe9dc]/50 rounded-lg"></div>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  ) : sortedDirectoryVolunteers.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="py-12 text-center text-slate-450 italic text-xs">
                         No volunteers match the selected filter criteria.
@@ -1877,15 +1934,9 @@ function VolunteerTable({
                                 </button>
                                 <button
                                   onClick={async () => {
-                                    const isConfirmed = await confirmAction(
-                                      "Remove Volunteer",
-                                      `Remove volunteer "${vol.name}" from ministry registry?`
-                                    );
-                                    if (isConfirmed) {
-                                      await onRemoveVolunteer(vol.id);
-                                      if (selectedVolId === vol.id) {
-                                        setSelectedVolId(null);
-                                      }
+                                    await onRemoveVolunteer(vol.id);
+                                    if (selectedVolId === vol.id) {
+                                      setSelectedVolId(null);
                                     }
                                   }}
                                   className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 hover:border-rose-100 transition border border-transparent cursor-pointer"
