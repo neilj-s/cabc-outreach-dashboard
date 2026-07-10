@@ -312,13 +312,8 @@ function PlanningCentre({
       setLoadingDrive(true);
       setErrorDrive(null);
       
-      const headers: Record<string, string> = {};
-      if (googleAccessToken) {
-        headers['Authorization'] = `Bearer ${googleAccessToken}`;
-      }
-      
       const query = subfolderId ? `?subfolderId=${subfolderId}` : '';
-      const response = await apiFetch(`/api/planning/drive-files${query}`, { headers });
+      const response = await apiFetch(`/api/planning/drive-files${query}`);
       
       if (response.ok) {
         const data = await response.json();
@@ -361,16 +356,11 @@ function PlanningCentre({
         cleanId = match[1];
       }
       
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json'
-      };
-      if (googleAccessToken) {
-        headers['Authorization'] = `Bearer ${googleAccessToken}`;
-      }
-      
       const res = await apiFetch('/api/planning/drive-folder', {
         method: 'PUT',
-        headers,
+        headers: {
+          'Content-Type': 'application/json'
+        },
         body: JSON.stringify({ folderId: cleanId })
       });
       
@@ -407,105 +397,136 @@ function PlanningCentre({
 
   // WebSocket Ref
   const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimeoutRef = useRef<any>(null);
+  const reconnectDelayRef = useRef<number>(1000);
 
   // Real-time WebSocket hook
   useEffect(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const socket = new WebSocket(`${protocol}//${window.location.host}`);
-    wsRef.current = socket;
+    let isUnmounted = false;
+    reconnectDelayRef.current = 1000;
 
-    socket.onopen = () => {
-      console.log('Connected to Planning Centre WS');
-      socket.send(JSON.stringify({
-        type: 'JOIN',
-        payload: {
-          userId,
-          name: userName,
-          color: userColor
+    const connect = () => {
+      if (isUnmounted) return;
+
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const socket = new WebSocket(`${protocol}//${window.location.host}`);
+      wsRef.current = socket;
+
+      socket.onopen = () => {
+        if (isUnmounted) {
+          socket.close();
+          return;
         }
-      }));
-    };
+        console.log('Connected to Planning Centre WS');
+        reconnectDelayRef.current = 1000; // Reset backoff delay on successful connection
+        socket.send(JSON.stringify({
+          type: 'JOIN',
+          payload: {
+            userId,
+            name: userName,
+            color: userColor
+          }
+        }));
+      };
 
-    socket.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        switch (msg.type) {
-          case 'INIT_STATE': {
-            setScratchpadText(msg.payload.scratchpad);
-            setCollabTable(msg.payload.collabTable);
-            setAttachedDocs(msg.payload.attachedDocs);
-            const otherUsers = msg.payload.users.filter((u: any) => u.id !== userId);
-            setConnectedUsers(otherUsers);
-            break;
+      socket.onmessage = (event) => {
+        if (isUnmounted) return;
+        try {
+          const msg = JSON.parse(event.data);
+          switch (msg.type) {
+            case 'INIT_STATE': {
+              setScratchpadText(msg.payload.scratchpad);
+              setCollabTable(msg.payload.collabTable);
+              setAttachedDocs(msg.payload.attachedDocs);
+              const otherUsers = msg.payload.users.filter((u: any) => u.id !== userId);
+              setConnectedUsers(otherUsers);
+              break;
+            }
+            case 'PRESENCE_CHANGE': {
+              const otherUsers = msg.payload.users.filter((u: any) => u.id !== userId);
+              setConnectedUsers(prev => {
+                const simUsers = prev.filter(u => u.id.startsWith('sim_'));
+                return [...otherUsers, ...simUsers];
+              });
+              break;
+            }
+            case 'CURSOR_MOVE': {
+              setConnectedUsers(prev => prev.map(u => {
+                if (u.id === msg.payload.userId) {
+                  return { ...u, cursor: msg.payload.cursor, cellFocus: msg.payload.cellFocus };
+                }
+                return u;
+              }));
+              break;
+            }
+            case 'TEXT_EDIT': {
+              setScratchpadText(msg.payload.text);
+              break;
+            }
+            case 'TABLE_EDIT': {
+              setCollabTable(msg.payload.collabTable);
+              break;
+            }
+            case 'ATTACH_DOCS_CHANGE': {
+              setAttachedDocs(msg.payload.attachedDocs);
+              break;
+            }
+            case 'WEBHOOK_NOTIFICATION': {
+              const { docName, status, details, timestamp } = msg.payload;
+              showNotification(`[Push Webhook] "${docName}" permission updated at ${timestamp}: ${details}`, status === 'ok' ? 'success' : 'error');
+              break;
+            }
+            case 'SIM_PRESENCE': {
+              const { user } = msg.payload;
+              setConnectedUsers(prev => {
+                const filtered = prev.filter(u => u.id !== user.id);
+                if (user.active) {
+                  return [...filtered, user];
+                }
+                return filtered;
+              });
+              break;
+            }
+            case 'SIM_CURSOR': {
+              const { id, cursor, cellFocus } = msg.payload;
+              setConnectedUsers(prev => prev.map(u => {
+                if (u.id === id) {
+                  return { ...u, cursor, cellFocus };
+                }
+                return u;
+              }));
+              break;
+            }
           }
-          case 'PRESENCE_CHANGE': {
-            const otherUsers = msg.payload.users.filter((u: any) => u.id !== userId);
-            setConnectedUsers(prev => {
-              const simUsers = prev.filter(u => u.id.startsWith('sim_'));
-              return [...otherUsers, ...simUsers];
-            });
-            break;
-          }
-          case 'CURSOR_MOVE': {
-            setConnectedUsers(prev => prev.map(u => {
-              if (u.id === msg.payload.userId) {
-                return { ...u, cursor: msg.payload.cursor, cellFocus: msg.payload.cellFocus };
-              }
-              return u;
-            }));
-            break;
-          }
-          case 'TEXT_EDIT': {
-            setScratchpadText(msg.payload.text);
-            break;
-          }
-          case 'TABLE_EDIT': {
-            setCollabTable(msg.payload.collabTable);
-            break;
-          }
-          case 'ATTACH_DOCS_CHANGE': {
-            setAttachedDocs(msg.payload.attachedDocs);
-            break;
-          }
-          case 'WEBHOOK_NOTIFICATION': {
-            const { docName, status, details, timestamp } = msg.payload;
-            showNotification(`[Push Webhook] "${docName}" permission updated at ${timestamp}: ${details}`, status === 'ok' ? 'success' : 'error');
-            break;
-          }
-          case 'SIM_PRESENCE': {
-            const { user } = msg.payload;
-            setConnectedUsers(prev => {
-              const filtered = prev.filter(u => u.id !== user.id);
-              if (user.active) {
-                return [...filtered, user];
-              }
-              return filtered;
-            });
-            break;
-          }
-          case 'SIM_CURSOR': {
-            const { id, cursor, cellFocus } = msg.payload;
-            setConnectedUsers(prev => prev.map(u => {
-              if (u.id === id) {
-                return { ...u, cursor, cellFocus };
-              }
-              return u;
-            }));
-            break;
-          }
+        } catch (err) {
+          console.error('Error parsing WS message:', err);
         }
-      } catch (err) {
-        console.error('Error parsing WS message:', err);
-      }
+      };
+
+      socket.onclose = () => {
+        if (isUnmounted) return;
+        console.log(`WS disconnected. Reconnecting in ${reconnectDelayRef.current}ms...`);
+        
+        reconnectTimeoutRef.current = setTimeout(() => {
+          reconnectDelayRef.current = Math.min(reconnectDelayRef.current * 2, 15000);
+          connect();
+        }, reconnectDelayRef.current);
+      };
     };
 
-    socket.onclose = () => {
-      console.log('WS disconnected. Reconnecting...');
-    };
+    connect();
 
     return () => {
-      if (socket.readyState === WebSocket.OPEN) {
-        socket.close();
+      isUnmounted = true;
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+      if (wsRef.current) {
+        if (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING) {
+          wsRef.current.close();
+        }
+        wsRef.current = null;
       }
     };
   }, [userId, userName, userColor]);
@@ -1190,16 +1211,11 @@ function PlanningCentre({
     showNotification(`Configuring real-time webhook push subscription for "${doc.name}"...`, 'success');
 
     try {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json'
-      };
-      if (googleAccessToken) {
-        headers['Authorization'] = `Bearer ${googleAccessToken}`;
-      }
-
       const res = await apiFetch(`/api/planning/attached-docs/${doc.id}/watch`, {
         method: 'POST',
-        headers
+        headers: {
+          'Content-Type': 'application/json'
+        }
       });
 
       if (res.ok) {

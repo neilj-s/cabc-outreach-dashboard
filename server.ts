@@ -216,31 +216,6 @@ async function startServer() {
     res.json({ success: true, message: 'Database reset to default template state.' });
   });
 
-  // --- API ROUTE: Database Restore ---
-  app.post('/api/restore', (req, res) => {
-    try {
-      const data = req.body;
-      if (!data || typeof data !== 'object') {
-        return res.status(400).json({ error: 'Invalid backup format: Must be a JSON object.' });
-      }
-
-      // Basic structure validation: make sure at least events and volunteers are arrays
-      if (!Array.isArray(data.events) || !Array.isArray(data.volunteers)) {
-        return res.status(400).json({ error: 'Invalid database shape: "events" and "volunteers" must be arrays.' });
-      }
-
-      // Normalize and save
-      const normalized = normalizeDb(data);
-      saveDb(normalized);
-
-      res.json({ success: true, message: 'Database restored successfully!' });
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      console.error('Error during database restore:', err);
-      res.status(500).json({ error: 'Internal server error restoring database', details: errMsg });
-    }
-  });
-
   // --- Serve Frontend ---
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

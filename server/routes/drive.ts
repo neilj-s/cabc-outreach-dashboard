@@ -120,7 +120,7 @@ router.get('/oauth/callback', async (req, res) => {
       decryptedExistingRefresh = decryptToken(db.googleOAuth.refreshToken);
     }
 
-    const finalRefreshToken = tokenData.refresh_token || decryptedExistingRefresh || 'mock_refresh_token_xyz_123_abc';
+    const finalRefreshToken = tokenData.refresh_token || decryptedExistingRefresh;
 
     const expiresIn = typeof tokenData.expires_in === 'number'
       ? tokenData.expires_in
@@ -128,7 +128,7 @@ router.get('/oauth/callback', async (req, res) => {
 
     db.googleOAuth = {
       accessToken: tokenData.access_token,
-      refreshToken: encryptToken(finalRefreshToken),
+      ...(finalRefreshToken ? { refreshToken: encryptToken(finalRefreshToken) } : {}),
       expiresAt: Date.now() + expiresIn * 1000
     };
 
@@ -141,28 +141,6 @@ router.get('/oauth/callback', async (req, res) => {
     console.error('[OAuth Callback] Error during token exchange:', err);
     res.status(500).send(`Internal Server Error: ${err.message}`);
   }
-});
-
-router.post('/store-token', requireAuth, (req, res) => {
-  const db = getDb();
-  const { accessToken, refreshToken, expiresIn } = req.body;
-  if (!accessToken) {
-    return res.status(400).json({ error: 'accessToken is required.' });
-  }
-
-  const expIn = typeof expiresIn === 'number'
-    ? expiresIn
-    : parseInt(expiresIn as any, 10) || 3600;
-
-  db.googleOAuth = {
-    accessToken,
-    refreshToken: encryptToken(refreshToken || db.googleOAuth?.refreshToken || 'mock_refresh_token_xyz_123_abc'),
-    expiresAt: Date.now() + expIn * 1000
-  };
-  saveDb(db);
-
-  console.log('[Token Lifecycle] Stored server-managed Google OAuth tokens securely.');
-  res.json({ success: true });
 });
 
 router.get('/audit/:fileId', requireAuth, async (req, res) => {

@@ -392,7 +392,7 @@ function MainApp() {
       }
       setLanes(remainingLanes);
     } catch (err: any) {
-      alert(err.message || "Error deleting lane");
+      showNotification(err.message || "Error deleting lane", 'error');
       console.error("Error deleting lane", err);
     } finally {
       setLaneLoading(false);
@@ -547,9 +547,9 @@ function MainApp() {
       setEvents(prev => prev.map(evt => evt.id === id ? updatedEvent : evt));
     } catch (err) {
       console.error(err);
-      alert("Error updating event details");
+      showNotification("Error updating event details", 'error');
     }
-  }, []);
+  }, [showNotification]);
 
   const handleUpdateTaskDueDate = useCallback(async (eventId: string, taskId: string, dueDate: string) => {
     try {
@@ -563,9 +563,9 @@ function MainApp() {
       setEvents(prev => prev.map(evt => evt.id === eventId ? updatedEvent : evt));
     } catch (err) {
       console.error(err);
-      alert("Error updating task due date");
+      showNotification("Error updating task due date", 'error');
     }
-  }, []);
+  }, [showNotification]);
 
   const handleUpdateTask = useCallback(async (eventId: string, taskId: string, updates: Partial<Task>) => {
     try {
@@ -592,9 +592,9 @@ function MainApp() {
       setEvents(prev => prev.map(evt => evt.id === eventId ? updatedEvent : evt));
     } catch (err) {
       console.error(err);
-      alert("Error deleting task");
+      showNotification("Error deleting task", 'error');
     }
-  }, []);
+  }, [showNotification]);
 
   const handleAddTask = useCallback(async (eventId: string, taskData: { title: string; description: string; milestoneKey: MilestoneKey; lane: MinistryLane; dueDate: string; assignedTo?: string }) => {
     try {
@@ -607,9 +607,9 @@ function MainApp() {
       const updatedEvent = await res.json();
       setEvents(prev => prev.map(evt => evt.id === eventId ? updatedEvent : evt));
     } catch (err) {
-      alert("Error injecting custom task into timeline");
+      showNotification("Error injecting custom task into timeline", 'error');
     }
-  }, []);
+  }, [showNotification]);
 
 
 
@@ -860,14 +860,14 @@ function MainApp() {
       URL.revokeObjectURL(url);
     } catch (err) {
       console.error('Error exporting data:', err);
-      alert('Failed to export database. Please try again.');
+      showNotification('Failed to export database. Please try again.', 'error');
     }
   };
 
   // --- Export Volunteers to CSV ---
   const handleExportVolunteersCSV = () => {
     if (!volunteers || volunteers.length === 0) {
-      alert('No volunteers available to export.');
+      showNotification('No volunteers available to export.', 'error');
       return;
     }
 
@@ -919,7 +919,7 @@ function MainApp() {
       try {
         parsedData = JSON.parse(text);
       } catch (err) {
-        alert("Invalid file format. The file is not a valid JSON document.");
+        showNotification("Invalid file format. The file is not a valid JSON document.", 'error');
         return;
       }
 
@@ -937,10 +937,10 @@ function MainApp() {
       }
 
       await fetchAllData();
-      alert("Database successfully restored from backup!");
+      showNotification("Database successfully restored from backup!", 'success');
     } catch (err) {
       console.error('Error restoring database:', err);
-      alert(err instanceof Error ? err.message : "Failed to restore database from backup.");
+      showNotification(err instanceof Error ? err.message : "Failed to restore database from backup.", 'error');
     }
   };
 
@@ -954,9 +954,9 @@ function MainApp() {
         const res = await apiFetch('/api/reset', { method: 'POST' });
         if (!res.ok) throw new Error();
         await fetchAllData();
-        alert("Database successfully reset!");
+        showNotification("Database successfully reset!", 'success');
       } catch (err) {
-        alert("Error resetting database");
+        showNotification("Error resetting database", 'error');
       }
     }
   };

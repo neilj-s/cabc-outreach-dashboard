@@ -44,7 +44,7 @@ export interface DatabaseShape {
   driveFolderName: string;
   googleOAuth?: {
     accessToken: string;
-    refreshToken: string;
+    refreshToken?: string;
     expiresAt: number;
   };
   driveWatchChannels?: Record<string, string>;
