@@ -80,7 +80,7 @@ async function startServer() {
       // Log activity
       logActivity(
         restoredData,
-        'SYSTEM',
+        'event_updated',
         'Database Restored',
         'The database was successfully restored from a JSON backup file.'
       );

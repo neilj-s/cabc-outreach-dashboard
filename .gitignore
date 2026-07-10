@@ -6,3 +6,15 @@ coverage/
 *.log
 .env*
 !.env.example
+event_data.csv
+db_storage.json
+fix_*.cjs
+fix_*.js
+patch_*.cjs
+patch_*.js
+clean_*.cjs
+rewrite_*.cjs
+test_*.cjs
+test_*.js
+brace_count.cjs
+import_event.cjs
