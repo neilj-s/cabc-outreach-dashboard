@@ -165,6 +165,51 @@ router.post('/store-token', requireAuth, (req, res) => {
   res.json({ success: true });
 });
 
+router.get('/audit/:fileId', requireAuth, async (req, res) => {
+  const { fileId } = req.params;
+  if (!fileId) {
+    return res.status(400).json({ error: 'fileId is required.' });
+  }
+
+  try {
+    const token = await getOrRefreshDriveToken();
+    const driveRes = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}?fields=permissions(id,type,role,allowFileDiscovery)`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    if (driveRes.status === 401) {
+      return res.status(401).json({ error: 'Authentication failed. Please reconnect Google Drive.' });
+    }
+
+    if (driveRes.status === 403 || driveRes.status === 404) {
+      return res.json({ permissions: [], restricted: true });
+    }
+
+    if (!driveRes.ok) {
+      const errText = await driveRes.text();
+      console.error(`[Audit API] Google Drive request failed with status ${driveRes.status}:`, errText);
+      return res.status(driveRes.status).json({ error: `Google API Error: ${errText}` });
+    }
+
+    const data = await driveRes.json() as { permissions?: any[] };
+    res.json({ permissions: data.permissions || [], restricted: false });
+
+  } catch (err: any) {
+    console.error('[Audit API] Error checking permissions:', err);
+    const isAuthErr = err.message && (
+      err.message.includes('session') ||
+      err.message.includes('unconfigured') ||
+      err.message.includes('credentials') ||
+      err.message.includes('token')
+    );
+    if (isAuthErr) {
+      return res.status(401).json({ error: 'Please reconnect Google Drive.' });
+    }
+    res.status(500).json({ error: err.message || 'Failed to check document permissions.' });
+  }
+});
+
 router.post('/webhook', async (req, res) => {
   const channelId = req.headers['x-goog-channel-id'] as string || req.body.channelId;
   const resourceId = req.headers['x-goog-resource-id'] as string || req.body.resourceId;

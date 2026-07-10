@@ -525,44 +525,6 @@ function PlanningCentre({
     return () => unsubscribe();
   }, []);
 
-  const handleGoogleLogin = async () => {
-    try {
-      setLoadingDrive(true);
-      const result = await signInWithPopup(auth, googleProvider);
-      const credential = GoogleAuthProvider.credentialFromResult(result);
-      if (credential) {
-        const token = credential.accessToken;
-        if (token) {
-          setGoogleAccessToken(token);
-          if (result.user.displayName) setUserName(result.user.displayName);
-          // Store token in backend DB so server can refresh it in the background
-          try {
-            await apiFetch('/api/drive/store-token', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                accessToken: token,
-                refreshToken: 'mock_refresh_token_xyz_123_abc', // In standard client auth we can persist a high-fidelity session
-                expiresIn: 3600
-              })
-            });
-            console.log('Successfully registered server-managed OAuth lifecycle session.');
-          } catch (e) {
-            console.warn('Failed to register server-managed OAuth lifecycle session:', e);
-          }
-          await fetchDriveFiles(token);
-        }
-      }
-      setFirebaseUser(result.user);
-      showNotification('Google Drive connected successfully!', 'success');
-    } catch (error: any) {
-      console.error('Error signing in with Google:', error);
-      showNotification(`Failed to connect Google Drive: ${error.message}`, 'error');
-    } finally {
-      setLoadingDrive(false);
-    }
-  };
-
   const handleConnectDrive = async () => {
     try {
       setLoadingDrive(true);
@@ -576,30 +538,6 @@ function PlanningCentre({
     } catch (err: any) {
       console.error('Error starting Google Drive OAuth flow:', err);
       showNotification(`Failed to start Google Drive OAuth flow: ${err.message}`, 'error');
-      setLoadingDrive(false);
-    }
-  };
-
-  const fetchDriveFiles = async (token: string) => {
-    try {
-      setLoadingDrive(true);
-      const response = await fetch(
-        `https://www.googleapis.com/drive/v3/files?pageSize=20&fields=files(id,name,mimeType,webViewLink)&q=mimeType%3D'application%2Fvnd.google-apps.document'+or+mimeType%3D'application%2Fvnd.google-apps.spreadsheet'+or+mimeType%3D'application%2Fvnd.google-apps.presentation'+or+mimeType%3D'application%2Fpdf'`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        }
-      );
-      if (response.ok) {
-        const data = await response.json();
-        setDriveFiles(data.files || []);
-      } else {
-        console.error('Failed to fetch from Drive API', response.statusText);
-      }
-    } catch (err) {
-      console.error('Error listing Drive files:', err);
-    } finally {
       setLoadingDrive(false);
     }
   };
@@ -1172,15 +1110,8 @@ function PlanningCentre({
     showNotification(`Auditing access permissions for "${doc.name}"...`, 'success');
 
     try {
-      // Fetch permissions from the Google Drive API
-      const res = await fetch(
-        `https://www.googleapis.com/drive/v3/files/${fileId}?fields=permissions(id,type,role,allowFileDiscovery)`,
-        {
-          headers: {
-            Authorization: `Bearer ${googleAccessToken}`
-          }
-        }
-      );
+      // Fetch permissions from the server-side Google Drive API proxy
+      const res = await apiFetch(`/api/drive/audit/${fileId}`);
 
       let auditStatus: 'ok' | 'warning' | 'restricted' = 'restricted';
       let auditDetails = '';
@@ -1191,31 +1122,36 @@ function PlanningCentre({
         const data = await res.json();
         const permissions = data.permissions || [];
         
-        // Find if anyone with the link can access (type === 'anyone')
-        const anyonePermission = permissions.find((p: any) => p.type === 'anyone');
-        
-        if (anyonePermission) {
-          auditSharedWithLink = true;
-          if (anyonePermission.role === 'writer' || anyonePermission.role === 'organizer' || anyonePermission.role === 'fileOrganizer') {
-            auditStatus = 'ok';
-            auditAnyoneCanEdit = true;
-            auditDetails = 'Anyone with the link can EDIT. Perfect setup for collaborative meeting planning!';
-          } else {
-            auditStatus = 'warning';
-            auditDetails = 'Anyone with the link can VIEW but NOT edit. Change access level to Editor for meeting participation.';
-          }
-        } else {
+        if (data.restricted || permissions.length === 0) {
           auditStatus = 'restricted';
-          auditDetails = 'Access is RESTRICTED to specific users. This will block general team members from collaborating.';
+          auditDetails = data.restricted 
+            ? 'Drive API returned restricted access (403/404). Only the owner has access to check permissions.'
+            : 'No permissions found. This file appears to be restricted or private.';
+        } else {
+          // Find if anyone with the link can access (type === 'anyone')
+          const anyonePermission = permissions.find((p: any) => p.type === 'anyone');
+          
+          if (anyonePermission) {
+            auditSharedWithLink = true;
+            if (anyonePermission.role === 'writer' || anyonePermission.role === 'organizer' || anyonePermission.role === 'fileOrganizer') {
+              auditStatus = 'ok';
+              auditAnyoneCanEdit = true;
+              auditDetails = 'Anyone with the link can EDIT. Perfect setup for collaborative meeting planning!';
+            } else {
+              auditStatus = 'warning';
+              auditDetails = 'Anyone with the link can VIEW but NOT edit. Change access level to Editor for meeting participation.';
+            }
+          } else {
+            auditStatus = 'restricted';
+            auditDetails = 'Access is RESTRICTED to specific users. This will block general team members from collaborating.';
+          }
         }
       } else {
-        // If 403 or 404, it is highly likely that access is restricted to the owner
-        if (res.status === 403 || res.status === 404) {
-          auditStatus = 'restricted';
-          auditDetails = 'Drive API returned restricted access (403/404). Only the owner has access to check permissions.';
+        if (res.status === 401) {
+          throw new Error('Authentication expired or missing on the server. Please reconnect Google Drive.');
         } else {
-          const errText = await res.text();
-          throw new Error(errText || 'Drive API access failed');
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'Server permission audit query failed');
         }
       }
 
@@ -2054,7 +1990,7 @@ function PlanningCentre({
                   </div>
                   {!firebaseUser && (
                     <button
-                      onClick={handleGoogleLogin}
+                      onClick={handleConnectDrive}
                       className="mx-auto flex items-center gap-1.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-bold px-3 py-1.5 rounded-lg text-xs shadow-xs transition cursor-pointer"
                     >
                       <LogIn size={12} className="text-slate-500" />
@@ -2077,7 +2013,7 @@ function PlanningCentre({
                     </p>
                   </div>
                   <button
-                    onClick={handleGoogleLogin}
+                    onClick={handleConnectDrive}
                     className="flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-bold px-4 py-2 rounded-lg text-xs shadow-sm transition cursor-pointer"
                   >
                     <svg className="w-4 h-4" viewBox="0 0 48 48">

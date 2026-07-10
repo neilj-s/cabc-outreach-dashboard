@@ -970,7 +970,7 @@ function MainApp() {
   const tabsList = [
     { id: 'dashboard', label: 'Command Overview', icon: <LayoutDashboard size={14} /> },
     { id: 'timeline', label: 'Reverse-Timeline', icon: <Calendar size={14} /> },
-    { id: 'planning', label: 'Universal Document Hub', icon: <Lightbulb size={14} /> },
+    { id: 'planning', label: 'Planning Centre', icon: <Lightbulb size={14} /> },
     { id: 'logistics', label: 'Logistics Manager', icon: <Package size={14} /> },
     { id: 'budget', label: 'Budget Ledger', icon: <Coins size={14} /> },
     { id: 'volunteers', label: 'Volunteer Registry', icon: <Users size={14} /> },
