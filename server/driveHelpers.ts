@@ -52,52 +52,44 @@ export async function getOrRefreshDriveToken(): Promise<string> {
   // If expiring in next 2 minutes or already expired, refresh it
   if (db.googleOAuth.expiresAt && now >= db.googleOAuth.expiresAt - 120 * 1000) {
     console.log('[Token Lifecycle] Refreshing expired or near-expired server-managed Google Access Token...');
-    try {
-      const encryptedRefresh = db.googleOAuth.refreshToken;
-      const decryptedRefresh = decryptToken(encryptedRefresh);
+    const encryptedRefresh = db.googleOAuth.refreshToken;
+    const decryptedRefresh = encryptedRefresh ? decryptToken(encryptedRefresh) : null;
 
-      if (decryptedRefresh && decryptedRefresh !== 'mock_refresh_token_xyz_123_abc') {
-        const params = new URLSearchParams({
-          client_id: process.env.GOOGLE_CLIENT_ID || 'mock_client_id_placeholder',
-          client_secret: process.env.GOOGLE_CLIENT_SECRET || 'mock_client_secret_placeholder',
-          refresh_token: decryptedRefresh,
-          grant_type: 'refresh_token'
-        });
-
-        const response = await fetch('https://oauth2.googleapis.com/token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: params.toString()
-        });
-
-        if (response.ok) {
-          const data = (await response.json()) as {
-            access_token: string;
-            refresh_token?: string;
-            expires_in?: number;
-          };
-          db.googleOAuth.accessToken = data.access_token;
-          if (data.refresh_token) {
-            db.googleOAuth.refreshToken = encryptToken(data.refresh_token);
-          }
-          db.googleOAuth.expiresAt = Date.now() + (data.expires_in || 3600) * 1000;
-          saveDb(db);
-          console.log('[Token Lifecycle] Server-managed token successfully refreshed via Google Auth API.');
-          return db.googleOAuth.accessToken;
-        } else {
-          const errText = await response.text();
-          console.warn('[Token Lifecycle] Google token refresh failed. Serving high-fidelity simulated refresh token.', errText);
-        }
-      }
-    } catch (err) {
-      console.error('[Token Lifecycle] Refresh error, invoking mock fallback:', err);
+    if (!decryptedRefresh || decryptedRefresh === 'mock_refresh_token_xyz_123_abc') {
+      throw new Error('No valid refresh token stored. Please reconnect Drive.');
     }
 
-    // Simulate a successful token refresh if offline or unconfigured
-    db.googleOAuth.accessToken = 'simulated_refreshed_token_' + Math.random().toString(36).substring(2, 8);
-    db.googleOAuth.expiresAt = Date.now() + 3600 * 1000; // 1 hour
+    const params = new URLSearchParams({
+      client_id: process.env.GOOGLE_CLIENT_ID || 'mock_client_id_placeholder',
+      client_secret: process.env.GOOGLE_CLIENT_SECRET || 'mock_client_secret_placeholder',
+      refresh_token: decryptedRefresh,
+      grant_type: 'refresh_token'
+    });
+
+    const response = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString()
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Google token refresh failed: ${errText}`);
+    }
+
+    const data = (await response.json()) as {
+      access_token: string;
+      refresh_token?: string;
+      expires_in?: number;
+    };
+    db.googleOAuth.accessToken = data.access_token;
+    if (data.refresh_token) {
+      db.googleOAuth.refreshToken = encryptToken(data.refresh_token);
+    }
+    db.googleOAuth.expiresAt = Date.now() + (data.expires_in || 3600) * 1000;
     saveDb(db);
-    console.log('[Token Lifecycle] Simulated token refresh complete.');
+    console.log('[Token Lifecycle] Server-managed token successfully refreshed via Google Auth API.');
+    return db.googleOAuth.accessToken;
   }
 
   return db.googleOAuth.accessToken;

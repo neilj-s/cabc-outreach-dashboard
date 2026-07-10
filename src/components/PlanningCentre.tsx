@@ -1,6 +1,7 @@
 import { apiFetch } from "../lib/api";
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useFocusTrap } from '../lib/useFocusTrap';
 import { 
   Lightbulb, Copy, 
   Save, 
@@ -49,6 +50,7 @@ import {
   Unlock
 } from 'lucide-react';
 import { MinistryEvent, LaneDetail, MilestoneKey, MinistryLane, EventDoc, Idea, AttachedDoc, CollabTable } from '../types';
+import ConfirmDialog from './ConfirmDialog';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
@@ -58,8 +60,7 @@ import * as XLSX from 'xlsx';
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
-googleProvider.addScope('https://www.googleapis.com/auth/drive.metadata.readonly');
-googleProvider.addScope('https://www.googleapis.com/auth/drive.readonly');
+googleProvider.addScope('https://www.googleapis.com/auth/drive');
 
 interface PlanningCentreProps {
   events: MinistryEvent[];
@@ -72,7 +73,7 @@ interface PlanningCentreProps {
   onUpdateEvent?: (eventId: string, data: Partial<MinistryEvent>) => Promise<void>;
 }
 
-export default function PlanningCentre({
+function PlanningCentre({
 
   
   events,
@@ -87,6 +88,28 @@ export default function PlanningCentre({
   
   
   const [loading, setLoading] = useState<boolean>(true);
+
+  // Reusable Confirmation Dialog state
+  const [confirmState, setConfirmState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    resolve: (val: boolean) => void;
+  } | null>(null);
+
+  const confirmAction = (title: string, message: string): Promise<boolean> => {
+    return new Promise((resolve) => {
+      setConfirmState({
+        isOpen: true,
+        title,
+        message,
+        resolve: (val) => {
+          setConfirmState(null);
+          resolve(val);
+        }
+      });
+    });
+  };
   
   
 
@@ -154,6 +177,7 @@ export default function PlanningCentre({
   // Google Drive Integration states
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [googleAccessToken, setGoogleAccessToken] = useState<string | null>(null);
+  const [driveStatus, setDriveStatus] = useState<{ connected: boolean; expired: boolean; folderName: string | null } | null>(null);
   const [driveFiles, setDriveFiles] = useState<any[]>([]);
   const [loadingDrive, setLoadingDrive] = useState<boolean>(false);
   const [driveSearch, setDriveSearch] = useState<string>('');
@@ -178,6 +202,15 @@ export default function PlanningCentre({
   const [expandedHistoryDocId, setExpandedHistoryDocId] = useState<string | null>(null);
   const [registeringWatchId, setRegisteringWatchId] = useState<string | null>(null);
   const [triggeringWebhookId, setTriggeringWebhookId] = useState<string | null>(null);
+
+  const sharingAuditorModalRef = useFocusTrap(isAuditModalOpen && !!activeAuditDoc, () => {
+    setIsAuditModalOpen(false);
+    setActiveAuditDoc(null);
+  });
+  const cloneEventModalRef = useFocusTrap(!!cloneEventTargetId, () => {
+    setCloneEventTargetId(null);
+    setCloneEventNewDate('');
+  });
 
   // Drag and Drop File Portal States
   const [isUploading, setIsUploading] = useState<boolean>(false);
@@ -242,6 +275,22 @@ export default function PlanningCentre({
     reader.readAsDataURL(file);
   };
 
+  // Fetch Drive connection status
+  const fetchDriveStatus = async () => {
+    try {
+      const res = await apiFetch('/api/drive/status');
+      if (res.ok) {
+        const data = await res.json();
+        setDriveStatus(data);
+      } else {
+        setDriveStatus({ connected: false, expired: false, folderName: null });
+      }
+    } catch (err) {
+      console.error('Failed to fetch Drive status:', err);
+      setDriveStatus({ connected: false, expired: false, folderName: null });
+    }
+  };
+
   // Fetch Drive folder settings from server
   const fetchFolderSettings = async () => {
     try {
@@ -274,6 +323,15 @@ export default function PlanningCentre({
         const data = await response.json();
         setDriveFiles(data.files || []);
         setIsSimulation(!!data.isSimulation);
+        if (!data.isSimulation) {
+          if (googleAccessToken !== 'server_managed') {
+            setGoogleAccessToken('server_managed');
+          }
+        } else {
+          if (googleAccessToken === 'server_managed') {
+            setGoogleAccessToken(null);
+          }
+        }
         if (data.folderId) {
           setActiveFolderId(data.folderId);
         }
@@ -326,6 +384,7 @@ export default function PlanningCentre({
         setFolderHistory([]);
         setActiveFolderId(data.folderId);
         fetchDriveFilesFromBackend(data.folderId);
+        fetchDriveStatus();
       } else {
         const err = await res.json();
         showNotification(`Failed to save folder settings: ${err.error}`, 'error');
@@ -337,10 +396,12 @@ export default function PlanningCentre({
 
   useEffect(() => {
     fetchFolderSettings();
+    fetchDriveStatus();
   }, []);
 
   useEffect(() => {
     fetchDriveFilesFromBackend(activeFolderId || undefined);
+    fetchDriveStatus();
   }, [googleAccessToken]);
 
   // WebSocket Ref
@@ -501,6 +562,23 @@ export default function PlanningCentre({
     }
   };
 
+  const handleConnectDrive = async () => {
+    try {
+      setLoadingDrive(true);
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) {
+        showNotification('Please sign in to the app first.', 'error');
+        setLoadingDrive(false);
+        return;
+      }
+      window.location.href = `/api/drive/oauth/start?token=${encodeURIComponent(idToken)}`;
+    } catch (err: any) {
+      console.error('Error starting Google Drive OAuth flow:', err);
+      showNotification(`Failed to start Google Drive OAuth flow: ${err.message}`, 'error');
+      setLoadingDrive(false);
+    }
+  };
+
   const fetchDriveFiles = async (token: string) => {
     try {
       setLoadingDrive(true);
@@ -526,10 +604,16 @@ export default function PlanningCentre({
   };
 
   const handleDisconnectDrive = async () => {
+    try {
+      await apiFetch('/api/drive/disconnect', { method: 'POST' });
+    } catch (err) {
+      console.warn('Failed to disconnect Drive on server:', err);
+    }
     await auth.signOut();
     setFirebaseUser(null);
     setGoogleAccessToken(null);
     setDriveFiles([]);
+    setDriveStatus({ connected: false, expired: false, folderName: null });
     showNotification('Google account disconnected.', 'success');
   };
 
@@ -731,14 +815,11 @@ export default function PlanningCentre({
   
   // Delete Idea
   const handleDeleteIdea = async (ideaId: string) => {
-    
-    let __isConfirmed = true;
-    try {
-      __isConfirmed = window.confirm("Are you sure you want to discard this brainstorm?");
-    } catch (e) {
-      console.warn('window.confirm blocked by iframe sandbox, defaulting to true');
-    }
-    if (!__isConfirmed) return;
+    const isConfirmed = await confirmAction(
+      "Discard Brainstorm",
+      "Are you sure you want to discard this brainstorm?"
+    );
+    if (!isConfirmed) return;
     
     try {
       const res = await apiFetch(`/api/planning/ideas/${ideaId}`, { method: 'DELETE' });
@@ -1886,6 +1967,48 @@ export default function PlanningCentre({
               </div>
 
               <div className="flex items-center gap-1.5 shrink-0">
+                {/* Connection Status Badge */}
+                <div className="flex items-center gap-1.5 shrink-0 mr-1">
+                  {(!driveStatus || (!driveStatus.connected)) ? (
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-slate-500 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-full shrink-0">
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                        <span className="hidden sm:inline">Drive not connected</span>
+                      </span>
+                      <button
+                        onClick={handleConnectDrive}
+                        className="shrink-0 bg-[#856637] hover:bg-[#72572e] text-white font-bold text-[10px] px-2.5 py-1 rounded-lg transition shadow-xs cursor-pointer flex items-center gap-1 shrink-0"
+                      >
+                        <LogIn size={11} /> Connect Drive
+                      </button>
+                    </div>
+                  ) : driveStatus.connected && driveStatus.expired ? (
+                    <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-amber-850 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full shrink-0">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                      <span>Needs reconnect</span>
+                      <button
+                        onClick={handleConnectDrive}
+                        className="text-[#856637] hover:text-[#72572e] font-bold underline cursor-pointer shrink-0"
+                      >
+                        Reconnect
+                      </button>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full shrink-0">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                      <span className="truncate max-w-[130px] sm:max-w-[200px]" title={`Drive connected${driveStatus.folderName ? ` (${driveStatus.folderName})` : ''}`}>
+                        Drive connected{driveStatus.folderName ? ` (${driveStatus.folderName})` : ''}
+                      </span>
+                      <button
+                        onClick={handleDisconnectDrive}
+                        className="text-emerald-600 hover:text-emerald-800 font-bold underline cursor-pointer shrink-0"
+                      >
+                        Disconnect
+                      </button>
+                    </span>
+                  )}
+                </div>
+
                 <button
                   onClick={() => setIsEditingFolder(!isEditingFolder)}
                   className={`p-1.5 rounded-lg border transition cursor-pointer ${
@@ -2012,7 +2135,7 @@ export default function PlanningCentre({
                       </div>
                       {!googleAccessToken && (
                         <button
-                          onClick={handleGoogleLogin}
+                          onClick={handleConnectDrive}
                           className="shrink-0 bg-[#856637] hover:bg-[#72572e] text-white font-bold text-[10px] px-3 py-1.5 rounded-lg transition shadow-xs cursor-pointer flex items-center gap-1"
                         >
                           <LogIn size={11} /> Connect Drive
@@ -2062,7 +2185,7 @@ export default function PlanningCentre({
                       className={`p-1 rounded flex items-center justify-center transition ${folderHistory.length === 0 ? 'text-slate-300 cursor-not-allowed' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700 cursor-pointer'}`}
                       title="Go back to parent folder"
                     >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
                     </button>
                     <div className="w-px h-3 bg-slate-200 mx-1"></div>
 
@@ -2320,6 +2443,10 @@ export default function PlanningCentre({
         {isAuditModalOpen && activeAuditDoc && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
             <motion.div
+              ref={sharingAuditorModalRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="sharing-auditor-title"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
@@ -2327,17 +2454,18 @@ export default function PlanningCentre({
             >
               <div className="p-5 border-b border-[#e2dcd0]/50 flex justify-between items-center bg-[#faf8f4]">
                 <div className="flex items-center gap-2">
-                  <Shield className="text-[#856637]" size={18} />
-                  <h3 className="font-serif font-black text-slate-800 text-sm">Google Sharing Auditor</h3>
+                  <Shield className="text-[#856637]" size={18} aria-hidden="true" />
+                  <h3 id="sharing-auditor-title" className="font-serif font-black text-slate-800 text-sm">Google Sharing Auditor</h3>
                 </div>
                 <button
                   onClick={() => {
                     setIsAuditModalOpen(false);
                     setActiveAuditDoc(null);
                   }}
+                  aria-label="Close sharing auditor modal"
                   className="p-1 rounded bg-white border border-slate-200 text-slate-400 hover:text-slate-600 cursor-pointer"
                 >
-                  <X size={14} />
+                  <X size={14} aria-hidden="true" />
                 </button>
               </div>
 
@@ -2425,6 +2553,10 @@ export default function PlanningCentre({
         {cloneEventTargetId && (
           <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <motion.div 
+              ref={cloneEventModalRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="clone-event-title"
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -2432,14 +2564,15 @@ export default function PlanningCentre({
             >
               <div className="bg-[#faf8f4] border-b border-[#efe0c2] px-5 py-4 flex justify-between items-center">
                 <div>
-                  <h3 className="font-serif font-bold text-slate-800 text-lg">Clone Event to New Year</h3>
+                  <h3 id="clone-event-title" className="font-serif font-bold text-slate-800 text-lg">Clone Event to New Year</h3>
                   <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-0.5 font-bold">Rollover Setup</p>
                 </div>
                 <button 
                   onClick={() => { setCloneEventTargetId(null); setCloneEventNewDate(''); }}
+                  aria-label="Close clone event modal"
                   className="text-slate-400 hover:text-slate-600 p-1 transition cursor-pointer"
                 >
-                  <X size={16} />
+                  <X size={16} aria-hidden="true" />
                 </button>
               </div>
               <div className="p-5 space-y-4">
@@ -2484,6 +2617,16 @@ export default function PlanningCentre({
           </div>
         )}
       </AnimatePresence>
+
+      <ConfirmDialog
+        isOpen={confirmState?.isOpen || false}
+        title={confirmState?.title || ''}
+        message={confirmState?.message || ''}
+        onConfirm={() => confirmState?.resolve(true)}
+        onCancel={() => confirmState?.resolve(false)}
+      />
     </div>
   );
 }
+
+export default React.memo(PlanningCentre);

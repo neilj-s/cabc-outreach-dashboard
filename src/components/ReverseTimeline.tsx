@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useFocusTrap } from '../lib/useFocusTrap';
 import { 
   Calendar, 
   Plus, 
@@ -94,6 +95,8 @@ export default function ReverseTimeline({
   const [showBriefingModal, setShowBriefingModal] = useState(false);
 
   const selectedEvent = events.find(e => e.id === selectedEventId) || events[0];
+
+  const briefingModalRef = useFocusTrap(showBriefingModal && !!selectedEvent, () => setShowBriefingModal(false));
 
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -987,12 +990,18 @@ export default function ReverseTimeline({
       {showBriefingModal && selectedEvent && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-0 sm:p-4 md:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
           {/* Modal container */}
-          <div className="bg-[#faf8f4] w-full max-w-4xl rounded-none sm:rounded-xl border border-[#efe0c2] shadow-2xl flex flex-col max-h-full my-auto text-slate-800 animate-fadeIn">
+          <div 
+            ref={briefingModalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="briefing-sheet-title"
+            className="bg-[#faf8f4] w-full max-w-4xl rounded-none sm:rounded-xl border border-[#efe0c2] shadow-2xl flex flex-col max-h-full my-auto text-slate-800 animate-fadeIn"
+          >
             {/* Top action bar (non-printable) */}
             <div className="no-print bg-[#f5ebd6]/95 border-b border-[#efe0c2] px-6 py-4 flex items-center justify-between sticky top-0 z-50 rounded-t-none sm:rounded-t-xl">
               <div className="flex items-center gap-2">
-                <FileText className="text-[#856637]" size={18} />
-                <h3 className="font-serif font-black text-slate-800 text-sm">Operational Briefing Sheet Preview</h3>
+                <FileText className="text-[#856637]" size={18} aria-hidden="true" />
+                <h3 id="briefing-sheet-title" className="font-serif font-black text-slate-800 text-sm">Operational Briefing Sheet Preview</h3>
               </div>
               <div className="flex items-center gap-3">
                 <button

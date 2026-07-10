@@ -1,5 +1,5 @@
 import { apiFetch } from "./lib/api";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   LayoutDashboard, 
@@ -12,7 +12,9 @@ import {
   Settings,
   Lightbulb,
   Package,
-  Coins
+  Coins,
+  Download,
+  Upload
 } from 'lucide-react';
 import { 
   MinistryEvent, 
@@ -27,14 +29,25 @@ import {
 } from './types';
 
 // Component imports
-import DashboardOverview from './components/DashboardOverview';
 import ReverseTimeline from './components/ReverseTimeline';
-import VolunteerTable from './components/VolunteerTable';
 import DebriefArchive from './components/DebriefArchive';
-import PlanningCentre from './components/PlanningCentre';
 import EventScopeSelector from './components/EventScopeSelector';
-import LogisticsManager from './components/LogisticsManager';
-import BudgetExpenseTracker from './components/BudgetExpenseTracker';
+import ConfirmDialog from './components/ConfirmDialog';
+
+const DashboardOverview = React.lazy(() => import('./components/DashboardOverview'));
+const VolunteerTable = React.lazy(() => import('./components/VolunteerTable'));
+const PlanningCentre = React.lazy(() => import('./components/PlanningCentre'));
+const LogisticsManager = React.lazy(() => import('./components/LogisticsManager'));
+const BudgetExpenseTracker = React.lazy(() => import('./components/BudgetExpenseTracker'));
+
+const LazyLoadingFallback = () => (
+  <div className="flex items-center justify-center min-h-[300px] w-full py-12">
+    <div className="flex flex-col items-center gap-3">
+      <div className="w-8 h-8 border-2 border-[#856637]/20 border-t-[#856637] rounded-full animate-spin" />
+      <span className="text-xs font-semibold text-slate-400 font-mono tracking-wider uppercase animate-pulse">Loading Hub...</span>
+    </div>
+  </div>
+);
 
 interface SummaryData {
   totalEvents: number;
@@ -46,6 +59,89 @@ interface SummaryData {
   overburdenedVolunteersCount: number;
   nonCompliantVolunteersCount: number;
 }
+
+const recalculateSummary = (
+  currentEvents: MinistryEvent[],
+  currentVolunteers: Volunteer[],
+  currentLanes: LaneDetail[],
+  previousSummary: SummaryData
+): SummaryData => {
+  const totalEvents = currentEvents.length;
+  
+  // Deduplicate volunteers by email or name
+  const seenVolunteers = new Set<string>();
+  const uniqueVolunteers = currentVolunteers.filter((v: Volunteer) => {
+    if (!v) return false;
+    const emailLower = (v.email || '').toLowerCase().trim();
+    const nameLower = (v.name || '').toLowerCase().trim();
+    const key = emailLower || nameLower;
+    if (!key) return true;
+    if (seenVolunteers.has(key)) {
+      return false;
+    }
+    seenVolunteers.add(key);
+    return true;
+  });
+  const totalVolunteers = uniqueVolunteers.length;
+
+  let completedTasks = 0;
+  let totalTasks = 0;
+  currentEvents.forEach((evt) => {
+    if (evt && Array.isArray(evt.tasks)) {
+      evt.tasks.forEach((t) => {
+        if (t) {
+          totalTasks++;
+          if (t.completed) completedTasks++;
+        }
+      });
+    }
+  });
+
+  const activeTasksByLane: Record<string, Task[]> = {};
+  currentEvents.forEach((evt) => {
+    if (evt && Array.isArray(evt.tasks)) {
+      evt.tasks.forEach((t) => {
+        if (t && !t.completed) {
+          const lName = t.lane || 'Strategy';
+          if (!activeTasksByLane[lName]) {
+            activeTasksByLane[lName] = [];
+          }
+          activeTasksByLane[lName].push(t);
+        }
+      });
+    }
+  });
+
+  const leadStats: Record<string, { activeTasksCount: number; weeklyHours: number }> = {};
+  currentLanes.forEach((lane) => {
+    if (!lane) return;
+    const leadName = lane.leadName;
+    if (!leadName) return;
+    if (!leadStats[leadName]) {
+      leadStats[leadName] = { activeTasksCount: 0, weeklyHours: 0 };
+    }
+    const tasksInLane = activeTasksByLane[lane.name] || [];
+    leadStats[leadName].activeTasksCount += tasksInLane.length;
+    const hoursInLane = tasksInLane.reduce((sum: number, t: Task) => sum + (t.estimatedHours || 2), 0);
+    leadStats[leadName].weeklyHours += hoursInLane;
+  });
+
+  let overallocatedLeadsCount = 0;
+  Object.values(leadStats).forEach((stats) => {
+    if (stats.activeTasksCount > 15 || stats.weeklyHours > 20) {
+      overallocatedLeadsCount++;
+    }
+  });
+
+  return {
+    ...previousSummary,
+    totalEvents,
+    totalVolunteers,
+    totalTasks,
+    completedTasks,
+    overburdenedVolunteersCount: overallocatedLeadsCount,
+  };
+};
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
@@ -159,6 +255,13 @@ export default function App() {
     fetchAllData();
   }, []);
 
+  // Keep summary numbers accurate by recomputing them locally when state changes
+  useEffect(() => {
+    if (!loading) {
+      setSummary(prev => recalculateSummary(events, volunteers, lanes, prev));
+    }
+  }, [events, volunteers, lanes, loading]);
+
   // Auto-cycle Scripture Grounding verse every 30 seconds (30,000ms)
   useEffect(() => {
     if (verses.length === 0) return;
@@ -169,7 +272,7 @@ export default function App() {
   }, [verses.length]);
 
   // Sync state on key event actions
-  const triggerFreshSync = async () => {
+  const triggerFreshSync = useCallback(async () => {
     try {
       const [resSummary, resEvents, resVolunteers, resDebriefs, resLanes, resActivities] = await Promise.all([
         apiFetch('/api/dashboard/summary').then(r => r.json()),
@@ -200,10 +303,10 @@ export default function App() {
     } catch (err) {
       console.error("Friction syncing background data", err);
     }
-  };
+  }, []);
 
   // --- Lane & Lead Actions ---
-  const handleCreateLane = async (name: string, leadName: string) => {
+  const handleCreateLane = useCallback(async (name: string, leadName: string) => {
     try {
       setLaneLoading(true);
       const res = await apiFetch('/api/lanes', {
@@ -212,15 +315,16 @@ export default function App() {
         body: JSON.stringify({ name, leadName })
       });
       if (!res.ok) throw new Error("Could not create lane");
-      await triggerFreshSync();
+      const newLane = await res.json();
+      setLanes(prev => [...prev, newLane]);
     } catch (err) {
       console.error("Error creating lane", err);
     } finally {
       setLaneLoading(false);
     }
-  };
+  }, []);
 
-  const handleUpdateLane = async (id: string, name: string, leadName: string) => {
+  const handleUpdateLane = useCallback(async (id: string, name: string, leadName: string) => {
     try {
       setLaneLoading(true);
       const res = await apiFetch(`/api/lanes/${id}`, {
@@ -229,15 +333,27 @@ export default function App() {
         body: JSON.stringify({ name, leadName })
       });
       if (!res.ok) throw new Error("Could not update lane");
-      await triggerFreshSync();
+      const updatedLane = await res.json();
+      
+      const oldLane = lanes.find(l => l.id === id);
+      if (oldLane && oldLane.name !== updatedLane.name) {
+        setEvents(prevEvents => prevEvents.map(evt => {
+          if (!evt || !Array.isArray(evt.tasks)) return evt;
+          return {
+            ...evt,
+            tasks: evt.tasks.map(task => task.lane === oldLane.name ? { ...task, lane: updatedLane.name } : task)
+          };
+        }));
+      }
+      setLanes(prev => prev.map(lane => lane.id === id ? updatedLane : lane));
     } catch (err) {
       console.error("Error updating lane", err);
     } finally {
       setLaneLoading(false);
     }
-  };
+  }, [lanes]);
 
-  const handleDeleteLane = async (id: string) => {
+  const handleDeleteLane = useCallback(async (id: string) => {
     try {
       setLaneLoading(true);
       const res = await apiFetch(`/api/lanes/${id}`, {
@@ -247,17 +363,29 @@ export default function App() {
         const body = await res.json();
         throw new Error(body.error || "Could not delete lane");
       }
-      await triggerFreshSync();
+      const deletedLane = lanes.find(l => l.id === id);
+      const remainingLanes = lanes.filter(l => l.id !== id);
+      if (deletedLane && remainingLanes.length > 0) {
+        const fallbackLaneName = remainingLanes[0].name;
+        setEvents(prevEvents => prevEvents.map(evt => {
+          if (!evt || !Array.isArray(evt.tasks)) return evt;
+          return {
+            ...evt,
+            tasks: evt.tasks.map(task => task.lane === deletedLane.name ? { ...task, lane: fallbackLaneName } : task)
+          };
+        }));
+      }
+      setLanes(remainingLanes);
     } catch (err: any) {
       alert(err.message || "Error deleting lane");
       console.error("Error deleting lane", err);
     } finally {
       setLaneLoading(false);
     }
-  };
+  }, [lanes]);
 
   // --- Reverse Timeline & Task Actions ---
-  const handleCreateEvent = async (name: string, date: string, description: string) => {
+  const handleCreateEvent = useCallback(async (name: string, date: string, description: string) => {
     try {
       const res = await apiFetch('/api/events', {
         method: 'POST',
@@ -266,14 +394,14 @@ export default function App() {
       });
       if (!res.ok) throw new Error("Could not create event timeline");
       const newEvt = await res.json();
+      setEvents(prev => [...prev, newEvt]);
       setSelectedEventId(newEvt.id);
-      await triggerFreshSync();
     } catch (err) {
       alert("Error generating event timeline");
     }
-  };
+  }, []);
 
-  const handleCloneEvent = async (id: string, newDate: string) => {
+  const handleCloneEvent = useCallback(async (id: string, newDate: string) => {
     try {
       const res = await apiFetch(`/api/events/${id}/clone`, {
         method: 'POST',
@@ -282,28 +410,28 @@ export default function App() {
       });
       if (!res.ok) throw new Error("Could not clone event");
       const newEvt = await res.json();
+      setEvents(prev => [...prev, newEvt]);
       setSelectedEventId(newEvt.id);
       setSelectedYear(new Date(newDate).getFullYear());
-      await triggerFreshSync();
     } catch (err) {
       alert("Error cloning event");
     }
-  };
+  }, []);
 
-  const handleDeleteEvent = async (id: string) => {
+  const handleDeleteEvent = useCallback(async (id: string) => {
     try {
       const res = await apiFetch(`/api/events/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error();
       if (selectedEventId === id) {
         setSelectedEventId(null);
       }
-      await triggerFreshSync();
+      setEvents(prev => prev.filter(evt => evt.id !== id));
     } catch (err) {
       alert("Error removing event");
     }
-  };
+  }, [selectedEventId]);
 
-  const handleToggleTask = async (eventId: string, taskId: string, completed: boolean) => {
+  const handleToggleTask = useCallback(async (eventId: string, taskId: string, completed: boolean) => {
     try {
       const res = await apiFetch(`/api/events/${eventId}/tasks/${taskId}`, {
         method: 'PATCH',
@@ -311,13 +439,14 @@ export default function App() {
         body: JSON.stringify({ completed })
       });
       if (!res.ok) throw new Error();
-      await triggerFreshSync();
+      const updatedEvent = await res.json();
+      setEvents(prev => prev.map(evt => evt.id === eventId ? updatedEvent : evt));
     } catch (err) {
       console.error(err);
     }
-  };
+  }, []);
 
-  const handleUpdateTaskLane = async (eventId: string, taskId: string, lane: MinistryLane) => {
+  const handleUpdateTaskLane = useCallback(async (eventId: string, taskId: string, lane: MinistryLane) => {
     try {
       const res = await apiFetch(`/api/events/${eventId}/tasks/${taskId}`, {
         method: 'PATCH',
@@ -325,13 +454,14 @@ export default function App() {
         body: JSON.stringify({ lane })
       });
       if (!res.ok) throw new Error();
-      await triggerFreshSync();
+      const updatedEvent = await res.json();
+      setEvents(prev => prev.map(evt => evt.id === eventId ? updatedEvent : evt));
     } catch (err) {
       console.error(err);
     }
-  };
+  }, []);
 
-  const handleUpdateTaskAssignment = async (eventId: string, taskId: string, assignedTo: string) => {
+  const handleUpdateTaskAssignment = useCallback(async (eventId: string, taskId: string, assignedTo: string) => {
     try {
       const res = await apiFetch(`/api/events/${eventId}/tasks/${taskId}`, {
         method: 'PATCH',
@@ -339,13 +469,14 @@ export default function App() {
         body: JSON.stringify({ assignedTo })
       });
       if (!res.ok) throw new Error();
-      await triggerFreshSync();
+      const updatedEvent = await res.json();
+      setEvents(prev => prev.map(evt => evt.id === eventId ? updatedEvent : evt));
     } catch (err) {
       console.error(err);
     }
-  };
+  }, []);
 
-  const handleUpdateEvent = async (id: string, data: Partial<MinistryEvent>) => {
+  const handleUpdateEvent = useCallback(async (id: string, data: Partial<MinistryEvent>) => {
     try {
       const res = await apiFetch(`/api/events/${id}`, {
         method: 'PATCH',
@@ -353,14 +484,15 @@ export default function App() {
         body: JSON.stringify(data)
       });
       if (!res.ok) throw new Error();
-      await triggerFreshSync();
+      const updatedEvent = await res.json();
+      setEvents(prev => prev.map(evt => evt.id === id ? updatedEvent : evt));
     } catch (err) {
       console.error(err);
       alert("Error updating event details");
     }
-  };
+  }, []);
 
-  const handleUpdateTaskDueDate = async (eventId: string, taskId: string, dueDate: string) => {
+  const handleUpdateTaskDueDate = useCallback(async (eventId: string, taskId: string, dueDate: string) => {
     try {
       const res = await apiFetch(`/api/events/${eventId}/tasks/${taskId}`, {
         method: 'PATCH',
@@ -368,14 +500,15 @@ export default function App() {
         body: JSON.stringify({ dueDate })
       });
       if (!res.ok) throw new Error();
-      await triggerFreshSync();
+      const updatedEvent = await res.json();
+      setEvents(prev => prev.map(evt => evt.id === eventId ? updatedEvent : evt));
     } catch (err) {
       console.error(err);
       alert("Error updating task due date");
     }
-  };
+  }, []);
 
-  const handleUpdateTask = async (eventId: string, taskId: string, updates: Partial<Task>) => {
+  const handleUpdateTask = useCallback(async (eventId: string, taskId: string, updates: Partial<Task>) => {
     try {
       const res = await apiFetch(`/api/events/${eventId}/tasks/${taskId}`, {
         method: 'PATCH',
@@ -383,26 +516,28 @@ export default function App() {
         body: JSON.stringify(updates)
       });
       if (!res.ok) throw new Error();
-      await triggerFreshSync();
+      const updatedEvent = await res.json();
+      setEvents(prev => prev.map(evt => evt.id === eventId ? updatedEvent : evt));
     } catch (err) {
       console.error(err);
     }
-  };
+  }, []);
 
-  const handleDeleteTask = async (eventId: string, taskId: string) => {
+  const handleDeleteTask = useCallback(async (eventId: string, taskId: string) => {
     try {
       const res = await apiFetch(`/api/events/${eventId}/tasks/${taskId}`, {
         method: 'DELETE'
       });
       if (!res.ok) throw new Error();
-      await triggerFreshSync();
+      const updatedEvent = await res.json();
+      setEvents(prev => prev.map(evt => evt.id === eventId ? updatedEvent : evt));
     } catch (err) {
       console.error(err);
       alert("Error deleting task");
     }
-  };
+  }, []);
 
-  const handleAddTask = async (eventId: string, taskData: { title: string; description: string; milestoneKey: MilestoneKey; lane: MinistryLane; dueDate: string; assignedTo?: string }) => {
+  const handleAddTask = useCallback(async (eventId: string, taskData: { title: string; description: string; milestoneKey: MilestoneKey; lane: MinistryLane; dueDate: string; assignedTo?: string }) => {
     try {
       const res = await apiFetch(`/api/events/${eventId}/tasks`, {
         method: 'POST',
@@ -410,16 +545,17 @@ export default function App() {
         body: JSON.stringify(taskData)
       });
       if (!res.ok) throw new Error();
-      await triggerFreshSync();
+      const updatedEvent = await res.json();
+      setEvents(prev => prev.map(evt => evt.id === eventId ? updatedEvent : evt));
     } catch (err) {
       alert("Error injecting custom task into timeline");
     }
-  };
+  }, []);
 
 
 
   // --- Volunteer Registry Actions ---
-  const handleUpdateVolunteer = async (id: string, updatedData: Partial<Volunteer>) => {
+  const handleUpdateVolunteer = useCallback(async (id: string, updatedData: Partial<Volunteer>) => {
     try {
       const res = await apiFetch(`/api/volunteers/${id}`, {
         method: 'PATCH',
@@ -427,13 +563,14 @@ export default function App() {
         body: JSON.stringify(updatedData)
       });
       if (!res.ok) throw new Error();
-      await triggerFreshSync();
+      const updatedVol = await res.json();
+      setVolunteers(prev => prev.map(vol => vol.id === id ? updatedVol : vol));
     } catch (err) {
       console.error(err);
     }
-  };
+  }, []);
 
-  const handleCreateVolunteer = async (volunteerData: Omit<Volunteer, 'id'>) => {
+  const handleCreateVolunteer = useCallback(async (volunteerData: Omit<Volunteer, 'id'>) => {
     try {
       const res = await apiFetch('/api/volunteers', {
         method: 'POST',
@@ -441,24 +578,25 @@ export default function App() {
         body: JSON.stringify(volunteerData)
       });
       if (!res.ok) throw new Error();
-      await triggerFreshSync();
+      const newVol = await res.json();
+      setVolunteers(prev => [...prev, newVol]);
     } catch (err) {
       alert("Error compiling volunteer profile");
     }
-  };
+  }, []);
 
-  const handleRemoveVolunteer = async (id: string) => {
+  const handleRemoveVolunteer = useCallback(async (id: string) => {
     try {
       const res = await apiFetch(`/api/volunteers/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error();
-      await triggerFreshSync();
+      setVolunteers(prev => prev.filter(vol => vol.id !== id));
     } catch (err) {
       console.error(err);
     }
-  };
+  }, []);
 
   // --- Event Documents Check ---
-  const handleUpdateEventDocs = async (eventId: string, docs: EventDoc[]) => {
+  const handleUpdateEventDocs = useCallback(async (eventId: string, docs: EventDoc[]) => {
     try {
       const res = await apiFetch(`/api/events/${eventId}/docs`, {
         method: 'PATCH',
@@ -466,14 +604,15 @@ export default function App() {
         body: JSON.stringify({ docs })
       });
       if (!res.ok) throw new Error("Could not update docs checklist");
-      await triggerFreshSync();
+      const updatedEvent = await res.json();
+      setEvents(prev => prev.map(evt => evt.id === eventId ? updatedEvent : evt));
     } catch (err) {
       console.error(err);
     }
-  };
+  }, []);
 
   // --- Debrief Actions ---
-  const handleCreateDebrief = async (data: Omit<Debrief, 'id'>) => {
+  const handleCreateDebrief = useCallback(async (data: Omit<Debrief, 'id'>) => {
     try {
       const res = await apiFetch('/api/debriefs', {
         method: 'POST',
@@ -481,13 +620,14 @@ export default function App() {
         body: JSON.stringify(data)
       });
       if (!res.ok) throw new Error("Could not file debrief");
-      await triggerFreshSync();
+      const newDebrief = await res.json();
+      setDebriefs(prev => [...prev, newDebrief]);
     } catch (err) {
       alert("Error filing debrief");
     }
-  };
+  }, []);
 
-  const handleUpdateDebrief = async (id: string, data: Partial<Debrief>) => {
+  const handleUpdateDebrief = useCallback(async (id: string, data: Partial<Debrief>) => {
     try {
       const res = await apiFetch(`/api/debriefs/${id}`, {
         method: 'PATCH',
@@ -495,25 +635,178 @@ export default function App() {
         body: JSON.stringify(data)
       });
       if (!res.ok) throw new Error("Could not update debrief");
-      await triggerFreshSync();
+      const updatedDebrief = await res.json();
+      setDebriefs(prev => prev.map(d => d.id === id ? updatedDebrief : d));
     } catch (err) {
       console.error(err);
     }
-  };
+  }, []);
 
-  const handleDeleteDebrief = async (id: string) => {
+  const handleDeleteDebrief = useCallback(async (id: string) => {
     try {
       const res = await apiFetch(`/api/debriefs/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error();
-      await triggerFreshSync();
+      setDebriefs(prev => prev.filter(d => d.id !== id));
     } catch (err) {
       console.error(err);
     }
-  };
+  }, []);
 
   // --- Reset Database Action ---
+  // Reusable Confirmation Dialog state
+  const [confirmState, setConfirmState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    resolve: (val: boolean) => void;
+  } | null>(null);
+
+  const confirmAction = (title: string, message: string): Promise<boolean> => {
+    return new Promise((resolve) => {
+      setConfirmState({
+        isOpen: true,
+        title,
+        message,
+        resolve: (val) => {
+          setConfirmState(null);
+          resolve(val);
+        }
+      });
+    });
+  };
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // --- Export All JSON Data ---
+  const handleExportAllJSON = async () => {
+    try {
+      const [eventsData, volunteersData, debriefsData, lanesData, activitiesData, expensesData, assetsData, inventoryData, reservationsData] = await Promise.all([
+        apiFetch('/api/events').then(r => r.json()),
+        apiFetch('/api/volunteers').then(r => r.json()),
+        apiFetch('/api/debriefs').then(r => r.json()),
+        apiFetch('/api/lanes').then(r => r.json()),
+        apiFetch('/api/activities').then(r => r.json()),
+        apiFetch('/api/expenses').then(r => r.json()),
+        apiFetch('/api/assets').then(r => r.json()),
+        apiFetch('/api/inventory').then(r => r.json()),
+        apiFetch('/api/reservations').then(r => r.json())
+      ]);
+
+      const backupData = {
+        events: eventsData,
+        volunteers: volunteersData,
+        debriefs: debriefsData,
+        lanes: lanesData,
+        activities: activitiesData,
+        expenses: expensesData,
+        assets: assetsData,
+        inventory: inventoryData,
+        reservations: reservationsData
+      };
+
+      const jsonStr = JSON.stringify(backupData, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const today = new Date().toISOString().split('T')[0];
+      link.href = url;
+      link.download = `cabc-dashboard-backup-${today}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Error exporting data:', err);
+      alert('Failed to export database. Please try again.');
+    }
+  };
+
+  // --- Export Volunteers to CSV ---
+  const handleExportVolunteersCSV = () => {
+    if (!volunteers || volunteers.length === 0) {
+      alert('No volunteers available to export.');
+      return;
+    }
+
+    const headers = ['Name', 'Email', 'Phone', 'Roles', 'Skills', 'Vulnerable Sector Check', 'Notes'];
+    const rows = volunteers.map(vol => [
+      vol.name || '',
+      vol.email || '',
+      vol.phone || '',
+      Array.isArray(vol.roles) ? vol.roles.join(', ') : '',
+      vol.skills || '',
+      vol.hasVulnerableSectorCheck ? 'Yes' : 'No',
+      vol.notes || ''
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(val => `"${val.replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const today = new Date().toISOString().split('T')[0];
+    link.href = url;
+    link.download = `cabc-volunteers-${today}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // --- Restore Database from JSON Backup ---
+  const handleRestoreFromJSON = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    e.target.value = '';
+
+    const isConfirmed = await confirmAction(
+      "Restore Database Backup",
+      `Are you sure you want to restore the database from "${file.name}"? This will COMPLETELY overwrite all current events, volunteers, logistics, and other data in the system. This action cannot be undone.`
+    );
+
+    if (!isConfirmed) return;
+
+    try {
+      const text = await file.text();
+      let parsedData;
+      try {
+        parsedData = JSON.parse(text);
+      } catch (err) {
+        alert("Invalid file format. The file is not a valid JSON document.");
+        return;
+      }
+
+      const res = await apiFetch('/api/restore', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(parsedData)
+      });
+
+      if (!res.ok) {
+        const errObj = await res.json().catch(() => ({}));
+        throw new Error(errObj.error || 'Server error during restore');
+      }
+
+      await fetchAllData();
+      alert("Database successfully restored from backup!");
+    } catch (err) {
+      console.error('Error restoring database:', err);
+      alert(err instanceof Error ? err.message : "Failed to restore database from backup.");
+    }
+  };
+
   const handleResetDatabase = async () => {
-    if (confirm("Reset database to starter template? This will restore original events, asset status and logs.")) {
+    const isConfirmed = await confirmAction(
+      "Reset Database",
+      "Reset database to starter template? This will restore original events, asset status and logs."
+    );
+    if (isConfirmed) {
       try {
         const res = await apiFetch('/api/reset', { method: 'POST' });
         if (!res.ok) throw new Error();
@@ -524,6 +817,11 @@ export default function App() {
       }
     }
   };
+
+  const handleNavigate = useCallback((tab: string) => {
+    setActiveTab(tab);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
 
   // Render loading state
   if (loading) {
@@ -558,11 +856,8 @@ export default function App() {
             summary={summary}
             events={filteredEvents}
             selectedEventId={selectedEventId}
-            onSelectEvent={(id) => setSelectedEventId(id)}
-            onNavigate={(tab) => {
-              setActiveTab(tab);
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-            }}
+            onSelectEvent={setSelectedEventId}
+            onNavigate={handleNavigate}
             lanes={lanes}
             laneLoading={laneLoading}
             onCreateLane={handleCreateLane}
@@ -582,7 +877,7 @@ export default function App() {
           <ReverseTimeline
             events={filteredEvents}
             selectedEventId={selectedEventId}
-            onSelectEvent={(id) => setSelectedEventId(id)}
+            onSelectEvent={setSelectedEventId}
             onCreateEvent={handleCreateEvent}
             onDeleteEvent={handleDeleteEvent}
             onToggleTask={handleToggleTask}
@@ -736,27 +1031,82 @@ export default function App() {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 8 }}
                     transition={{ duration: 0.15, ease: "easeOut" }}
-                    className="absolute right-0 mt-2 w-72 bg-white border border-[#e2dcd0] p-4 shadow-xl rounded-xl z-50 text-left"
+                    className="absolute right-0 mt-2 w-80 bg-white border border-[#e2dcd0] p-4 shadow-xl rounded-xl z-50 text-left space-y-4"
                   >
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-3">
-                      <span className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
-                        <Settings size={12} className="text-slate-500" />
-                        System Administration
-                      </span>
+                    <div>
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2">
+                        <span className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                          <Settings size={12} className="text-slate-500" />
+                          System Administration
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 leading-relaxed">
+                        Manage database state, export backups, or restore custom backups to the server.
+                      </p>
                     </div>
-                    <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-                      This panel contains operations that modify systemic data. Resetting the database will restore original events, asset statuses, and volunteer rosters.
-                    </p>
-                    <button
-                      onClick={async () => {
-                        setShowSettings(false);
-                        await handleResetDatabase();
-                      }}
-                      className="w-full flex items-center justify-center gap-2 px-3 py-2 border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 text-xs font-semibold rounded-lg transition cursor-pointer"
-                    >
-                      <RotateCcw size={12} />
-                      Reset to Starter Data
-                    </button>
+
+                    {/* Export Section */}
+                    <div className="space-y-2">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block">
+                        Data Export
+                      </span>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={async () => {
+                            setShowSettings(false);
+                            await handleExportAllJSON();
+                          }}
+                          className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 text-[11px] font-semibold rounded-lg transition cursor-pointer"
+                        >
+                          <Download size={12} />
+                          JSON Backup
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowSettings(false);
+                            handleExportVolunteersCSV();
+                          }}
+                          className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 text-[11px] font-semibold rounded-lg transition cursor-pointer"
+                        >
+                          <Download size={12} />
+                          Volunteers CSV
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Import Section */}
+                    <div className="space-y-2">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block">
+                        Data Import / Restore
+                      </span>
+                      <button
+                        onClick={() => {
+                          setShowSettings(false);
+                          fileInputRef.current?.click();
+                        }}
+                        className="w-full flex items-center justify-center gap-2 px-3 py-2 border border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg transition cursor-pointer"
+                      >
+                        <Upload size={12} className="text-slate-500" />
+                        Restore from JSON
+                      </button>
+                    </div>
+
+                    {/* Reset Section */}
+                    <div className="space-y-2 pt-2 border-t border-slate-100">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block">
+                        Danger Zone
+                      </span>
+                      <button
+                        onClick={async () => {
+                          setShowSettings(false);
+                          await handleResetDatabase();
+                        }}
+                        className="w-full flex items-center justify-center gap-2 px-3 py-2 border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 text-xs font-semibold rounded-lg transition cursor-pointer"
+                      >
+                        <RotateCcw size={12} />
+                        Reset to Starter Data
+                      </button>
+                    </div>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -807,7 +1157,9 @@ export default function App() {
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
           >
-            {renderTabContent()}
+            <React.Suspense fallback={<LazyLoadingFallback />}>
+              {renderTabContent()}
+            </React.Suspense>
           </motion.div>
         </AnimatePresence>
       </main>
@@ -827,6 +1179,22 @@ export default function App() {
           MinistryOS v2.4.0 • Community Relations Roster
         </p>
       </footer>
+
+      {/* Hidden Restore file selector and Reusable Confirmation Dialog */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleRestoreFromJSON}
+        accept=".json"
+        className="hidden"
+      />
+      <ConfirmDialog
+        isOpen={confirmState?.isOpen || false}
+        title={confirmState?.title || ''}
+        message={confirmState?.message || ''}
+        onConfirm={() => confirmState?.resolve(true)}
+        onCancel={() => confirmState?.resolve(false)}
+      />
     </div>
   );
 }

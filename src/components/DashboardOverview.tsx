@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useFocusTrap } from '../lib/useFocusTrap';
 import { 
   Calendar, 
   Users, 
@@ -29,6 +30,7 @@ import {
   Upload, Copy
 } from 'lucide-react';
 import { LaneDetail, MinistryEvent, RecentActivity, Volunteer, MilestoneKey, MinistryLane } from '../types';
+import ConfirmDialog from './ConfirmDialog';
 
 interface SummaryData {
   totalEvents: number;
@@ -72,7 +74,7 @@ const CITIES = [
   { name: 'London', lat: 51.5074, lon: -0.1278 },
 ];
 
-export default function DashboardOverview({
+function DashboardOverview({
   summary,
   onNavigate,
   events = [],
@@ -92,6 +94,28 @@ export default function DashboardOverview({
   onUploadCompleted
  }: DashboardOverviewProps) {
   const [selectedCity, setSelectedCity] = React.useState(CITIES[0]);
+
+  // Reusable Confirmation Dialog state
+  const [confirmState, setConfirmState] = React.useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    resolve: (val: boolean) => void;
+  } | null>(null);
+
+  const confirmAction = (title: string, message: string): Promise<boolean> => {
+    return new Promise((resolve) => {
+      setConfirmState({
+        isOpen: true,
+        title,
+        message,
+        resolve: (val) => {
+          setConfirmState(null);
+          resolve(val);
+        }
+      });
+    });
+  };
   const [viewMode, setViewMode] = React.useState<'grid' | 'calendar'>('grid');
   const [calendarMonth, setCalendarMonth] = React.useState<number>(new Date('2026-07-08').getMonth()); // July is index 6
   const [calendarYear, setCalendarYear] = React.useState<number>(new Date('2026-07-08').getFullYear()); // 2026
@@ -142,6 +166,38 @@ export default function DashboardOverview({
   const [cloneEventTargetId, setCloneEventTargetId] = React.useState<string | null>(null);
   const [cloneEventNewDate, setCloneEventNewDate] = React.useState('');
   const [isCloning, setIsCloning] = React.useState(false);
+
+  const burnoutModalRef = useFocusTrap(showBurnoutModal, () => setShowBurnoutModal(false));
+  const quickActionModalRef = useFocusTrap(!!activeQuickAction, () => setActiveQuickAction(null));
+  const cloneEventModalRef = useFocusTrap(!!cloneEventTargetId, () => {
+    setCloneEventTargetId(null);
+    setCloneEventNewDate('');
+  });
+
+  // Search and Filter states for Events
+  const [eventSearchTerm, setEventSearchTerm] = React.useState('');
+  const [eventStatusFilter, setEventStatusFilter] = React.useState<'all' | 'upcoming' | 'finished'>('all');
+
+  const filteredEvents = React.useMemo(() => {
+    return events.filter(event => {
+      const matchesSearch = event.name.toLowerCase().includes(eventSearchTerm.toLowerCase().trim());
+      
+      const [y1, m1, dd1] = event.date.split('-');
+      const eventDate = new Date(parseInt(y1, 10), parseInt(m1, 10) - 1, parseInt(dd1, 10));
+      const today = new Date(2026, 6, 6); // July 6, 2026
+      const d1 = Date.UTC(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate());
+      const d2 = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+      const diffDays = Math.ceil((d1 - d2) / (1000 * 60 * 60 * 24));
+      const daysOut = isNaN(diffDays) ? 0 : diffDays;
+
+      if (eventStatusFilter === 'upcoming') {
+        return matchesSearch && daysOut >= 0;
+      } else if (eventStatusFilter === 'finished') {
+        return matchesSearch && daysOut < 0;
+      }
+      return matchesSearch;
+    });
+  }, [events, eventSearchTerm, eventStatusFilter]);
 
 
 
@@ -565,9 +621,57 @@ export default function DashboardOverview({
           </div>
         </div>
 
+        {viewMode === 'grid' && (
+          <div className="bg-[#fcfaf7] border border-[#e2dcd0] rounded-xl p-4 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition duration-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="relative flex-1 max-w-md">
+              <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 pointer-events-none">
+                <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </span>
+              <input
+                type="text"
+                placeholder="Search events by name..."
+                value={eventSearchTerm}
+                onChange={(e) => setEventSearchTerm(e.target.value)}
+                className="w-full text-xs pl-8 pr-7 py-2 rounded-lg border border-[#e2dcd0] bg-white focus:outline-none focus:ring-1 focus:ring-[#856637] text-slate-800 placeholder-slate-400 shadow-sm"
+              />
+              {eventSearchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setEventSearchTerm('')}
+                  className="absolute inset-y-0 right-0 flex items-center pr-2.5 text-slate-400 hover:text-slate-600 transition cursor-pointer"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-serif font-bold text-slate-500">Status:</span>
+              <div className="flex items-center gap-1 bg-[#f5ebd6]/30 border border-[#e2dcd0] p-1 rounded-xl shadow-xs">
+                {(['all', 'upcoming', 'finished'] as const).map((statusOpt) => (
+                  <button
+                    key={statusOpt}
+                    type="button"
+                    onClick={() => setEventStatusFilter(statusOpt)}
+                    className={`px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition cursor-pointer ${
+                      eventStatusFilter === statusOpt
+                        ? 'bg-[#1e293b] text-[#faf8f4] shadow-sm'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    {statusOpt === 'all' ? 'All Statuses' : statusOpt}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         {viewMode === 'grid' ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {events.map((event) => {
+            {filteredEvents.map((event) => {
               // Calculate days out relative to target date (2026-07-06)
               const [y1, m1, dd1] = event.date.split('-');
               const eventDate = new Date(parseInt(y1, 10), parseInt(m1, 10) - 1, parseInt(dd1, 10));
@@ -665,9 +769,11 @@ export default function DashboardOverview({
                 </div>
               );
             })}
-            {events.length === 0 && (
+            {filteredEvents.length === 0 && (
               <div className="col-span-3 p-8 text-center border border-dashed border-[#e2dcd0] rounded-2xl bg-[#fcfaf7] text-slate-400 text-xs">
-                No events scheduled yet. Create an event in the reverse-timeline.
+                {events.length === 0 
+                  ? "No events scheduled yet. Create an event in the reverse-timeline."
+                  : "No events match your search/filter criteria."}
               </div>
             )}
           </div>
@@ -1258,14 +1364,11 @@ export default function DashboardOverview({
                                         return;
                                       }
                                       
-    let __isConfirmed = true;
-    try {
-      __isConfirmed = window.confirm(`Are you sure you want to delete "${lane.name}"? All tasks and assets assigned to it will be moved to the fallback lane.`);
-    } catch (e) {
-      console.warn('window.confirm blocked by iframe sandbox, defaulting to true');
-    }
-    if (__isConfirmed) {
-    
+                                      const isConfirmed = await confirmAction(
+                                        "Delete Lane",
+                                        `Are you sure you want to delete "${lane.name}"? All tasks and assets assigned to it will be moved to the fallback lane.`
+                                      );
+                                      if (isConfirmed) {
                                         if (onDeleteLane) {
                                           await onDeleteLane(lane.id);
                                         }
@@ -1341,21 +1444,28 @@ export default function DashboardOverview({
       {/* Burnout Modal */}
       {showBurnoutModal && (
         <div className="fixed inset-0 bg-black/45 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-2xl border border-[#e2dcd0] shadow-2xl max-w-lg w-full overflow-hidden animate-scaleUp">
+          <div 
+            ref={burnoutModalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="burnout-modal-title"
+            className="bg-white rounded-2xl border border-[#e2dcd0] shadow-2xl max-w-lg w-full overflow-hidden animate-scaleUp"
+          >
             {/* Header */}
             <div className="bg-[#fcfaf7] p-5 border-b border-[#e2dcd0] flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <AlertTriangle className="text-rose-650" size={20} />
+                <AlertTriangle className="text-rose-650" size={20} aria-hidden="true" />
                 <div>
-                  <h3 className="font-serif font-black text-slate-800 text-sm leading-tight">Ministry Lead Workload Auditor</h3>
+                  <h3 id="burnout-modal-title" className="font-serif font-black text-slate-800 text-sm leading-tight">Ministry Lead Workload Auditor</h3>
                   <p className="text-[10px] text-slate-400 font-medium">Workload safety thresholds: Max 15 active tasks OR 20 weekly hours</p>
                 </div>
               </div>
               <button 
                 onClick={() => setShowBurnoutModal(false)}
+                aria-label="Close workload auditor modal"
                 className="text-slate-400 hover:text-slate-600 transition p-1 cursor-pointer"
               >
-                <X size={18} />
+                <X size={18} aria-hidden="true" />
               </button>
             </div>
 
@@ -1520,6 +1630,10 @@ export default function DashboardOverview({
         {activeQuickAction && (
           <div className="fixed inset-0 bg-black/45 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
             <motion.div
+              ref={quickActionModalRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="quick-action-title"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
@@ -1528,9 +1642,9 @@ export default function DashboardOverview({
               {/* Modal Header */}
               <div className="bg-[#fcfaf7] p-5 border-b border-[#e2dcd0] flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Zap className="text-[#856637] fill-[#efe0c2]/50 animate-pulse" size={20} />
+                  <Zap className="text-[#856637] fill-[#efe0c2]/50 animate-pulse" size={20} aria-hidden="true" />
                   <div>
-                    <h3 className="font-serif font-black text-slate-800 text-sm leading-tight">
+                    <h3 id="quick-action-title" className="font-serif font-black text-slate-800 text-sm leading-tight">
                       {activeQuickAction === 'task' && 'Quick Add: Custom Task'}
                       {activeQuickAction === 'volunteer' && 'Quick Action: Register Volunteer'}
                       {activeQuickAction === 'event' && 'Quick Action: Plan Event'}
@@ -1544,9 +1658,10 @@ export default function DashboardOverview({
                 </div>
                 <button
                   onClick={() => setActiveQuickAction(null)}
+                  aria-label="Close quick action modal"
                   className="text-slate-400 hover:text-slate-600 transition p-1 cursor-pointer"
                 >
-                  <X size={18} />
+                  <X size={18} aria-hidden="true" />
                 </button>
               </div>
 
@@ -1911,6 +2026,10 @@ export default function DashboardOverview({
         {cloneEventTargetId && (
           <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <motion.div 
+              ref={cloneEventModalRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="clone-event-overview-title"
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -1918,14 +2037,15 @@ export default function DashboardOverview({
             >
               <div className="bg-[#faf8f4] border-b border-[#efe0c2] px-5 py-4 flex justify-between items-center">
                 <div>
-                  <h3 className="font-serif font-bold text-slate-800 text-lg">Clone Event to New Year</h3>
+                  <h3 id="clone-event-overview-title" className="font-serif font-bold text-slate-800 text-lg">Clone Event to New Year</h3>
                   <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-0.5 font-bold">Rollover Setup</p>
                 </div>
                 <button 
                   onClick={() => { setCloneEventTargetId(null); setCloneEventNewDate(''); }}
+                  aria-label="Close clone event modal"
                   className="text-slate-400 hover:text-slate-600 p-1 transition cursor-pointer"
                 >
-                  <X size={16} />
+                  <X size={16} aria-hidden="true" />
                 </button>
               </div>
               <div className="p-5 space-y-4">
@@ -1970,6 +2090,16 @@ export default function DashboardOverview({
           </div>
         )}
       </AnimatePresence>
+
+      <ConfirmDialog
+        isOpen={confirmState?.isOpen || false}
+        title={confirmState?.title || ''}
+        message={confirmState?.message || ''}
+        onConfirm={() => confirmState?.resolve(true)}
+        onCancel={() => confirmState?.resolve(false)}
+      />
     </div>
   );
 }
+
+export default React.memo(DashboardOverview);

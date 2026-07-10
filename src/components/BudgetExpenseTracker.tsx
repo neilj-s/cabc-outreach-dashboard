@@ -1,6 +1,7 @@
 import { apiFetch } from "../lib/api";
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useFocusTrap } from '../lib/useFocusTrap';
 import { 
   TrendingUp, 
   Coins, 
@@ -37,7 +38,7 @@ interface BudgetExpenseTrackerProps {
 const CATEGORIES = ['Food', 'Supplies', 'Marketing', 'Other'] as const;
 const AUTOSAVE_KEY = 'budgetLedger_draft';
 
-export default function BudgetExpenseTracker({
+function BudgetExpenseTracker({
   events,
   onUploadCompleted
 }: BudgetExpenseTrackerProps) {
@@ -52,6 +53,8 @@ export default function BudgetExpenseTracker({
   
   // Sorting state
   const [sortConfig, setSortConfig] = useState<{ key: keyof Expense, direction: 'asc' | 'desc' } | null>(null);
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const [showSortDropdown, setShowSortDropdown] = useState(false);
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -84,6 +87,10 @@ export default function BudgetExpenseTracker({
 
   // Receipt preview modal state
   const [previewReceipt, setPreviewReceipt] = useState<{ name: string; data: string } | null>(null);
+
+  const expenseFormModalRef = useFocusTrap(isFormOpen, () => setIsFormOpen(false));
+  const previewReceiptModalRef = useFocusTrap(!!previewReceipt, () => setPreviewReceipt(null));
+  const bulkCategoryModalRef = useFocusTrap(isBulkCategoryModalOpen, () => setIsBulkCategoryModalOpen(false));
 
   const firstEventId = events[0]?.id;
 
@@ -466,8 +473,10 @@ export default function BudgetExpenseTracker({
 
   // Filtered list
   const filteredExpenses = currentExpenses.filter(exp => {
-    const matchesSearch = exp.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          exp.purchaser.toLowerCase().includes(searchQuery.toLowerCase());
+    const q = searchQuery.toLowerCase().trim();
+    const matchesSearch = exp.description.toLowerCase().includes(q) ||
+                          exp.category.toLowerCase().includes(q) ||
+                          exp.purchaser.toLowerCase().includes(q);
     const matchesCategory = categoryFilters.length === 0 || categoryFilters.includes(exp.category);
     return matchesSearch && matchesCategory;
   });
@@ -695,64 +704,215 @@ export default function BudgetExpenseTracker({
       {/* Main Ledger Section */}
       <div className="bg-white border border-[#e2dcd0] rounded-2xl p-6 shadow-sm hover:shadow-md hover:-translate-y-1 transition duration-200 space-y-4">
         {/* Toolbar */}
-        <div className="flex flex-col md:flex-row gap-3 items-center justify-between">
-          <div className="flex items-center gap-2 w-full md:w-auto flex-1 max-w-2xl">
-            <div className="relative w-full max-w-sm">
-              <span className="absolute inset-y-0 left-3 flex items-center text-slate-400">
-                <Search size={14} />
-              </span>
-              <input
-                type="text"
-                placeholder="Search description, purchaser name..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 border border-[#e2dcd0] bg-[#faf8f4] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#856637] text-xs focus:bg-white"
-              />
+        <div className="bg-[#fcfaf7] border border-[#e2dcd0] rounded-xl p-4 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition duration-200 space-y-3">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            {/* Left side: Search input and dropdowns */}
+            <div className="flex flex-col md:flex-row md:items-center gap-3 flex-1">
+              {/* Search Box */}
+              <div className="relative flex-1 max-w-sm">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 pointer-events-none">
+                  <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </span>
+                <input
+                  type="text"
+                  placeholder="Search description, category, purchaser..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full text-xs pl-8 pr-7 py-2 rounded-lg border border-[#e2dcd0] bg-white focus:outline-none focus:ring-1 focus:ring-[#856637] text-slate-800 placeholder-slate-400 shadow-sm"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute inset-y-0 right-0 flex items-center pr-2.5 text-slate-400 hover:text-slate-600 transition cursor-pointer"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+
+              {/* Category Filter Dropdown */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCategoryDropdown(!showCategoryDropdown);
+                    setShowSortDropdown(false);
+                  }}
+                  className="flex items-center justify-between gap-2 px-3 py-2 bg-white border border-[#e2dcd0] rounded-lg text-xs font-semibold text-slate-700 hover:bg-[#faf8f4] transition cursor-pointer select-none min-w-[150px] shadow-sm w-full md:w-auto"
+                >
+                  <span className="truncate">
+                    {categoryFilters.length === 0 
+                      ? 'All Categories' 
+                      : `${categoryFilters.length} Categor${categoryFilters.length > 1 ? 'ies' : 'y'} Active`}
+                  </span>
+                  <span className="text-[10px] text-slate-400">▼</span>
+                </button>
+
+                {showCategoryDropdown && (
+                  <>
+                    <div 
+                      className="fixed inset-0 z-10" 
+                      onClick={() => setShowCategoryDropdown(false)} 
+                    />
+                    <div className="absolute left-0 mt-1 w-56 bg-[#fcfaf7] border border-[#e2dcd0] rounded-xl shadow-lg z-20 p-3 space-y-2 animate-fadeIn max-h-72 overflow-y-auto">
+                      <div className="flex items-center justify-between pb-1.5 border-b border-[#efe0c2]">
+                        <span className="text-[10px] font-bold uppercase text-slate-400">Categories</span>
+                        <div className="flex gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setCategoryFilters([])}
+                            className="text-[9px] font-bold text-slate-500 hover:text-slate-800 hover:underline cursor-pointer"
+                          >
+                            Reset
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCategoryFilters([...CATEGORIES])}
+                            className="text-[9px] font-bold text-[#856637] hover:underline cursor-pointer"
+                          >
+                            Select All
+                          </button>
+                        </div>
+                      </div>
+                      <div className="space-y-1.5 pt-1">
+                        {CATEGORIES.map(cat => (
+                          <label key={cat} className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-[#faf8f4] cursor-pointer text-xs font-semibold text-slate-700 select-none">
+                            <input
+                              type="checkbox"
+                              checked={categoryFilters.includes(cat)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setCategoryFilters([...categoryFilters, cat]);
+                                } else {
+                                  setCategoryFilters(categoryFilters.filter(c => c !== cat));
+                                }
+                              }}
+                              className="accent-[#856637] cursor-pointer"
+                            />
+                            <span className="truncate">{cat}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Sort Dropdown */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSortDropdown(!showSortDropdown);
+                    setShowCategoryDropdown(false);
+                  }}
+                  className="flex items-center justify-between gap-2 px-3 py-2 bg-white border border-[#e2dcd0] rounded-lg text-xs font-semibold text-slate-700 hover:bg-[#faf8f4] transition cursor-pointer select-none min-w-[150px] shadow-sm w-full md:w-auto"
+                >
+                  <span className="truncate">
+                    {sortConfig 
+                      ? sortConfig.key === 'cost' 
+                        ? `Cost: ${sortConfig.direction === 'desc' ? 'High to Low' : 'Low to High'}`
+                        : sortConfig.key === 'date'
+                          ? `Date: ${sortConfig.direction === 'desc' ? 'Newest' : 'Oldest'}`
+                          : `Description: ${sortConfig.direction === 'asc' ? 'A-Z' : 'Z-A'}`
+                      : 'Sort: Date (Newest)'}
+                  </span>
+                  <span className="text-[10px] text-slate-400">▼</span>
+                </button>
+
+                {showSortDropdown && (
+                  <>
+                    <div 
+                      className="fixed inset-0 z-10" 
+                      onClick={() => setShowSortDropdown(false)} 
+                    />
+                    <div className="absolute left-0 mt-1 w-56 bg-[#fcfaf7] border border-[#e2dcd0] rounded-xl shadow-lg z-20 p-2 space-y-1 animate-fadeIn">
+                      <div className="pb-1 border-b border-[#efe0c2] px-2 mb-1">
+                        <span className="text-[10px] font-bold uppercase text-slate-400">Sort Ledger</span>
+                      </div>
+                      {[
+                        { label: 'Date: Newest First', key: 'date', dir: 'desc' },
+                        { label: 'Date: Oldest First', key: 'date', dir: 'asc' },
+                        { label: 'Cost: High to Low', key: 'cost', dir: 'desc' },
+                        { label: 'Cost: Low to High', key: 'cost', dir: 'asc' },
+                        { label: 'Description: A-Z', key: 'description', dir: 'asc' },
+                        { label: 'Description: Z-A', key: 'description', dir: 'desc' },
+                      ].map((opt) => {
+                        const isSelected = sortConfig?.key === opt.key && sortConfig?.direction === opt.dir;
+                        return (
+                          <button
+                            key={opt.label}
+                            type="button"
+                            onClick={() => {
+                              setSortConfig({ key: opt.key as keyof Expense, direction: opt.dir as 'asc' | 'desc' });
+                              setShowSortDropdown(false);
+                            }}
+                            className={`w-full text-left px-2 py-1.5 rounded hover:bg-[#faf8f4] text-xs font-semibold flex items-center justify-between cursor-pointer ${
+                              isSelected ? 'text-[#856637] bg-[#f5ebd6]/30' : 'text-slate-700'
+                            }`}
+                          >
+                            <span>{opt.label}</span>
+                            {isSelected && <Check size={12} className="text-[#856637]" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Clear Filters Button */}
+              {(searchQuery || categoryFilters.length > 0 || sortConfig) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setCategoryFilters([]);
+                    setSortConfig(null);
+                  }}
+                  className="text-xs font-semibold text-rose-600 hover:text-rose-700 hover:underline px-2 py-1 cursor-pointer self-start md:self-auto"
+                >
+                  Clear Filters
+                </button>
+              )}
             </div>
 
-            {/* Category Filters */}
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={() => setCategoryFilters([])}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all duration-200 cursor-pointer border ${
-                  categoryFilters.length === 0 
-                    ? 'bg-slate-800 border-slate-800 text-white shadow-md' 
-                    : 'bg-white border-[#e2dcd0] text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800'
-                }`}
-              >
-                All
-              </button>
-              {CATEGORIES.map(cat => {
-                const isSelected = categoryFilters.includes(cat);
-                return (
-                  <button
-                    key={cat}
-                    onClick={() => {
-                      if (isSelected) {
-                        setCategoryFilters(categoryFilters.filter(c => c !== cat));
-                      } else {
-                        setCategoryFilters([...categoryFilters, cat]);
-                      }
-                    }}
-                    className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all duration-200 cursor-pointer border ${
-                      isSelected
-                        ? 'bg-[#856637] border-[#856637] text-white shadow-md' 
-                        : 'bg-white border-[#e2dcd0] text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800'
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                );
-              })}
-            </div>
+            {/* Right side: Actions */}
+            <button
+              onClick={openAddModal}
+              className="px-4 py-2 bg-[#856637] text-white hover:bg-[#6c522b] rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition"
+            >
+              <Plus size={14} /> Log Purchase Expense
+            </button>
           </div>
 
-          <button
-            onClick={openAddModal}
-            className="w-full md:w-auto px-4 py-2 bg-[#856637] text-white hover:bg-[#6c522b] rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition"
-          >
-            <Plus size={14} /> Log Purchase Expense
-          </button>
+          {/* Info label about active filters */}
+          {(searchQuery || categoryFilters.length > 0 || sortConfig) && (
+            <div className="text-[11px] text-slate-500 flex items-center gap-1 bg-[#faf8f4] border border-[#efe0c2]/50 px-3 py-1.5 rounded-lg animate-fadeIn">
+              <span className="font-semibold text-[#856637]">Active Configuration:</span>
+              {searchQuery && <span>Search for <strong className="text-slate-700">"{searchQuery}"</strong></span>}
+              {searchQuery && (categoryFilters.length > 0 || sortConfig) && <span className="mx-1">•</span>}
+              {categoryFilters.length > 0 && (
+                <span>
+                  Categories: <strong className="text-slate-700">{categoryFilters.join(', ')}</strong>
+                </span>
+              )}
+              {categoryFilters.length > 0 && sortConfig && <span className="mx-1">•</span>}
+              {sortConfig && (
+                <span>
+                  Sorted by: <strong className="text-slate-700">{
+                    sortConfig.key === 'cost' ? 'Cost' : sortConfig.key === 'date' ? 'Date' : 'Description'
+                  } ({sortConfig.direction === 'desc' ? 'descending' : 'ascending'})</strong>
+                </span>
+              )}
+              <span className="ml-auto text-slate-400 font-mono text-[10px] shrink-0">
+                Showing {filteredExpenses.length} of {currentExpenses.length} expenses
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Bulk Actions Bar */}
@@ -989,6 +1149,10 @@ export default function BudgetExpenseTracker({
         {isFormOpen && (
           <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
             <motion.div 
+              ref={expenseFormModalRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="expense-form-title"
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 15 }}
@@ -1001,15 +1165,16 @@ export default function BudgetExpenseTracker({
                   <span className="px-1.5 py-0.5 bg-[#f5ebd6] text-[#856637] font-bold uppercase text-[8px] tracking-wider rounded">
                     {editingExpense ? 'Modify Purchase Record' : 'Record New Expense'}
                   </span>
-                  <h3 className="font-serif font-bold text-slate-800 text-base leading-snug">
+                  <h3 id="expense-form-title" className="font-serif font-bold text-slate-800 text-base leading-snug">
                     {editingExpense ? 'Edit Event Expense Details' : 'Log Community Relations Outlay'}
                   </h3>
                 </div>
                 <button 
                   onClick={() => setIsFormOpen(false)}
+                  aria-label="Close expense form"
                   className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-50 rounded-lg cursor-pointer"
                 >
-                  <X size={15} />
+                  <X size={15} aria-hidden="true" />
                 </button>
               </div>
 
@@ -1187,6 +1352,10 @@ export default function BudgetExpenseTracker({
         {previewReceipt && (
           <div className="fixed inset-0 bg-slate-950/65 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <motion.div 
+              ref={previewReceiptModalRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="receipt-preview-title"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
@@ -1194,14 +1363,15 @@ export default function BudgetExpenseTracker({
             >
               <div className="flex items-center justify-between p-4 bg-slate-50 border-b border-slate-100">
                 <div className="flex items-center gap-2">
-                  <Receipt size={16} className="text-[#856637]" />
-                  <span className="font-serif font-bold text-slate-800 text-sm truncate max-w-md">{previewReceipt.name}</span>
+                  <Receipt size={16} className="text-[#856637]" aria-hidden="true" />
+                  <span id="receipt-preview-title" className="font-serif font-bold text-slate-800 text-sm truncate max-w-md">{previewReceipt.name}</span>
                 </div>
                 <button
                   onClick={() => setPreviewReceipt(null)}
+                  aria-label="Close receipt preview"
                   className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-200/50 rounded-lg transition cursor-pointer"
                 >
-                  <X size={16} />
+                  <X size={16} aria-hidden="true" />
                 </button>
               </div>
 
@@ -1252,20 +1422,25 @@ export default function BudgetExpenseTracker({
         {isBulkCategoryModalOpen && (
           <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
             <motion.div 
+              ref={bulkCategoryModalRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="bulk-category-title"
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 15 }}
               className="bg-white border border-[#e2dcd0] rounded-2xl p-6 shadow-2xl max-w-sm w-full space-y-5"
             >
               <div className="flex items-start justify-between border-b border-slate-100 pb-3">
-                <h3 className="font-serif font-bold text-slate-800 text-base leading-snug">
+                <h3 id="bulk-category-title" className="font-serif font-bold text-slate-800 text-base leading-snug">
                   Bulk Re-categorize
                 </h3>
                 <button 
                   onClick={() => setIsBulkCategoryModalOpen(false)}
+                  aria-label="Close bulk category modal"
                   className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-50 rounded-lg cursor-pointer"
                 >
-                  <X size={15} />
+                  <X size={15} aria-hidden="true" />
                 </button>
               </div>
               <div className="space-y-1.5">
@@ -1303,3 +1478,5 @@ export default function BudgetExpenseTracker({
     </div>
   );
 }
+
+export default React.memo(BudgetExpenseTracker);

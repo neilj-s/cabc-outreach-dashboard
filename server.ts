@@ -10,7 +10,9 @@ import {
   requireAuth, 
   setBroadcastHandler, 
   SEED_DATA, 
-  generateTasksForEvent 
+  generateTasksForEvent,
+  normalizeDb,
+  logActivity
 } from './server/storage';
 
 import eventsRouter from './server/routes/events';
@@ -51,6 +53,45 @@ async function startServer() {
   app.use('/api/reservations', reservationsRouter);
   app.use('/api/lanes', lanesRouter);
   app.use('/api/verses', versesRouter);
+
+  // --- API ROUTE: Restore Database ---
+  app.post('/api/restore', (req, res) => {
+    try {
+      const payload = req.body;
+      if (!payload || typeof payload !== 'object') {
+        return res.status(400).json({ error: 'Invalid payload: must be a JSON object' });
+      }
+
+      // Basic validation of shape
+      const hasEvents = 'events' in payload;
+      const hasVolunteers = 'volunteers' in payload;
+      const hasAssets = 'assets' in payload;
+
+      if (!hasEvents && !hasVolunteers && !hasAssets) {
+        return res.status(400).json({ error: 'Invalid database backup shape. Must contain events, volunteers, or assets.' });
+      }
+
+      // Normalize using the helper
+      const restoredData = normalizeDb(payload);
+      
+      // Overwrite the database
+      saveDb(restoredData);
+
+      // Log activity
+      logActivity(
+        restoredData,
+        'SYSTEM',
+        'Database Restored',
+        'The database was successfully restored from a JSON backup file.'
+      );
+
+      res.json({ success: true, message: 'Database successfully restored' });
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error('Error restoring database:', err);
+      res.status(500).json({ error: 'Failed to restore database', details: errMsg });
+    }
+  });
 
   // --- API ROUTE: Activities ---
   app.get('/api/activities', (req, res) => {
@@ -173,6 +214,31 @@ async function startServer() {
     
     saveDb(freshSeed);
     res.json({ success: true, message: 'Database reset to default template state.' });
+  });
+
+  // --- API ROUTE: Database Restore ---
+  app.post('/api/restore', (req, res) => {
+    try {
+      const data = req.body;
+      if (!data || typeof data !== 'object') {
+        return res.status(400).json({ error: 'Invalid backup format: Must be a JSON object.' });
+      }
+
+      // Basic structure validation: make sure at least events and volunteers are arrays
+      if (!Array.isArray(data.events) || !Array.isArray(data.volunteers)) {
+        return res.status(400).json({ error: 'Invalid database shape: "events" and "volunteers" must be arrays.' });
+      }
+
+      // Normalize and save
+      const normalized = normalizeDb(data);
+      saveDb(normalized);
+
+      res.json({ success: true, message: 'Database restored successfully!' });
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error('Error during database restore:', err);
+      res.status(500).json({ error: 'Internal server error restoring database', details: errMsg });
+    }
   });
 
   // --- Serve Frontend ---

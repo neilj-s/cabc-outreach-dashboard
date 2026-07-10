@@ -199,11 +199,12 @@ export default function TaskCard({
           {/* Complete Checkbox */}
           <button
             onClick={handleToggle}
+            aria-label={task.completed ? "Mark task incomplete" : "Mark task complete"}
             className={`mt-0.5 rounded transition cursor-pointer shrink-0 ${
               task.completed ? 'text-[#856637]' : 'text-slate-300 hover:text-slate-400'
             }`}
           >
-            {task.completed ? <CheckSquare size={18} /> : <Square size={18} />}
+            {task.completed ? <CheckSquare size={18} aria-hidden="true" /> : <Square size={18} aria-hidden="true" />}
           </button>
 
           {/* Title Area - Editable when expanded, styled beautifully when collapsed */}
@@ -216,12 +217,21 @@ export default function TaskCard({
                   value={localTitle}
                   onChange={e => setLocalTitle(e.target.value)}
                   placeholder="Task Title"
+                  aria-label="Edit task title"
                   className="text-xs font-bold w-full bg-[#faf8f4] border border-[#e2dcd0] rounded px-2 py-1.5 focus:ring-1 focus:ring-[#c2aa80] focus:outline-none text-slate-800"
                 />
               </div>
             ) : (
               <span 
                 onClick={() => setIsExpanded(true)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setIsExpanded(true);
+                  }
+                }}
+                role="button"
+                tabIndex={0}
                 className={`text-xs font-bold leading-tight block cursor-pointer hover:text-[#856637] transition ${
                   task.completed ? 'line-through text-slate-400' : 'text-[#1e293b]'
                 }`}
@@ -254,19 +264,19 @@ export default function TaskCard({
               {/* Auto-save status feedback */}
               {saveStatus === 'saving' && (
                 <span className="flex items-center gap-1 text-[9px] text-[#856637] font-bold uppercase tracking-wider animate-pulse ml-2">
-                  <Loader2 size={10} className="animate-spin" />
+                  <Loader2 size={10} className="animate-spin" aria-hidden="true" />
                   Saving...
                 </span>
               )}
               {saveStatus === 'saved' && (
                 <span className="flex items-center gap-1 text-[9px] text-emerald-600 font-bold uppercase tracking-wider ml-2 animate-fadeIn">
-                  <CheckCircle size={10} />
+                  <CheckCircle size={10} aria-hidden="true" />
                   Saved
                 </span>
               )}
               {saveStatus === 'error' && (
                 <span className="flex items-center gap-1 text-[9px] text-rose-500 font-bold uppercase tracking-wider ml-2 animate-bounce">
-                  <AlertCircle size={10} />
+                  <AlertCircle size={10} aria-hidden="true" />
                   Sync Error
                 </span>
               )}
@@ -297,8 +307,9 @@ export default function TaskCard({
                 onClick={() => setIsDeleting(true)}
                 className="p-1.5 text-slate-350 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
                 title="Delete task"
+                aria-label={`Delete task: ${task.title}`}
               >
-                <Trash2 size={15} />
+                <Trash2 size={15} aria-hidden="true" />
               </button>
             )
           )}
@@ -306,8 +317,10 @@ export default function TaskCard({
             onClick={() => setIsExpanded(!isExpanded)}
             className="p-1.5 text-slate-400 hover:text-slate-600 rounded hover:bg-slate-100 transition cursor-pointer"
             title={isExpanded ? "Collapse task editor" : "Edit title, notes, and briefing options"}
+            aria-label={isExpanded ? "Collapse task details" : "Expand task details"}
+            aria-expanded={isExpanded}
           >
-            {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+            {isExpanded ? <ChevronUp size={15} aria-hidden="true" /> : <ChevronDown size={15} aria-hidden="true" />}
           </button>
         </div>
       </div>
@@ -336,11 +349,12 @@ export default function TaskCard({
       <div className="mt-3 pt-3 border-t border-dashed border-[#e2dcd0]/80 flex flex-wrap items-center justify-between gap-2.5 text-xs">
         {/* Assignee select */}
         <div className="flex items-center gap-1 text-slate-500">
-          <Users size={12} className="text-slate-400" />
+          <Users size={12} className="text-slate-400" aria-hidden="true" />
           <span className="text-[10px] text-slate-400 font-medium">Lead:</span>
           <select
             value={task.assignedTo || ''}
             onChange={e => handleAssignmentChange(e.target.value)}
+            aria-label="Assigned Coordinator Lead"
             className="text-[11px] font-semibold border border-[#e2dcd0] bg-[#faf8f4] rounded px-1.5 py-0.5 text-slate-800 cursor-pointer focus:ring-1 focus:ring-[#c2aa80] focus:outline-none"
           >
             <option value="">Unassigned</option>
@@ -359,12 +373,13 @@ export default function TaskCard({
 
         {/* Due date input */}
         <div className="flex items-center gap-1 text-slate-500">
-          <Calendar size={12} className="text-slate-400" />
+          <Calendar size={12} className="text-slate-400" aria-hidden="true" />
           <span className="text-[10px] text-slate-400 font-medium">Due:</span>
           <input
             type="date"
             value={task.dueDate}
             onChange={e => handleDueDateChange(e.target.value)}
+            aria-label="Due Date"
             className="text-[11px] font-semibold border border-[#e2dcd0] bg-[#faf8f4] rounded px-1.5 py-0.5 text-slate-800 cursor-pointer focus:ring-1 focus:ring-[#c2aa80] focus:outline-none"
           />
         </div>
@@ -375,6 +390,7 @@ export default function TaskCard({
           <select
             value={task.priority || 'Medium'}
             onChange={e => handlePriorityChange(e.target.value as 'High' | 'Medium' | 'Low')}
+            aria-label="Task Priority"
             className={`text-[11px] font-bold border-none bg-transparent hover:bg-[#faf8f4]/85 px-1 py-0.5 rounded cursor-pointer focus:ring-1 focus:ring-[#c2aa80] focus:outline-none ${
               (task.priority || 'Medium') === 'High' ? 'text-rose-600' :
               (task.priority || 'Medium') === 'Medium' ? 'text-amber-600' :
@@ -393,6 +409,7 @@ export default function TaskCard({
           <select
             value={task.lane}
             onChange={e => handleLaneChange(e.target.value as any)}
+            aria-label="Ministry Lane"
             className="text-[11px] font-bold border-none bg-transparent hover:bg-[#faf8f4]/85 px-1 py-0.5 rounded text-[#856637] cursor-pointer focus:ring-1 focus:ring-[#c2aa80] focus:outline-none"
           >
             {lanes.map(lane => (

@@ -631,7 +631,7 @@ SEED_DATA.events[1].tasks = generateTasksForEvent(SEED_DATA.events[1].name, SEED
 SEED_DATA.events[2].tasks = generateTasksForEvent(SEED_DATA.events[2].name, SEED_DATA.events[2].date);
 
 // --- Database Helper Functions ---
-function normalizeDb(db: any): DatabaseShape {
+export function normalizeDb(db: any): DatabaseShape {
   // Ensure lists are initialized
   if (!db.events) db.events = [];
   if (!db.assets) db.assets = [];
@@ -776,12 +776,18 @@ export const requireAuth = async (req: express.Request, res: express.Response, n
     return next();
   }
   
+  let idToken: string | undefined;
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Unauthorized: Missing or invalid Authorization header' });
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    idToken = authHeader.split('Bearer ')[1];
+  } else if (req.query.token && typeof req.query.token === 'string') {
+    idToken = req.query.token;
   }
 
-  const idToken = authHeader.split('Bearer ')[1];
+  if (!idToken) {
+    return res.status(401).json({ error: 'Unauthorized: Missing or invalid Authorization' });
+  }
+
   try {
     if (!firebaseAdminApp) {
       throw new Error('Firebase Admin not initialized on server');

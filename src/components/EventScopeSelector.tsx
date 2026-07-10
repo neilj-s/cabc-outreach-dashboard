@@ -146,7 +146,7 @@ export default function EventScopeSelector({
           transition={{ duration: 0.2, ease: "easeInOut" }}
           className="text-[#856637] shrink-0"
         >
-          <ChevronDown size={15} />
+          <ChevronDown size={15} aria-hidden="true" />
         </motion.span>
       </button>
 
@@ -162,7 +162,7 @@ export default function EventScopeSelector({
           >
             <div className="p-2 bg-[#faf8f4] border-b border-[#e2dcd0] px-4 py-2.5">
               <span className="text-[9px] font-extrabold uppercase tracking-widest text-[#856637] flex items-center gap-1">
-                <Calendar size={11} /> Select Active Event Scope
+                <Calendar size={11} aria-hidden="true" /> Select Active Event Scope
               </span>
               <p className="text-[10px] text-slate-500 font-medium mt-0.5 leading-tight">
                 Switching scope filters all timeline milestones, task lists, and volunteer rosters instantly.
@@ -201,7 +201,7 @@ export default function EventScopeSelector({
                         {evt.name}
                       </div>
                       <div className="text-[10px] text-slate-400 font-medium mt-0.5 flex items-center gap-1.5 font-sans">
-                        <Calendar size={10} className={isSelected ? "text-[#856637]" : "text-slate-450"} />
+                        <Calendar size={10} className={isSelected ? "text-[#856637]" : "text-slate-450"} aria-hidden="true" />
                         <span>{formatEventDate(evt.date)}</span>
                       </div>
                     </div>
@@ -212,7 +212,7 @@ export default function EventScopeSelector({
                         animate={{ scale: 1, opacity: 1 }}
                         className="text-[#856637] bg-[#efe0c2]/60 p-1 rounded-full shrink-0"
                       >
-                        <Check size={12} strokeWidth={3} />
+                        <Check size={12} strokeWidth={3} aria-hidden="true" />
                       </motion.span>
                     )}
                   </li>

@@ -11,9 +11,12 @@ import {
   User,
   Activity,
   ThumbsUp,
-  RefreshCw
+  RefreshCw,
+  Search,
+  X
 } from 'lucide-react';
 import { Debrief } from '../types';
+import ConfirmDialog from './ConfirmDialog';
 
 interface DebriefArchiveProps {
   debriefs: Debrief[];
@@ -29,7 +32,47 @@ export default function DebriefArchive({
   onDeleteDebrief
 }: DebriefArchiveProps) {
   const [showForm, setShowForm] = useState(false);
+
+  // Reusable Confirmation Dialog state
+  const [confirmState, setConfirmState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    resolve: (val: boolean) => void;
+  } | null>(null);
+
+  const confirmAction = (title: string, message: string): Promise<boolean> => {
+    return new Promise((resolve) => {
+      setConfirmState({
+        isOpen: true,
+        title,
+        message,
+        resolve: (val) => {
+          setConfirmState(null);
+          resolve(val);
+        }
+      });
+    });
+  };
   const [editingDebrief, setEditingDebrief] = useState<Debrief | null>(null);
+
+  // Search & Sorting state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+
+  const filteredAndSortedDebriefs = React.useMemo(() => {
+    return debriefs
+      .filter((d) => d.name.toLowerCase().includes(searchQuery.toLowerCase().trim()))
+      .sort((a, b) => {
+        const dateA = a.date || '';
+        const dateB = b.date || '';
+        if (sortDirection === 'asc') {
+          return dateA.localeCompare(dateB);
+        } else {
+          return dateB.localeCompare(dateA);
+        }
+      });
+  }, [debriefs, searchQuery, sortDirection]);
 
   // Form states
   const [name, setName] = useState('');
@@ -268,7 +311,62 @@ export default function DebriefArchive({
         </div>
       ) : (
         <div className="space-y-4">
-          {debriefs.map(d => (
+          {/* Search & Sort Panel */}
+          <div className="bg-[#fcfaf7] border border-[#e2dcd0] rounded-xl p-4 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition duration-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="relative flex-1 max-w-md">
+              <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 pointer-events-none">
+                <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </span>
+              <input
+                type="text"
+                placeholder="Search debriefs by event name..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full text-xs pl-8 pr-7 py-2 rounded-lg border border-[#e2dcd0] bg-white focus:outline-none focus:ring-1 focus:ring-[#856637] text-slate-800 placeholder-slate-400 shadow-sm"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute inset-y-0 right-0 flex items-center pr-2.5 text-slate-400 hover:text-slate-600 transition cursor-pointer"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-serif font-bold text-slate-500">Sort Date:</span>
+              <div className="flex items-center gap-1 bg-[#f5ebd6]/30 border border-[#e2dcd0] p-1 rounded-xl shadow-xs">
+                <button
+                  type="button"
+                  onClick={() => setSortDirection('desc')}
+                  className={`px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition cursor-pointer ${
+                    sortDirection === 'desc'
+                      ? 'bg-[#1e293b] text-[#faf8f4] shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  Newest First
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSortDirection('asc')}
+                  className={`px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition cursor-pointer ${
+                    sortDirection === 'asc'
+                      ? 'bg-[#1e293b] text-[#faf8f4] shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  Oldest First
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {filteredAndSortedDebriefs.map(d => (
             <div key={d.id} className="bg-[#fcfaf7] rounded-xl border border-[#e2dcd0] p-6 shadow-sm hover:shadow-md hover:-translate-y-1 transition duration-200 space-y-4 relative group">
               <div className="flex justify-between items-start gap-4">
                 <div>
@@ -287,16 +385,12 @@ export default function DebriefArchive({
                     <Edit size={14} />
                   </button>
                   <button
-                    onClick={() => {
-                      
-    let __isConfirmed = true;
-    try {
-      __isConfirmed = window.confirm(`Are you sure you want to permanently delete the debrief for "${d.name}"?`);
-    } catch (e) {
-      console.warn('window.confirm blocked by iframe sandbox, defaulting to true');
-    }
-    if (__isConfirmed) {
-    
+                    onClick={async () => {
+                      const isConfirmed = await confirmAction(
+                        "Delete Debrief",
+                        `Are you sure you want to permanently delete the debrief for "${d.name}"?`
+                      );
+                      if (isConfirmed) {
                         onDeleteDebrief(d.id);
                       }
                     }}
@@ -379,8 +473,21 @@ export default function DebriefArchive({
               )}
             </div>
           ))}
+
+          {filteredAndSortedDebriefs.length === 0 && (
+            <div className="col-span-3 p-12 text-center border border-dashed border-[#e2dcd0] rounded-2xl bg-[#fcfaf7] text-slate-400 text-xs">
+              No debriefs match your search/filter criteria.
+            </div>
+          )}
         </div>
       )}
+      <ConfirmDialog
+        isOpen={confirmState?.isOpen || false}
+        title={confirmState?.title || ''}
+        message={confirmState?.message || ''}
+        onConfirm={() => confirmState?.resolve(true)}
+        onCancel={() => confirmState?.resolve(false)}
+      />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useFocusTrap } from '../lib/useFocusTrap';
 import { 
   Users, 
   UserPlus, 
@@ -28,6 +29,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { Volunteer, EmailCommunication, MinistryEvent } from '../types';
+import ConfirmDialog from './ConfirmDialog';
 
 // Deterministic role color mapper for high contrast design pills/badges
 const getRoleBadgeColors = (role: string) => {
@@ -116,7 +118,7 @@ interface VolunteerTableProps {
   onRemoveVolunteer: (id: string) => Promise<void>;
 }
 
-export default function VolunteerTable({
+function VolunteerTable({
   volunteers,
   events,
   selectedEventId,
@@ -127,6 +129,33 @@ export default function VolunteerTable({
 }: VolunteerTableProps) {
   // View mode state: roster mapping vs compact directory
   const [viewMode, setViewMode] = useState<'roster' | 'directory'>('roster');
+
+  // Detailed Comments & Notes modal state
+  const [notesModalVolId, setNotesModalVolId] = useState<string | null>(null);
+
+  const notesModalRef = useFocusTrap(!!notesModalVolId, () => setNotesModalVolId(null));
+
+  // Reusable Confirmation Dialog state
+  const [confirmState, setConfirmState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    resolve: (val: boolean) => void;
+  } | null>(null);
+
+  const confirmAction = (title: string, message: string): Promise<boolean> => {
+    return new Promise((resolve) => {
+      setConfirmState({
+        isOpen: true,
+        title,
+        message,
+        resolve: (val) => {
+          setConfirmState(null);
+          resolve(val);
+        }
+      });
+    });
+  };
 
   // New volunteer form state
   const [showAddForm, setShowAddForm] = useState(false);
@@ -152,8 +181,6 @@ export default function VolunteerTable({
   const [emailStatus, setEmailStatus] = useState<'Sent' | 'Delivered' | 'Opened' | 'Failed'>('Sent');
   const [emailDateTime, setEmailDateTime] = useState('2026-07-07 19:32');
 
-  // Detailed Comments & Notes modal state
-  const [notesModalVolId, setNotesModalVolId] = useState<string | null>(null);
   const [modalGeneralNotes, setModalGeneralNotes] = useState('');
   const [modalEventNotes, setModalEventNotes] = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
@@ -327,27 +354,29 @@ export default function VolunteerTable({
   const hasUnassigned = volunteers.some(v => !v.eventAssignments?.[activeEventId]?.role);
 
   // Apply search & multi-select role filters
-  const filteredVolunteers = volunteers.filter(vol => {
-    // 1. Search filter match
-    const query = searchTerm.toLowerCase().trim();
-    const matchesSearch = !query || 
-      vol.name.toLowerCase().includes(query) ||
-      vol.email.toLowerCase().includes(query) ||
-      (vol.phone && vol.phone.toLowerCase().includes(query)) ||
-      (vol.skills && vol.skills.toLowerCase().includes(query)) ||
-      (vol.notes && vol.notes.toLowerCase().includes(query)) ||
-      (vol.eventAssignments?.[activeEventId]?.station && vol.eventAssignments[activeEventId].station.toLowerCase().includes(query)) ||
-      (vol.eventAssignments?.[activeEventId]?.role && vol.eventAssignments[activeEventId].role.toLowerCase().includes(query));
+  const filteredVolunteers = React.useMemo(() => {
+    return volunteers.filter(vol => {
+      // 1. Search filter match
+      const query = searchTerm.toLowerCase().trim();
+      const matchesSearch = !query || 
+        vol.name.toLowerCase().includes(query) ||
+        vol.email.toLowerCase().includes(query) ||
+        (vol.phone && vol.phone.toLowerCase().includes(query)) ||
+        (vol.skills && vol.skills.toLowerCase().includes(query)) ||
+        (vol.notes && vol.notes.toLowerCase().includes(query)) ||
+        (vol.eventAssignments?.[activeEventId]?.station && vol.eventAssignments[activeEventId].station.toLowerCase().includes(query)) ||
+        (vol.eventAssignments?.[activeEventId]?.role && vol.eventAssignments[activeEventId].role.toLowerCase().includes(query));
 
-    // 2. Role filter match
-    if (selectedRoles.length === 0) return matchesSearch;
-    
-    const role = vol.eventAssignments?.[activeEventId]?.role;
-    if (!role || role.trim() === '') {
-      return matchesSearch && selectedRoles.includes('Unassigned');
-    }
-    return matchesSearch && selectedRoles.includes(role);
-  });
+      // 2. Role filter match
+      if (selectedRoles.length === 0) return matchesSearch;
+      
+      const role = vol.eventAssignments?.[activeEventId]?.role;
+      if (!role || role.trim() === '') {
+        return matchesSearch && selectedRoles.includes('Unassigned');
+      }
+      return matchesSearch && selectedRoles.includes(role);
+    });
+  }, [volunteers, searchTerm, selectedRoles, activeEventId]);
 
   // Filter list by letter if selected
   const directoryVolunteers = React.useMemo(() => {
@@ -1290,22 +1319,19 @@ export default function VolunteerTable({
 
                             <button
                               onClick={async () => {
-                                
-    let __isConfirmed = true;
-    try {
-      __isConfirmed = window.confirm(`Remove volunteer "${vol.name}" from ministry registry?`);
-    } catch (e) {
-      console.warn('window.confirm blocked by iframe sandbox, defaulting to true');
-    }
-    if (__isConfirmed) {
-    
+                                const isConfirmed = await confirmAction(
+                                  "Remove Volunteer",
+                                  `Remove volunteer "${vol.name}" from ministry registry?`
+                                );
+                                if (isConfirmed) {
                                   await onRemoveVolunteer(vol.id);
                                 }
                               }}
                               className="p-1 text-slate-300 hover:text-rose-600 rounded transition cursor-pointer"
                               title="Delete Volunteer"
+                              aria-label="Delete Volunteer"
                             >
-                              <Trash2 size={14} />
+                              <Trash2 size={14} aria-hidden="true" />
                             </button>
                           </div>
                         </td>
@@ -1851,15 +1877,11 @@ export default function VolunteerTable({
                                 </button>
                                 <button
                                   onClick={async () => {
-                                    
-    let __isConfirmed = true;
-    try {
-      __isConfirmed = window.confirm(`Remove volunteer "${vol.name}" from ministry registry?`);
-    } catch (e) {
-      console.warn('window.confirm blocked by iframe sandbox, defaulting to true');
-    }
-    if (__isConfirmed) {
-    
+                                    const isConfirmed = await confirmAction(
+                                      "Remove Volunteer",
+                                      `Remove volunteer "${vol.name}" from ministry registry?`
+                                    );
+                                    if (isConfirmed) {
                                       await onRemoveVolunteer(vol.id);
                                       if (selectedVolId === vol.id) {
                                         setSelectedVolId(null);
@@ -1868,8 +1890,9 @@ export default function VolunteerTable({
                                   }}
                                   className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 hover:border-rose-100 transition border border-transparent cursor-pointer"
                                   title="Remove Volunteer"
+                                  aria-label="Remove Volunteer"
                                 >
-                                  <Trash2 size={12} />
+                                  <Trash2 size={12} aria-hidden="true" />
                                 </button>
                               </div>
                             </td>
@@ -2332,24 +2355,31 @@ export default function VolunteerTable({
                 className="fixed inset-0" 
                 onClick={() => setNotesModalVolId(null)} 
               />
-              <div className="bg-white rounded-2xl border border-[#efe0c2] w-full max-w-lg shadow-2xl overflow-hidden relative z-10 animate-scaleIn">
+              <div 
+                ref={notesModalRef}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="notes-modal-title"
+                className="bg-white rounded-2xl border border-[#efe0c2] w-full max-w-lg shadow-2xl overflow-hidden relative z-10 animate-scaleIn"
+              >
                 
                 {/* Header */}
                 <div className="bg-[#faf8f4] border-b border-[#e2dcd0] px-6 py-4 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="p-2 bg-amber-50 border border-amber-200 rounded-xl text-[#856637]">
-                      <StickyNote size={18} />
+                      <StickyNote size={18} aria-hidden="true" />
                     </div>
                     <div>
-                      <h3 className="font-serif font-black text-[#1e293b] text-base">Operational Comments &amp; Notes</h3>
+                      <h3 id="notes-modal-title" className="font-serif font-black text-[#1e293b] text-base">Operational Comments &amp; Notes</h3>
                       <p className="text-[10px] text-slate-500 font-medium">Volunteer profile: <span className="font-bold text-slate-700">{vol.name}</span></p>
                     </div>
                   </div>
                   <button
                     onClick={() => setNotesModalVolId(null)}
+                    aria-label="Close notes modal"
                     className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-450 hover:text-slate-700 transition cursor-pointer"
                   >
-                    <X size={16} />
+                    <X size={16} aria-hidden="true" />
                   </button>
                 </div>
 
@@ -2420,6 +2450,16 @@ export default function VolunteerTable({
         })()
       )}
 
+      <ConfirmDialog
+        isOpen={confirmState?.isOpen || false}
+        title={confirmState?.title || ''}
+        message={confirmState?.message || ''}
+        onConfirm={() => confirmState?.resolve(true)}
+        onCancel={() => confirmState?.resolve(false)}
+      />
+
     </div>
   );
 }
+
+export default React.memo(VolunteerTable);

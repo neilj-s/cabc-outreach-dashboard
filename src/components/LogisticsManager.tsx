@@ -1,6 +1,7 @@
 import { apiFetch } from "../lib/api";
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useFocusTrap } from '../lib/useFocusTrap';
 import { 
   Package, 
   Calendar, 
@@ -31,7 +32,7 @@ interface LogisticsManagerProps {
   onUploadCompleted?: () => void; // Trigger root updates if needed
 }
 
-export default function LogisticsManager({ selectedEventId, events, onUploadCompleted }: LogisticsManagerProps) {
+function LogisticsManager({ selectedEventId, events, onUploadCompleted }: LogisticsManagerProps) {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [reservations, setReservations] = useState<AssetReservation[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -63,6 +64,9 @@ export default function LogisticsManager({ selectedEventId, events, onUploadComp
   const [editAssetStock, setEditAssetStock] = useState<number>(5);
   const [editAssetNotes, setEditAssetNotes] = useState<string>('');
   const [isUpdating, setIsUpdating] = useState<boolean>(false);
+
+  const reserveModalRef = useFocusTrap(!!selectedItemForReserve, () => setSelectedItemForReserve(null));
+  const editAssetModalRef = useFocusTrap(!!editingItem, () => setEditingItem(null));
 
   const activeEvent = events.find(e => e.id === selectedEventId);
 
@@ -900,6 +904,10 @@ export default function LogisticsManager({ selectedEventId, events, onUploadComp
           return (
             <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
               <motion.div 
+                ref={reserveModalRef}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="reserve-item-title"
                 initial={{ opacity: 0, scale: 0.95, y: 15 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 15 }}
@@ -912,12 +920,13 @@ export default function LogisticsManager({ selectedEventId, events, onUploadComp
                     <span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 font-bold uppercase text-[8px] tracking-wider rounded">
                       {selectedItemForReserve.category}
                     </span>
-                    <h3 className="font-serif font-bold text-slate-800 text-base leading-snug">
+                    <h3 id="reserve-item-title" className="font-serif font-bold text-slate-800 text-base leading-snug">
                       {selectedItemForReserve.name}
                     </h3>
                   </div>
                   <button 
                     onClick={() => setSelectedItemForReserve(null)}
+                    aria-label="Close allocation modal"
                     className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-50 rounded-lg cursor-pointer"
                   >
                     ✕
@@ -1031,6 +1040,10 @@ export default function LogisticsManager({ selectedEventId, events, onUploadComp
         {editingItem && (
           <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
             <motion.div 
+              ref={editAssetModalRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="edit-asset-title"
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 15 }}
@@ -1043,12 +1056,13 @@ export default function LogisticsManager({ selectedEventId, events, onUploadComp
                   <span className="px-1.5 py-0.5 bg-[#f5ebd6] text-[#856637] font-bold uppercase text-[8px] tracking-wider rounded">
                     Edit Asset Settings
                   </span>
-                  <h3 className="font-serif font-bold text-slate-800 text-base leading-snug">
+                  <h3 id="edit-asset-title" className="font-serif font-bold text-slate-800 text-base leading-snug">
                     Modify Catalog Asset
                   </h3>
                 </div>
                 <button 
                   onClick={() => setEditingItem(null)}
+                  aria-label="Close edit asset modal"
                   className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-50 rounded-lg cursor-pointer"
                 >
                   ✕
@@ -1151,3 +1165,5 @@ export default function LogisticsManager({ selectedEventId, events, onUploadComp
     </div>
   );
 }
+
+export default React.memo(LogisticsManager);
