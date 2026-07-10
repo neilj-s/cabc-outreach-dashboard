@@ -1,5 +1,5 @@
 import express from 'express';
-import { getDb, saveDb, logActivity } from '../storage';
+import { getDb, saveDb, logActivity, broadcast } from '../storage';
 import { MinistryEvent, Expense } from '../../src/types';
 
 const router = express.Router();
@@ -46,6 +46,10 @@ router.post('/', (req, res) => {
   );
 
   saveDb(db);
+  broadcast({
+    type: 'EXPENSES_CHANGE',
+    payload: { expenses: db.expenses }
+  });
   res.status(201).json(newExpense);
 });
 
@@ -88,6 +92,10 @@ router.put('/:id', (req, res) => {
   );
 
   saveDb(db);
+  broadcast({
+    type: 'EXPENSES_CHANGE',
+    payload: { expenses: db.expenses }
+  });
   res.json({ success: true, expense: db.expenses[index] });
 });
 
@@ -117,6 +125,10 @@ router.delete('/:id', (req, res) => {
   );
 
   saveDb(db);
+  broadcast({
+    type: 'EXPENSES_CHANGE',
+    payload: { expenses: db.expenses }
+  });
   res.json({ success: true, message: 'Expense deleted successfully.' });
 });
 

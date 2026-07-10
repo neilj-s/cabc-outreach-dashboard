@@ -260,6 +260,12 @@ router.delete('/attached-docs/:id', (req, res) => {
     db.attachedDocs = db.attachedDocs.filter((d: AttachedDoc) => d.id !== id);
   }
   saveDb(db);
+  broadcast({
+    type: 'ATTACH_DOCS_CHANGE',
+    payload: {
+      attachedDocs: db.attachedDocs
+    }
+  });
   res.json({ success: true, message: 'Document attached link discarded.' });
 });
 

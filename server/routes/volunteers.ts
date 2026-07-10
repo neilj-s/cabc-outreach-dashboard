@@ -1,5 +1,5 @@
 import express from 'express';
-import { getDb, saveDb, logActivity } from '../storage';
+import { getDb, saveDb, logActivity, broadcast } from '../storage';
 import { Volunteer } from '../../src/types';
 
 const router = express.Router();
@@ -37,6 +37,10 @@ router.post('/', (req, res) => {
     { volunteerId: newVolunteer.id, volunteerName: name }
   );
   saveDb(db);
+  broadcast({
+    type: 'VOLUNTEERS_CHANGE',
+    payload: { volunteers: db.volunteers }
+  });
   res.status(201).json(newVolunteer);
 });
 
@@ -60,6 +64,10 @@ router.patch('/:id', (req, res) => {
   if (eventAssignments !== undefined) vol.eventAssignments = eventAssignments;
 
   saveDb(db);
+  broadcast({
+    type: 'VOLUNTEERS_CHANGE',
+    payload: { volunteers: db.volunteers }
+  });
   res.json(vol);
 });
 
@@ -84,6 +92,10 @@ router.post('/:id/emails', (req, res) => {
 
   vol.emails.push(newEmail);
   saveDb(db);
+  broadcast({
+    type: 'VOLUNTEERS_CHANGE',
+    payload: { volunteers: db.volunteers }
+  });
   res.status(201).json(vol);
 });
 
@@ -92,6 +104,10 @@ router.delete('/:id', (req, res) => {
   const { id } = req.params;
   db.volunteers = db.volunteers.filter((v: Volunteer) => v.id !== id);
   saveDb(db);
+  broadcast({
+    type: 'VOLUNTEERS_CHANGE',
+    payload: { volunteers: db.volunteers }
+  });
   res.json({ success: true, message: 'Volunteer removed.' });
 });
 

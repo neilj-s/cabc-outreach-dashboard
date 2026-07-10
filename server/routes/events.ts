@@ -1,5 +1,5 @@
 import express from 'express';
-import { getDb, saveDb, logActivity, generateTasksForEvent, DEFAULT_DOCS, MILESTONE_TEMPLATES } from '../storage';
+import { getDb, saveDb, logActivity, generateTasksForEvent, DEFAULT_DOCS, MILESTONE_TEMPLATES, broadcast } from '../storage';
 import { MinistryEvent, Task, AssetReservation } from '../../src/types';
 
 const router = express.Router();
@@ -34,6 +34,10 @@ router.post('/', (req, res) => {
     { eventId: newEvent.id, eventName: name }
   );
   saveDb(db);
+  broadcast({
+    type: 'EVENTS_CHANGE',
+    payload: { events: db.events }
+  });
   res.status(201).json(newEvent);
 });
 
@@ -99,6 +103,10 @@ router.post('/:id/clone', (req, res) => {
   );
 
   saveDb(db);
+  broadcast({
+    type: 'EVENTS_CHANGE',
+    payload: { events: db.events }
+  });
   res.status(201).json(newEvent);
 });
 
@@ -107,6 +115,10 @@ router.delete('/:id', (req, res) => {
   const { id } = req.params;
   db.events = db.events.filter((evt: MinistryEvent) => evt.id !== id);
   saveDb(db);
+  broadcast({
+    type: 'EVENTS_CHANGE',
+    payload: { events: db.events }
+  });
   res.json({ success: true, message: 'Event deleted successfully.' });
 });
 
@@ -143,6 +155,10 @@ router.patch('/:id', (req, res) => {
   }
 
   saveDb(db);
+  broadcast({
+    type: 'EVENTS_CHANGE',
+    payload: { events: db.events }
+  });
   res.json(event);
 });
 
@@ -173,6 +189,10 @@ router.put('/:id/budget', (req, res) => {
   );
 
   saveDb(db);
+  broadcast({
+    type: 'EVENTS_CHANGE',
+    payload: { events: db.events }
+  });
   res.json({ success: true, event: db.events[eventIndex] });
 });
 
@@ -215,6 +235,10 @@ router.patch('/:eventId/tasks/:taskId', (req, res) => {
   }
 
   saveDb(db);
+  broadcast({
+    type: 'EVENTS_CHANGE',
+    payload: { events: db.events }
+  });
   res.json(event);
 });
 
@@ -248,6 +272,10 @@ router.delete('/:eventId/tasks/:taskId', (req, res) => {
   );
 
   saveDb(db);
+  broadcast({
+    type: 'EVENTS_CHANGE',
+    payload: { events: db.events }
+  });
   res.json(event);
 });
 
@@ -283,6 +311,10 @@ router.post('/:eventId/tasks', (req, res) => {
 
   event.tasks.push(newTask);
   saveDb(db);
+  broadcast({
+    type: 'EVENTS_CHANGE',
+    payload: { events: db.events }
+  });
   res.status(201).json(event);
 });
 
@@ -301,6 +333,10 @@ router.patch('/:eventId/docs', (req, res) => {
   }
 
   saveDb(db);
+  broadcast({
+    type: 'EVENTS_CHANGE',
+    payload: { events: db.events }
+  });
   res.json(event);
 });
 

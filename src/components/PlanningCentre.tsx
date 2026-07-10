@@ -72,11 +72,24 @@ interface PlanningCentreProps {
   onUpdateEventDocs: (eventId: string, docs: EventDoc[]) => Promise<void>;
   triggerFreshSync: () => Promise<void>;
   onUpdateEvent?: (eventId: string, data: Partial<MinistryEvent>) => Promise<void>;
+  
+  // Lifted WebSocket-related props
+  userId: string;
+  userName: string;
+  setUserName: React.Dispatch<React.SetStateAction<string>>;
+  userColor: string;
+  connectedUsers: any[];
+  setConnectedUsers: React.Dispatch<React.SetStateAction<any[]>>;
+  scratchpadText: string;
+  setScratchpadText: React.Dispatch<React.SetStateAction<string>>;
+  collabTable: CollabTable;
+  setCollabTable: React.Dispatch<React.SetStateAction<CollabTable>>;
+  attachedDocs: AttachedDoc[];
+  setAttachedDocs: React.Dispatch<React.SetStateAction<AttachedDoc[]>>;
+  wsRef: React.MutableRefObject<WebSocket | null>;
 }
 
 function PlanningCentre({
-
-  
   events,
   lanes,
   onCreateEvent,
@@ -84,7 +97,21 @@ function PlanningCentre({
   onAddTask,
   onUpdateEventDocs,
   triggerFreshSync,
-  onUpdateEvent
+  onUpdateEvent,
+
+  userId,
+  userName,
+  setUserName,
+  userColor,
+  connectedUsers,
+  setConnectedUsers,
+  scratchpadText,
+  setScratchpadText,
+  collabTable,
+  setCollabTable,
+  attachedDocs,
+  setAttachedDocs,
+  wsRef
 }: PlanningCentreProps) {
   const { showNotification } = useNotification();
   
@@ -111,33 +138,10 @@ function PlanningCentre({
       });
     });
   };
-  
-  
-
-  // Collaborative Identity and Active Users list
-  const [userId] = useState<string>(() => `user_${Date.now()}_${Math.floor(Math.random() * 1000)}`);
-  const [userName, setUserName] = useState<string>(() => {
-    const names = ['Neil S.', 'Joy P.', 'Bea P.', 'Iya M.', 'Eva L.', 'Jaeden O.', 'Solo K.'];
-    return names[Math.floor(Math.random() * names.length)];
-  });
-  const [userColor] = useState<string>(() => {
-    const colors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f43f5e'];
-    return colors[Math.floor(Math.random() * colors.length)];
-  });
-
-  const [connectedUsers, setConnectedUsers] = useState<Array<{
-    id: string;
-    name: string;
-    color: string;
-    cursor: number | null;
-    cellFocus: { row: number; col: number } | null;
-    active?: boolean;
-  }>>([]);
 
   const [activeTab, setActiveTab] = useState<'docs' | 'drive'>('docs');
 
   const [ideas, setIdeas] = useState<any[]>([]);
-  const [scratchpadText, setScratchpadText] = useState<string>('');
   const [savingScratchpad, setSavingScratchpad] = useState<boolean>(false);
   const [scratchpadSavedTime, setScratchpadSavedTime] = useState<string | null>(null);
 
@@ -165,15 +169,7 @@ function PlanningCentre({
   const [isLinkingDocOpen, setIsLinkingDocOpen] = useState<boolean>(false);
   const [creatingFile, setCreatingFile] = useState<boolean>(false);
 
-  // Collaborative Table state
-  const [collabTable, setCollabTable] = useState<CollabTable>({
-    headers: ['Time', 'Session / Item', 'Lane', 'Lead Officer', 'Required Prep / Notes'],
-    rows: []
-  });
   const [focusedCell, setFocusedCell] = useState<{ row: number; col: number } | null>(null);
-
-  // Attached Documents list
-  const [attachedDocs, setAttachedDocs] = useState<AttachedDoc[]>([]);
 
   // Google Drive Integration states
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
@@ -395,141 +391,7 @@ function PlanningCentre({
     fetchDriveStatus();
   }, [googleAccessToken]);
 
-  // WebSocket Ref
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<any>(null);
-  const reconnectDelayRef = useRef<number>(1000);
 
-  // Real-time WebSocket hook
-  useEffect(() => {
-    let isUnmounted = false;
-    reconnectDelayRef.current = 1000;
-
-    const connect = () => {
-      if (isUnmounted) return;
-
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const socket = new WebSocket(`${protocol}//${window.location.host}`);
-      wsRef.current = socket;
-
-      socket.onopen = () => {
-        if (isUnmounted) {
-          socket.close();
-          return;
-        }
-        console.log('Connected to Planning Centre WS');
-        reconnectDelayRef.current = 1000; // Reset backoff delay on successful connection
-        socket.send(JSON.stringify({
-          type: 'JOIN',
-          payload: {
-            userId,
-            name: userName,
-            color: userColor
-          }
-        }));
-      };
-
-      socket.onmessage = (event) => {
-        if (isUnmounted) return;
-        try {
-          const msg = JSON.parse(event.data);
-          switch (msg.type) {
-            case 'INIT_STATE': {
-              setScratchpadText(msg.payload.scratchpad);
-              setCollabTable(msg.payload.collabTable);
-              setAttachedDocs(msg.payload.attachedDocs);
-              const otherUsers = msg.payload.users.filter((u: any) => u.id !== userId);
-              setConnectedUsers(otherUsers);
-              break;
-            }
-            case 'PRESENCE_CHANGE': {
-              const otherUsers = msg.payload.users.filter((u: any) => u.id !== userId);
-              setConnectedUsers(prev => {
-                const simUsers = prev.filter(u => u.id.startsWith('sim_'));
-                return [...otherUsers, ...simUsers];
-              });
-              break;
-            }
-            case 'CURSOR_MOVE': {
-              setConnectedUsers(prev => prev.map(u => {
-                if (u.id === msg.payload.userId) {
-                  return { ...u, cursor: msg.payload.cursor, cellFocus: msg.payload.cellFocus };
-                }
-                return u;
-              }));
-              break;
-            }
-            case 'TEXT_EDIT': {
-              setScratchpadText(msg.payload.text);
-              break;
-            }
-            case 'TABLE_EDIT': {
-              setCollabTable(msg.payload.collabTable);
-              break;
-            }
-            case 'ATTACH_DOCS_CHANGE': {
-              setAttachedDocs(msg.payload.attachedDocs);
-              break;
-            }
-            case 'WEBHOOK_NOTIFICATION': {
-              const { docName, status, details, timestamp } = msg.payload;
-              showNotification(`[Push Webhook] "${docName}" permission updated at ${timestamp}: ${details}`, status === 'ok' ? 'success' : 'error');
-              break;
-            }
-            case 'SIM_PRESENCE': {
-              const { user } = msg.payload;
-              setConnectedUsers(prev => {
-                const filtered = prev.filter(u => u.id !== user.id);
-                if (user.active) {
-                  return [...filtered, user];
-                }
-                return filtered;
-              });
-              break;
-            }
-            case 'SIM_CURSOR': {
-              const { id, cursor, cellFocus } = msg.payload;
-              setConnectedUsers(prev => prev.map(u => {
-                if (u.id === id) {
-                  return { ...u, cursor, cellFocus };
-                }
-                return u;
-              }));
-              break;
-            }
-          }
-        } catch (err) {
-          console.error('Error parsing WS message:', err);
-        }
-      };
-
-      socket.onclose = () => {
-        if (isUnmounted) return;
-        console.log(`WS disconnected. Reconnecting in ${reconnectDelayRef.current}ms...`);
-        
-        reconnectTimeoutRef.current = setTimeout(() => {
-          reconnectDelayRef.current = Math.min(reconnectDelayRef.current * 2, 15000);
-          connect();
-        }, reconnectDelayRef.current);
-      };
-    };
-
-    connect();
-
-    return () => {
-      isUnmounted = true;
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = null;
-      }
-      if (wsRef.current) {
-        if (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING) {
-          wsRef.current.close();
-        }
-        wsRef.current = null;
-      }
-    };
-  }, [userId, userName, userColor]);
 
   // Auth State Listener
   useEffect(() => {

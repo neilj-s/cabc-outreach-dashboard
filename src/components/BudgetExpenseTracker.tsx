@@ -33,6 +33,10 @@ import { MinistryEvent, Expense } from '../types';
 
 interface BudgetExpenseTrackerProps {
   events: MinistryEvent[];
+  expenses: Expense[];
+  setExpenses: React.Dispatch<React.SetStateAction<Expense[]>>;
+  pendingExpensesRef: React.MutableRefObject<Map<string, { timeoutId: NodeJS.Timeout; expense: Expense }>>;
+  pendingBulkDeletesRef: React.MutableRefObject<Map<string, { timeoutId: NodeJS.Timeout; expenses: Expense[] }>>;
   onUploadCompleted?: () => void;
   loading?: boolean;
 }
@@ -42,12 +46,14 @@ const AUTOSAVE_KEY = 'budgetLedger_draft';
 
 function BudgetExpenseTracker({
   events,
+  expenses,
+  setExpenses,
+  pendingExpensesRef,
+  pendingBulkDeletesRef,
   onUploadCompleted,
   loading: parentLoading = false
 }: BudgetExpenseTrackerProps) {
   const { showNotification } = useNotification();
-  const pendingExpensesRef = React.useRef<Map<string, { timeoutId: NodeJS.Timeout; expense: Expense }>>(new Map());
-  const pendingBulkDeletesRef = React.useRef<Map<string, { timeoutId: NodeJS.Timeout; expenses: Expense[] }>>(new Map());
 
   // Clean up pending timeouts on unmount
   useEffect(() => {
@@ -58,7 +64,6 @@ function BudgetExpenseTracker({
   }, []);
 
   const [selectedEventId, setSelectedEventId] = useState<string>('');
-  const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
