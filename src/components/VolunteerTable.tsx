@@ -985,7 +985,21 @@ function VolunteerTable({
       </div>
 
       {/* Main Roster Table / Directory View Toggle Container */}
-      {viewMode === 'roster' ? (
+      {volunteers.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 px-4 text-slate-400 bg-[#fcfaf7] border border-[#e2dcd0] rounded-xl text-center shadow-sm">
+          <Users size={40} className="text-[#c2aa80] mb-3" />
+          <h3 className="font-serif font-black text-[#1e293b] text-base">No volunteers yet</h3>
+          <p className="text-xs text-slate-500 max-w-sm mt-1 mb-4 leading-normal">
+            Start building your ministry team by registering your first volunteer to assign roles and track communications.
+          </p>
+          <button
+            onClick={() => setShowAddForm(true)}
+            className="px-4 py-2 bg-[#1e293b] hover:bg-[#0f172a] text-[#faf8f4] text-xs font-semibold rounded-lg transition shadow-sm flex items-center gap-1.5 cursor-pointer inline-flex"
+          >
+            <UserPlus size={14} /> Add Volunteer
+          </button>
+        </div>
+      ) : viewMode === 'roster' ? (
         <div className="bg-[#fcfaf7] border border-[#e2dcd0] rounded-xl overflow-hidden shadow-sm">
         <div className="p-4 bg-[#faf8f4] border-b border-[#e2dcd0] flex justify-between items-center flex-wrap gap-2">
           <span className="text-xs font-serif font-bold uppercase tracking-wider text-[#1e293b] flex items-center gap-1.5">

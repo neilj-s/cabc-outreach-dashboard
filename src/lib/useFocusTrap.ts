@@ -3,6 +3,12 @@ import { useEffect, useRef } from 'react';
 export function useFocusTrap(isOpen: boolean, onClose: () => void) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+
+  // Update onCloseRef on every render to ensure keydown handler gets the latest function
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
 
   useEffect(() => {
     if (isOpen) {
@@ -36,7 +42,7 @@ export function useFocusTrap(isOpen: boolean, onClose: () => void) {
         const handleKeyDown = (e: KeyboardEvent) => {
           if (e.key === 'Escape') {
             e.preventDefault();
-            onClose();
+            onCloseRef.current();
             return;
           }
 
@@ -82,7 +88,7 @@ export function useFocusTrap(isOpen: boolean, onClose: () => void) {
         };
       }
     }
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   return containerRef;
 }

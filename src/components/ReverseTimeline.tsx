@@ -378,7 +378,7 @@ export default function ReverseTimeline({
           {/* Event selector list */}
           <div>
             {events.length === 0 ? (
-              <p className="text-xs text-slate-400 py-4 text-center">No events scheduled. Create one above.</p>
+              <p className="text-[11px] text-slate-400 italic py-2 text-center">No events scheduled.</p>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-1 gap-1.5">
                 {events.map(evt => (
@@ -967,10 +967,25 @@ export default function ReverseTimeline({
           </div>
         )}
           </>
+        ) : events.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 bg-[#fcfaf7] border border-[#e2dcd0] rounded-xl shadow-sm text-slate-400 text-center px-4">
+            <Calendar size={40} className="text-[#c2aa80] mb-3" />
+            <h3 className="font-serif font-black text-[#1e293b] text-base">No events yet</h3>
+            <p className="text-xs text-slate-500 mt-1 mb-4 max-w-sm mx-auto leading-normal">
+              Get started by creating your first event to calculate its reverse timeline and manage tasks.
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowCreateForm(true)}
+              className="px-4 py-2 bg-[#1e293b] hover:bg-[#0f172a] text-[#faf8f4] text-xs font-semibold rounded-lg transition shadow-sm flex items-center gap-1.5 cursor-pointer inline-flex"
+            >
+              <Plus size={14} /> Create Event
+            </button>
+          </div>
         ) : (
           <div className="flex flex-col items-center justify-center py-20 bg-[#fcfaf7] border border-[#e2dcd0] rounded-xl shadow-sm text-slate-400 text-center">
             <Calendar size={48} className="text-[#c2aa80] mb-3" />
-            <h3 className="font-serif font-bold text-slate-700 text-sm">No Event Timelines Generated</h3>
+            <h3 className="font-serif font-bold text-slate-700 text-sm">No Event Selected</h3>
             <p className="text-xs text-slate-400 mt-1">Select an event or generate a new one from the sidebar.</p>
           </div>
         )}

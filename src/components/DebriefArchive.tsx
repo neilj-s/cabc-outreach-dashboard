@@ -348,12 +348,18 @@ export default function DebriefArchive({
           ))}
         </div>
       ) : debriefs.length === 0 ? (
-        <div className="bg-[#fcfaf7] rounded-xl border border-[#e2dcd0] py-16 text-center text-slate-400">
-          <Activity size={48} className="mx-auto text-[#c2aa80] mb-3" />
-          <h3 className="font-serif font-bold text-slate-700 text-sm">No debriefs filed yet</h3>
-          <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto leading-normal">
-            After a successful neighborhood outreach, file lessons here to help Bea, Joy, and the team recall key operations next year.
+        <div className="bg-[#fcfaf7] rounded-xl border border-[#e2dcd0] py-16 text-center text-slate-400 px-4 shadow-sm">
+          <Activity size={40} className="mx-auto text-[#c2aa80] mb-3" />
+          <h3 className="font-serif font-black text-[#1e293b] text-base">No debriefs archived</h3>
+          <p className="text-xs text-slate-500 mt-1 mb-4 max-w-sm mx-auto leading-normal">
+            Debriefs help recall key operations next year. They appear after you file lessons learned, feedback, and key metrics following a completed event.
           </p>
+          <button
+            onClick={handleOpenCreate}
+            className="px-4 py-2 bg-[#1e293b] hover:bg-[#0f172a] text-[#faf8f4] text-xs font-bold uppercase tracking-wider rounded-lg transition shadow-sm cursor-pointer inline-flex items-center gap-1.5"
+          >
+            <Plus size={14} /> File Event Debrief
+          </button>
         </div>
       ) : (
         <div className="space-y-4">

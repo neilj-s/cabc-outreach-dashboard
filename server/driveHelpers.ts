@@ -49,9 +49,20 @@ export async function getOrRefreshDriveToken(): Promise<string> {
   }
 
   const now = Date.now();
-  // If expiring in next 2 minutes or already expired, refresh it
-  if (db.googleOAuth.expiresAt && now >= db.googleOAuth.expiresAt - 120 * 1000) {
+  const expiresAt = db.googleOAuth.expiresAt || 0;
+
+  // Treat a missing or zero expiresAt as already expired, and refresh it immediately.
+  // Otherwise, only attempt a refresh when the token is actually near expiry (within 2 minutes).
+  if (expiresAt === 0 || now >= expiresAt - 120 * 1000) {
     console.log('[Token Lifecycle] Refreshing expired or near-expired server-managed Google Access Token...');
+    
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret) {
+      throw new Error('Google OAuth client credentials are unconfigured on the server. Please reconnect Drive.');
+    }
+
     const encryptedRefresh = db.googleOAuth.refreshToken;
     const decryptedRefresh = encryptedRefresh ? decryptToken(encryptedRefresh) : null;
 
@@ -60,8 +71,8 @@ export async function getOrRefreshDriveToken(): Promise<string> {
     }
 
     const params = new URLSearchParams({
-      client_id: process.env.GOOGLE_CLIENT_ID || 'mock_client_id_placeholder',
-      client_secret: process.env.GOOGLE_CLIENT_SECRET || 'mock_client_secret_placeholder',
+      client_id: clientId,
+      client_secret: clientSecret,
       refresh_token: decryptedRefresh,
       grant_type: 'refresh_token'
     });
@@ -82,11 +93,21 @@ export async function getOrRefreshDriveToken(): Promise<string> {
       refresh_token?: string;
       expires_in?: number;
     };
+
+    if (!data.access_token) {
+      throw new Error('Google token refresh returned an invalid response with no access token.');
+    }
+
     db.googleOAuth.accessToken = data.access_token;
     if (data.refresh_token) {
       db.googleOAuth.refreshToken = encryptToken(data.refresh_token);
     }
-    db.googleOAuth.expiresAt = Date.now() + (data.expires_in || 3600) * 1000;
+    
+    const expiresIn = typeof data.expires_in === 'number'
+      ? data.expires_in
+      : parseInt(data.expires_in as any, 10) || 3600;
+
+    db.googleOAuth.expiresAt = Date.now() + expiresIn * 1000;
     saveDb(db);
     console.log('[Token Lifecycle] Server-managed token successfully refreshed via Google Auth API.');
     return db.googleOAuth.accessToken;

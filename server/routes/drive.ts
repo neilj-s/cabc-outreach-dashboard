@@ -122,10 +122,14 @@ router.get('/oauth/callback', async (req, res) => {
 
     const finalRefreshToken = tokenData.refresh_token || decryptedExistingRefresh || 'mock_refresh_token_xyz_123_abc';
 
+    const expiresIn = typeof tokenData.expires_in === 'number'
+      ? tokenData.expires_in
+      : parseInt(tokenData.expires_in as any, 10) || 3600;
+
     db.googleOAuth = {
       accessToken: tokenData.access_token,
       refreshToken: encryptToken(finalRefreshToken),
-      expiresAt: Date.now() + (tokenData.expires_in || 3600) * 1000
+      expiresAt: Date.now() + expiresIn * 1000
     };
 
     saveDb(db);
@@ -146,10 +150,14 @@ router.post('/store-token', requireAuth, (req, res) => {
     return res.status(400).json({ error: 'accessToken is required.' });
   }
 
+  const expIn = typeof expiresIn === 'number'
+    ? expiresIn
+    : parseInt(expiresIn as any, 10) || 3600;
+
   db.googleOAuth = {
     accessToken,
     refreshToken: encryptToken(refreshToken || db.googleOAuth?.refreshToken || 'mock_refresh_token_xyz_123_abc'),
-    expiresAt: Date.now() + (expiresIn || 3600) * 1000
+    expiresAt: Date.now() + expIn * 1000
   };
   saveDb(db);
 

@@ -1091,14 +1091,36 @@ function BudgetExpenseTracker({
             </div>
           </div>
         ) : filteredExpenses.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-slate-400 border-2 border-dashed border-slate-100 rounded-2xl">
-            <Receipt size={32} className="opacity-40 mb-2 text-slate-400" />
-            <p className="text-sm font-serif font-semibold text-slate-700">No expense records found</p>
-            <p className="text-[11px] text-slate-400 max-w-xs text-center mt-0.5">
+          <div className="flex flex-col items-center justify-center py-16 px-4 text-slate-400 border border-dashed border-[#efe0c2] rounded-2xl bg-[#fcfaf7] text-center">
+            <Receipt size={40} className="text-[#c2aa80] mb-3" />
+            <h3 className="font-serif font-black text-[#1e293b] text-base">
+              {searchQuery || categoryFilters.length > 0 ? 'No expenses matched' : 'No expenses logged'}
+            </h3>
+            <p className="text-xs text-slate-500 max-w-sm mt-1 mb-4 leading-normal">
               {searchQuery || categoryFilters.length > 0 
-                ? 'Try clearing your filters or searching for another description.' 
-                : 'Get started by clicking the "Log Purchase Expense" button above to log community outreach supplies.'}
+                ? 'Try clearing your search query or category filters to see your ledger logs.' 
+                : 'Keep your outreach events within budget. Get started by logging your purchase receipts and operational costs.'}
             </p>
+            {searchQuery || categoryFilters.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setCategoryFilters([]);
+                  setSortConfig(null);
+                }}
+                className="px-4 py-2 bg-[#856637] text-white hover:bg-[#6c522b] rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition"
+              >
+                Clear Filters
+              </button>
+            ) : (
+              <button
+                onClick={openAddModal}
+                className="px-4 py-2 bg-[#856637] text-[#faf8f4] hover:bg-[#6c522b] rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition"
+              >
+                <Plus size={14} /> Add expense
+              </button>
+            )}
           </div>
         ) : (
           <div className="space-y-4">
