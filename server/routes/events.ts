@@ -75,7 +75,8 @@ router.post('/:id/clone', (req, res) => {
     date: newDate,
     name: `${sourceEvent.name} (${newYear})`,
     tasks: newTasks,
-    docs: newDocs
+    docs: newDocs,
+    driveFolderId: undefined
   };
   
   // Copy reservations

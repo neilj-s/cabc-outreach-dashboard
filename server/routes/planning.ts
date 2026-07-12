@@ -1,7 +1,7 @@
 import express from 'express';
 import crypto from 'crypto';
 import { getDb, saveDb, broadcast, logActivity } from '../storage';
-import { extractFileId, getOrRefreshDriveToken, getDriveAccessToken } from '../driveHelpers';
+import { extractFileId, getOrRefreshDriveToken, getDriveAccessToken, ensureEventFolder } from '../driveHelpers';
 import { MinistryEvent, EventDoc, AttachedDoc } from '../../src/types';
 
 const router = express.Router();
@@ -82,8 +82,8 @@ router.post('/attached-docs/upload', async (req, res) => {
         let folderId = db.driveFolderId || 'root';
         if (eventId) {
           const targetEvent = db.events.find((e: MinistryEvent) => e.id === eventId);
-          if (targetEvent && targetEvent.driveFolderId) {
-            folderId = targetEvent.driveFolderId;
+          if (targetEvent) {
+            folderId = await ensureEventFolder(targetEvent, db);
           }
         }
 

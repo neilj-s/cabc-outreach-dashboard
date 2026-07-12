@@ -211,3 +211,73 @@ export async function getDriveAccessToken(userBearerToken?: string): Promise<str
 
   throw new Error('No Google authentication configured. Please provide a user OAuth token or configure a Service Account.');
 }
+
+export async function createDriveFolder(name: string, parentFolderId: string): Promise<string> {
+  const token = await getDriveAccessToken();
+  const metadata: { name: string; mimeType: string; parents?: string[] } = {
+    name,
+    mimeType: 'application/vnd.google-apps.folder'
+  };
+  if (parentFolderId && parentFolderId !== 'root') {
+    metadata.parents = [parentFolderId];
+  }
+
+  const response = await fetch('https://www.googleapis.com/drive/v3/files?fields=id', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(metadata)
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Failed to create Google Drive folder "${name}": ${errText}`);
+  }
+
+  const data = (await response.json()) as { id: string };
+  return data.id;
+}
+
+export async function ensureEventFolder(event: any, db: any): Promise<string> {
+  if (event.driveFolderId) {
+    return event.driveFolderId;
+  }
+
+  const parentFolderId = db.driveFolderId;
+  const isConnected = !!db.googleOAuth?.accessToken;
+  if (!isConnected || !parentFolderId || parentFolderId === 'root') {
+    return parentFolderId || 'root';
+  }
+
+  try {
+    const token = await getDriveAccessToken();
+    const folderName = `${event.name} (${event.date})`;
+    const query = `'${parentFolderId}' in parents and name = '${folderName.replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+    
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id)&pageSize=1`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    if (response.ok) {
+      const data = (await response.json()) as { files?: Array<{ id: string }> };
+      if (data.files && data.files.length > 0) {
+        const existingFolderId = data.files[0].id;
+        event.driveFolderId = existingFolderId;
+        saveDb(db);
+        return existingFolderId;
+      }
+    }
+
+    // None exists, create a new folder
+    const newFolderId = await createDriveFolder(folderName, parentFolderId);
+    event.driveFolderId = newFolderId;
+    saveDb(db);
+    return newFolderId;
+  } catch (err) {
+    console.warn('[ensureEventFolder] Error ensuring event folder, falling back:', err);
+    return parentFolderId || 'root';
+  }
+}
+

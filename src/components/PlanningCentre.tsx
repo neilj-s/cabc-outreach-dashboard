@@ -21,6 +21,8 @@ import {
   Clock,
   ExternalLink,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   ListTodo,
   Heading,
   Bold,
@@ -1725,18 +1727,24 @@ function PlanningCentre({
 
                                             <button
                                               onClick={() => window.open(doc.url, '_blank', 'noopener,noreferrer')}
-                                              className="p-1.5 rounded bg-white border border-slate-200 text-slate-450 hover:text-[#856637] hover:border-[#c2aa80] transition shadow-xs cursor-pointer"
+                                              className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-lg border bg-white border-slate-200 text-slate-600 hover:text-[#856637] hover:border-[#c2aa80] transition shadow-xs cursor-pointer select-none"
                                               title="Open document"
                                             >
-                                              <ExternalLink size={11} />
+                                              <ExternalLink size={10} />
+                                              <span>Open</span>
                                             </button>
 
                                             <button
                                               onClick={() => setExpandedCardId(expandedCardId === doc.id ? null : doc.id)}
-                                              className={`p-1.5 rounded bg-white border border-slate-200 text-slate-450 hover:text-[#856637] hover:border-[#c2aa80] transition shadow-xs cursor-pointer font-bold ${expandedCardId === doc.id ? 'bg-[#f5ebd6]/50 border-[#c2aa80] text-[#856637]' : ''}`}
-                                              title="Details and options"
+                                              className={`inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-lg border transition shadow-xs cursor-pointer select-none ${
+                                                expandedCardId === doc.id 
+                                                  ? 'bg-[#f5ebd6]/50 border-[#c2aa80] text-[#856637]' 
+                                                  : 'bg-white border-slate-200 text-slate-600 hover:text-[#856637] hover:border-[#c2aa80]'
+                                              }`}
+                                              title="Toggle Details"
                                             >
-                                              <span>…</span>
+                                              <span>Details</span>
+                                              {expandedCardId === doc.id ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
                                             </button>
                                           </div>
                                         </div>
