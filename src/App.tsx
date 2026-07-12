@@ -242,6 +242,8 @@ function MainApp() {
 
   // Centralized WebSocket Connection with automatic reconnection and backoff
   useEffect(() => {
+    if (!authUser) return;
+
     let isUnmounted = false;
     let socket: WebSocket | null = null;
     reconnectDelayRef.current = 1000;
@@ -249,19 +251,7 @@ function MainApp() {
     const connect = () => {
       if (isUnmounted) return;
 
-      const user = auth.currentUser;
-      if (!user) {
-        console.log('WebSocket waiting for user auth state...');
-        const unsubscribe = auth.onAuthStateChanged((usr) => {
-          unsubscribe();
-          if (!isUnmounted) {
-            connect();
-          }
-        });
-        return;
-      }
-
-      user.getIdToken().then((token) => {
+      authUser.getIdToken().then((token) => {
         if (isUnmounted) return;
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -289,118 +279,118 @@ function MainApp() {
           if (isUnmounted) return;
           try {
             const msg = JSON.parse(event.data);
-          switch (msg.type) {
-            case 'INIT_STATE': {
-              setScratchpadText(msg.payload.scratchpad);
-              setCollabTable(msg.payload.collabTable);
-              setAttachedDocs(msg.payload.attachedDocs);
-              const otherUsers = msg.payload.users.filter((u: any) => u.id !== userId);
-              setConnectedUsers(otherUsers);
-              break;
+            switch (msg.type) {
+              case 'INIT_STATE': {
+                setScratchpadText(msg.payload.scratchpad);
+                setCollabTable(msg.payload.collabTable);
+                setAttachedDocs(msg.payload.attachedDocs);
+                const otherUsers = msg.payload.users.filter((u: any) => u.id !== userId);
+                setConnectedUsers(otherUsers);
+                break;
+              }
+              case 'PRESENCE_CHANGE': {
+                const otherUsers = msg.payload.users.filter((u: any) => u.id !== userId);
+                setConnectedUsers(prev => {
+                  const simUsers = prev.filter(u => u.id.startsWith('sim_'));
+                  return [...otherUsers, ...simUsers];
+                });
+                break;
+              }
+              case 'CURSOR_MOVE': {
+                setConnectedUsers(prev => prev.map(u => {
+                  if (u.id === msg.payload.userId) {
+                    return { ...u, cursor: msg.payload.cursor, cellFocus: msg.payload.cellFocus };
+                  }
+                  return u;
+                }));
+                break;
+              }
+              case 'TEXT_EDIT': {
+                setScratchpadText(msg.payload.text);
+                break;
+              }
+              case 'TABLE_EDIT': {
+                setCollabTable(msg.payload.collabTable);
+                break;
+              }
+              case 'ATTACH_DOCS_CHANGE': {
+                setAttachedDocs(msg.payload.attachedDocs);
+                break;
+              }
+              case 'WEBHOOK_NOTIFICATION': {
+                const { docName, status, details, timestamp } = msg.payload;
+                showNotification(`[Push Webhook] "${docName}" permission updated at ${timestamp}: ${details}`, status === 'ok' ? 'success' : 'error');
+                break;
+              }
+              case 'SIM_PRESENCE': {
+                const { user } = msg.payload;
+                setConnectedUsers(prev => {
+                  const filtered = prev.filter(u => u.id !== user.id);
+                  if (user.active) {
+                    return [...filtered, user];
+                  }
+                  return filtered;
+                });
+                break;
+              }
+              case 'SIM_CURSOR': {
+                const { id, cursor, cellFocus } = msg.payload;
+                setConnectedUsers(prev => prev.map(u => {
+                  if (u.id === id) {
+                    return { ...u, cursor, cellFocus };
+                  }
+                  return u;
+                }));
+                break;
+              }
+              case 'VOLUNTEERS_CHANGE': {
+                const incoming = msg.payload.volunteers || [];
+                const pendingIds = new Set<string>();
+                pendingVolunteersRef.current.forEach(val => pendingIds.add(val.volunteer.id));
+                const filtered = incoming.filter((vol: Volunteer) => !pendingIds.has(vol.id));
+                setVolunteers(filtered);
+                break;
+              }
+              case 'EXPENSES_CHANGE': {
+                const incoming = msg.payload.expenses || [];
+                const pendingIds = new Set<string>();
+                pendingExpensesRef.current.forEach(val => pendingIds.add(val.expense.id));
+                pendingBulkDeletesRef.current.forEach(val => {
+                  val.expenses.forEach(e => pendingIds.add(e.id));
+                });
+                const filtered = incoming.filter((exp: Expense) => !pendingIds.has(exp.id));
+                setExpenses(filtered);
+                break;
+              }
+              case 'EVENTS_CHANGE': {
+                const incoming = msg.payload.events || [];
+                const pendingIds = new Set<string>();
+                pendingEventsRef.current.forEach(val => pendingIds.add(val.event.id));
+                const filtered = incoming.filter((evt: MinistryEvent) => !pendingIds.has(evt.id));
+                setEvents(filtered);
+                break;
+              }
             }
-            case 'PRESENCE_CHANGE': {
-              const otherUsers = msg.payload.users.filter((u: any) => u.id !== userId);
-              setConnectedUsers(prev => {
-                const simUsers = prev.filter(u => u.id.startsWith('sim_'));
-                return [...otherUsers, ...simUsers];
-              });
-              break;
-            }
-            case 'CURSOR_MOVE': {
-              setConnectedUsers(prev => prev.map(u => {
-                if (u.id === msg.payload.userId) {
-                  return { ...u, cursor: msg.payload.cursor, cellFocus: msg.payload.cellFocus };
-                }
-                return u;
-              }));
-              break;
-            }
-            case 'TEXT_EDIT': {
-              setScratchpadText(msg.payload.text);
-              break;
-            }
-            case 'TABLE_EDIT': {
-              setCollabTable(msg.payload.collabTable);
-              break;
-            }
-            case 'ATTACH_DOCS_CHANGE': {
-              setAttachedDocs(msg.payload.attachedDocs);
-              break;
-            }
-            case 'WEBHOOK_NOTIFICATION': {
-              const { docName, status, details, timestamp } = msg.payload;
-              showNotification(`[Push Webhook] "${docName}" permission updated at ${timestamp}: ${details}`, status === 'ok' ? 'success' : 'error');
-              break;
-            }
-            case 'SIM_PRESENCE': {
-              const { user } = msg.payload;
-              setConnectedUsers(prev => {
-                const filtered = prev.filter(u => u.id !== user.id);
-                if (user.active) {
-                  return [...filtered, user];
-                }
-                return filtered;
-              });
-              break;
-            }
-            case 'SIM_CURSOR': {
-              const { id, cursor, cellFocus } = msg.payload;
-              setConnectedUsers(prev => prev.map(u => {
-                if (u.id === id) {
-                  return { ...u, cursor, cellFocus };
-                }
-                return u;
-              }));
-              break;
-            }
-            case 'VOLUNTEERS_CHANGE': {
-              const incoming = msg.payload.volunteers || [];
-              const pendingIds = new Set<string>();
-              pendingVolunteersRef.current.forEach(val => pendingIds.add(val.volunteer.id));
-              const filtered = incoming.filter((vol: Volunteer) => !pendingIds.has(vol.id));
-              setVolunteers(filtered);
-              break;
-            }
-            case 'EXPENSES_CHANGE': {
-              const incoming = msg.payload.expenses || [];
-              const pendingIds = new Set<string>();
-              pendingExpensesRef.current.forEach(val => pendingIds.add(val.expense.id));
-              pendingBulkDeletesRef.current.forEach(val => {
-                val.expenses.forEach(e => pendingIds.add(e.id));
-              });
-              const filtered = incoming.filter((exp: Expense) => !pendingIds.has(exp.id));
-              setExpenses(filtered);
-              break;
-            }
-            case 'EVENTS_CHANGE': {
-              const incoming = msg.payload.events || [];
-              const pendingIds = new Set<string>();
-              pendingEventsRef.current.forEach(val => pendingIds.add(val.event.id));
-              const filtered = incoming.filter((evt: MinistryEvent) => !pendingIds.has(evt.id));
-              setEvents(filtered);
-              break;
-            }
+          } catch (err) {
+            console.error('Error parsing WS message:', err);
           }
-        } catch (err) {
-          console.error('Error parsing WS message:', err);
-        }
-      };
+        };
 
-      socket.onclose = () => {
-        if (isUnmounted) return;
-        console.log(`Shared Operations WS disconnected. Reconnecting in ${reconnectDelayRef.current}ms...`);
-        reconnectTimeoutRef.current = setTimeout(() => {
-          reconnectDelayRef.current = Math.min(reconnectDelayRef.current * 2, 15000);
-          connect();
-        }, reconnectDelayRef.current);
-      };
-    }).catch((err) => {
-      console.error('Error fetching ID token for WebSocket:', err);
-      if (!isUnmounted) {
-        reconnectTimeoutRef.current = setTimeout(connect, 5000);
-      }
-    });
-  };
+        socket.onclose = () => {
+          if (isUnmounted) return;
+          console.log(`Shared Operations WS disconnected. Reconnecting in ${reconnectDelayRef.current}ms...`);
+          reconnectTimeoutRef.current = setTimeout(() => {
+            reconnectDelayRef.current = Math.min(reconnectDelayRef.current * 2, 15000);
+            connect();
+          }, reconnectDelayRef.current);
+        };
+      }).catch((err) => {
+        console.error('Error fetching ID token for WebSocket:', err);
+        if (!isUnmounted) {
+          reconnectTimeoutRef.current = setTimeout(connect, 5000);
+        }
+      });
+    };
 
     connect();
 
@@ -417,7 +407,7 @@ function MainApp() {
         wsRef.current = null;
       }
     };
-  }, [userId, userName, userColor]);
+  }, [userId, userName, userColor, authUser]);
 
   // Clean up pending timeouts on unmount
   useEffect(() => {
