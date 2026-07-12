@@ -148,7 +148,7 @@ function PlanningCentre({
     });
   };
 
-  const [isDriveExpanded, setIsDriveExpanded] = useState<boolean>(true);
+  const [isDriveExpanded, setIsDriveExpanded] = useState<boolean>(false);
 
   const [ideas, setIdeas] = useState<any[]>([]);
   const [savingScratchpad, setSavingScratchpad] = useState<boolean>(false);
@@ -198,6 +198,8 @@ function PlanningCentre({
   const [configFolderId, setConfigFolderId] = useState<string>('');
   const [savedFolderDetails, setSavedFolderDetails] = useState<{ id: string; name: string } | null>(null);
   const [isEditingFolder, setIsEditingFolder] = useState<boolean>(false);
+  const [isEventFolderOverrideExpanded, setIsEventFolderOverrideExpanded] = useState<boolean>(false);
+  const [isAddMenuOpen, setIsAddMenuOpen] = useState<boolean>(false);
 
   // Permission Audit states
   const [auditingDocId, setAuditingDocId] = useState<string | null>(null);
@@ -206,6 +208,7 @@ function PlanningCentre({
   const [manualAuditVerified, setManualAuditVerified] = useState<boolean>(false);
   const [isSimulation, setIsSimulation] = useState<boolean>(false);
   const [expandedHistoryDocId, setExpandedHistoryDocId] = useState<string | null>(null);
+  const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const [registeringWatchId, setRegisteringWatchId] = useState<string | null>(null);
   const [triggeringWebhookId, setTriggeringWebhookId] = useState<string | null>(null);
 
@@ -1332,25 +1335,23 @@ function PlanningCentre({
                 {/* Connection Status Badge */}
                 <div className="flex items-center gap-1.5 shrink-0 mr-1">
                   {(!driveStatus || (!driveStatus.connected)) ? (
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-slate-500 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-full shrink-0">
-                        <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-                        <span className="hidden sm:inline">Drive not connected</span>
-                      </span>
+                    <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-slate-500 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-full shrink-0">
+                      <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                      <span>Not connected</span>
                       <button
                         onClick={handleConnectDrive}
-                        className="shrink-0 bg-[#856637] hover:bg-[#72572e] text-white font-bold text-[10px] px-2.5 py-1 rounded-lg transition shadow-xs cursor-pointer flex items-center gap-1"
+                        className="text-[#856637] hover:text-[#72572e] font-bold underline cursor-pointer shrink-0 text-[10px] ml-1"
                       >
-                        <LogIn size={11} /> Connect Drive
+                        Connect
                       </button>
-                    </div>
+                    </span>
                   ) : driveStatus.connected && driveStatus.expired ? (
                     <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-amber-850 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full shrink-0">
                       <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
-                      <span>Needs reconnect</span>
+                      <span>Reconnect needed</span>
                       <button
                         onClick={handleConnectDrive}
-                        className="text-[#856637] hover:text-[#72572e] font-bold underline cursor-pointer shrink-0 text-[10px]"
+                        className="text-[#856637] hover:text-[#72572e] font-bold underline cursor-pointer shrink-0 text-[10px] ml-1"
                       >
                         Reconnect
                       </button>
@@ -1358,12 +1359,12 @@ function PlanningCentre({
                   ) : (
                     <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full shrink-0">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                      <span className="truncate max-w-[130px] sm:max-w-[200px]" title={`Drive connected${driveStatus.folderName ? ` (${driveStatus.folderName})` : ''}`}>
-                        Drive connected{driveStatus.folderName ? ` (${driveStatus.folderName})` : ''}
+                      <span className="truncate max-w-[250px] sm:max-w-[350px]" title={`Drive connected · ${driveStatus.folderName || savedFolderDetails?.name || currentFolderName}`}>
+                        Drive connected · {driveStatus.folderName || savedFolderDetails?.name || currentFolderName}
                       </span>
                       <button
                         onClick={handleDisconnectDrive}
-                        className="text-emerald-600 hover:text-emerald-800 font-bold underline cursor-pointer shrink-0 text-[10px]"
+                        className="text-emerald-600 hover:text-emerald-800 font-bold underline cursor-pointer shrink-0 text-[10px] ml-1"
                       >
                         Disconnect
                       </button>
@@ -1422,37 +1423,54 @@ function PlanningCentre({
           <div className="space-y-6">
 
             {selectedEventId && (
-              <div className="bg-[#fcfaf7] border border-[#e2dcd0] rounded-xl p-4 shadow-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 -mt-2 mb-2">
-                <div className="space-y-0.5 flex-1">
-                  <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5"><Globe size={12} className="text-[#856637]" /> Target Drive Folder</h4>
-                  <p className="text-[10px] text-slate-500">Google Drive Folder ID where new docs for this event will be saved (overrides global folder).</p>
-                </div>
-                <div className="flex gap-2 w-full sm:w-auto">
-                  <input
-                    type="text"
-                    value={eventFolderInput}
-                    onChange={(e) => setEventFolderInput(e.target.value)}
-                    placeholder="Folder ID or URL..."
-                    className="flex-1 px-3 py-1.5 border border-[#e2dcd0] rounded-xl bg-white focus:outline-none focus:border-[#c2aa80] text-xs"
-                  />
-                  <button
-                    onClick={async () => {
-                      if (!onUpdateEvent) return;
-                      
-                      let cleanId = eventFolderInput;
-                      if (cleanId.includes('/folders/')) {
-                        cleanId = cleanId.split('/folders/')[1].split('?')[0].split('/')[0];
-                      }
-                      
-                      setEventFolderInput(cleanId);
-                      await onUpdateEvent(selectedEventId, { driveFolderId: cleanId });
-                      showNotification('Event Drive folder updated successfully!', 'success');
-                    }}
-                    className="px-3 py-1.5 bg-[#856637] hover:bg-[#72572e] text-white text-xs font-bold rounded-xl transition cursor-pointer"
-                  >
-                    Save
-                  </button>
-                </div>
+              <div className="space-y-2 -mt-2 mb-2 text-left">
+                <button
+                  type="button"
+                  onClick={() => setIsEventFolderOverrideExpanded(!isEventFolderOverrideExpanded)}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-[#856637] hover:text-[#72572e] transition cursor-pointer select-none"
+                >
+                  <span>Advanced: use a different folder for this event</span>
+                  <span className="text-[10px] text-slate-400 font-normal">
+                    {isEventFolderOverrideExpanded ? 'Hide ▴' : 'Show ▾'}
+                  </span>
+                </button>
+
+                {isEventFolderOverrideExpanded && (
+                  <div className="bg-[#fcfaf7] border border-[#e2dcd0] rounded-xl p-4 shadow-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 transition-all duration-200">
+                    <div className="space-y-0.5 flex-1">
+                      <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                        <Globe size={12} className="text-[#856637]" /> Target Drive Folder
+                      </h4>
+                      <p className="text-[10px] text-slate-500">Google Drive Folder ID where new docs for this event will be saved (overrides global folder).</p>
+                    </div>
+                    <div className="flex gap-2 w-full sm:w-auto">
+                      <input
+                        type="text"
+                        value={eventFolderInput}
+                        onChange={(e) => setEventFolderInput(e.target.value)}
+                        placeholder="Folder ID or URL..."
+                        className="flex-1 px-3 py-1.5 border border-[#e2dcd0] rounded-xl bg-white focus:outline-none focus:border-[#c2aa80] text-xs"
+                      />
+                      <button
+                        onClick={async () => {
+                          if (!onUpdateEvent) return;
+                          
+                          let cleanId = eventFolderInput;
+                          if (cleanId.includes('/folders/')) {
+                            cleanId = cleanId.split('/folders/')[1].split('?')[0].split('/')[0];
+                          }
+                          
+                          setEventFolderInput(cleanId);
+                          await onUpdateEvent(selectedEventId, { driveFolderId: cleanId });
+                          showNotification('Event Drive folder updated successfully!', 'success');
+                        }}
+                        className="px-3 py-1.5 bg-[#856637] hover:bg-[#72572e] text-white text-xs font-bold rounded-xl transition cursor-pointer"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1481,82 +1499,99 @@ function PlanningCentre({
                       </div>
                     )}
 
-                    {/* Responsive Drag and Drop File Portal Zone */}
-                    <div 
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setDragOverPortal(true);
-                      }}
-                      onDragEnter={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setDragOverPortal(true);
-                      }}
-                      onDragLeave={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setDragOverPortal(false);
-                      }}
-                      onDrop={async (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setDragOverPortal(false);
-                        const files = e.dataTransfer.files;
-                        if (files && files.length > 0) {
-                          await handleFilePortalUpload(files[0], selectedEventId);
-                        }
-                      }}
-                      onClick={() => {
-                        const input = document.getElementById(`planning-portal-file-input`);
-                        if (input) input.click();
-                      }}
-                      className={`relative border-2 border-dashed rounded-2xl p-8 text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-3 overflow-hidden ${
-                        dragOverPortal 
-                          ? 'border-[#856637] bg-[#f5ebd6]/50 scale-[1.01]' 
-                          : 'border-[#e2dcd0] bg-white hover:border-[#c2aa80] hover:bg-[#faf8f4]/40'
-                      }`}
-                    >
-                      {isUploading ? (
-                        <div className="space-y-3 flex flex-col items-center">
-                          <Loader2 className="w-8 h-8 text-[#856637] animate-spin" />
-                          <p className="text-xs font-mono font-bold tracking-wide text-[#856637] uppercase">
-                            Secure Uploading Portal
-                          </p>
-                          <p className="text-[11px] text-slate-500 font-medium">
-                            {uploadProgress}
-                          </p>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="w-12 h-12 rounded-full bg-[#f5ebd6] text-[#856637] flex items-center justify-center shadow-sm">
-                            <Upload className="w-6 h-6" />
-                          </div>
-                          <div>
-                            <h4 className="text-sm font-serif font-black text-slate-800 mb-1">
-                              Responsive Drag-and-Drop File Portal
-                            </h4>
-                            <p className="text-[11px] text-slate-500 max-w-md leading-relaxed mx-auto">
-                              Drag and drop a local spreadsheet, text document, or presentation here to automatically upload to this event's Google Drive folder in the background. Sharing permissions will update to <strong className="font-bold text-[#856637]">"Anyone can edit"</strong> and register in the hub!
-                            </p>
-                          </div>
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#fdfcfb] border border-[#e2dcd0] text-[10px] font-semibold text-slate-500 hover:text-slate-700 transition">
-                            Or select file manually from computer
-                          </span>
-                        </>
-                      )}
+                    {/* Compact Add Control Bar */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#faf8f4]/40 border border-[#e2dcd0] rounded-2xl p-4 shadow-xs">
+                      <div className="text-left space-y-0.5">
+                        <h4 className="text-sm font-serif font-black text-slate-800">Shared Drive Files</h4>
+                        <p className="text-[10px] text-slate-400 font-medium">Drag files here to upload.</p>
+                      </div>
                       
-                      <input 
-                        id="planning-portal-file-input"
-                        type="file"
-                        className="hidden"
-                        onChange={async (e) => {
-                          const files = e.target.files;
-                          if (files && files.length > 0) {
-                            await handleFilePortalUpload(files[0], selectedEventId);
-                          }
-                        }}
-                      />
+                      <div className="flex items-center gap-3">
+                        {isUploading && (
+                          <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 text-emerald-800 px-3 py-1.5 rounded-xl text-[10px] font-semibold animate-pulse">
+                            <Loader2 size={12} className="animate-spin text-emerald-600" />
+                            <span>Uploading: {uploadProgress}</span>
+                          </div>
+                        )}
+                        
+                        <div className="relative inline-block text-left">
+                          <button
+                            type="button"
+                            onClick={() => setIsAddMenuOpen(!isAddMenuOpen)}
+                            className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-[#856637] hover:bg-[#72572e] text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer select-none"
+                          >
+                            <Plus size={14} />
+                            <span>Add document</span>
+                          </button>
+
+                          {isAddMenuOpen && (
+                            <>
+                              <div 
+                                className="fixed inset-0 z-10" 
+                                onClick={() => setIsAddMenuOpen(false)}
+                              />
+                              <div className="absolute right-0 mt-2 w-48 rounded-xl bg-white border border-[#e2dcd0] shadow-lg py-1.5 z-20 text-left">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setIsAddMenuOpen(false);
+                                    handleCreateNewFile('doc');
+                                  }}
+                                  className="w-full px-4 py-2 text-xs text-slate-700 hover:bg-[#fcfaf7] flex items-center gap-2 cursor-pointer font-medium"
+                                >
+                                  <FileText size={13} className="text-blue-500" />
+                                  <span>New Doc</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setIsAddMenuOpen(false);
+                                    handleCreateNewFile('sheet');
+                                  }}
+                                  className="w-full px-4 py-2 text-xs text-slate-700 hover:bg-[#fcfaf7] flex items-center gap-2 cursor-pointer font-medium"
+                                >
+                                  <FileSpreadsheet size={13} className="text-emerald-600" />
+                                  <span>New Sheet</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setIsAddMenuOpen(false);
+                                    setIsLinkingDocOpen(true);
+                                  }}
+                                  className="w-full px-4 py-2 text-xs text-slate-700 hover:bg-[#fcfaf7] flex items-center gap-2 cursor-pointer font-medium"
+                                >
+                                  <Link size={13} className="text-[#856637]" />
+                                  <span>Link existing file</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setIsAddMenuOpen(false);
+                                    document.getElementById('add-control-file-input')?.click();
+                                  }}
+                                  className="w-full px-4 py-2 text-xs text-slate-700 hover:bg-[#fcfaf7] flex items-center gap-2 cursor-pointer font-medium"
+                                >
+                                  <Upload size={13} className="text-slate-500" />
+                                  <span>Upload file</span>
+                                </button>
+                              </div>
+                            </>
+                          )}
+
+                          <input 
+                            id="add-control-file-input"
+                            type="file"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const files = e.target.files;
+                              if (files && files.length > 0) {
+                                await handleFilePortalUpload(files[0], selectedEventId);
+                              }
+                            }}
+                          />
+                        </div>
+                      </div>
                     </div>
 
                     {/* Permission Warning Banner */}
@@ -1585,199 +1620,243 @@ function PlanningCentre({
                       </div>
                     )}
 
-                    {/* Categorized list display */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {categories.map(cat => {
-                        const docsInCat = eventDocs.filter(d => d.category === cat.name);
+                    {/* Categorized list display as a drop target */}
+                    <div 
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDragOverPortal(true);
+                      }}
+                      onDragEnter={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDragOverPortal(true);
+                      }}
+                      onDragLeave={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDragOverPortal(false);
+                      }}
+                      onDrop={async (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDragOverPortal(false);
+                        const files = e.dataTransfer.files;
+                        if (files && files.length > 0) {
+                          await handleFilePortalUpload(files[0], selectedEventId);
+                        }
+                      }}
+                      className="relative min-h-[100px]"
+                    >
+                      {/* Highlight/overlay on the list ONLY while a drag is active */}
+                      {dragOverPortal && (
+                        <div className="absolute inset-0 bg-[#f5ebd6]/90 border border-dashed border-[#856637] rounded-2xl flex flex-col items-center justify-center gap-2 z-50 transition-all">
+                          <div className="w-10 h-10 rounded-full bg-[#856637] text-white flex items-center justify-center shadow-md animate-bounce">
+                            <Upload className="w-5 h-5" />
+                          </div>
+                          <span className="text-xs font-serif font-black text-slate-800">
+                            Drop files to upload to this event's Shared Drive
+                          </span>
+                        </div>
+                      )}
 
-                        return (
-                          <div key={cat.name} className="bg-white border border-[#e2dcd0] rounded-2xl p-5 shadow-xs space-y-4 flex flex-col justify-between">
-                            <div className="space-y-3">
-                              <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
-                                {cat.icon}
-                                <h5 className="text-xs font-serif font-black text-slate-800">{cat.title}</h5>
-                                <span className="ml-auto text-[10px] font-mono bg-slate-100 border border-slate-200 text-slate-500 px-2 py-0.5 rounded-full font-bold">
-                                  {docsInCat.length}
-                                </span>
-                              </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {categories.map(cat => {
+                          const docsInCat = eventDocs.filter(d => d.category === cat.name);
 
-                              <div className="space-y-2.5">
-                                {docsInCat.length === 0 ? (
-                                  <div className="text-center py-8 text-slate-400 border border-dashed border-slate-200 rounded-xl text-[11px]">
-                                    No documents attached. Create or link one below.
-                                  </div>
-                                ) : (
-                                  docsInCat.map(doc => (
-                                    <div key={doc.id} className="flex flex-col gap-2 p-3 bg-[#faf8f4] border border-[#e2dcd0]/50 rounded-xl hover:bg-[#faf8f4]/90 transition text-left">
-                                      <div className="flex items-center justify-between gap-3">
-                                        <div className="min-w-0 flex-1 flex items-center gap-2">
-                                          <div className="shrink-0 p-1.5 rounded bg-white border border-slate-200 text-slate-500">
-                                            {doc.type.includes('spreadsheet') ? <FileSpreadsheet size={13} className="text-emerald-600" /> : <FileText size={13} className="text-blue-500" />}
+                          return (
+                            <div key={cat.name} className="bg-white border border-[#e2dcd0] rounded-2xl p-5 shadow-xs space-y-4 flex flex-col justify-between">
+                              <div className="space-y-3">
+                                <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
+                                  {cat.icon}
+                                  <h5 className="text-xs font-serif font-black text-slate-800">{cat.title}</h5>
+                                  <span className="ml-auto text-[10px] font-mono bg-slate-100 border border-slate-200 text-slate-500 px-2 py-0.5 rounded-full font-bold">
+                                    {docsInCat.length}
+                                  </span>
+                                </div>
+
+                                <div className="space-y-2.5">
+                                  {docsInCat.length === 0 ? (
+                                    <div className="text-center py-8 text-slate-400 border border-dashed border-slate-200 rounded-xl text-[11px]">
+                                      No documents attached. Create or link one below.
+                                    </div>
+                                  ) : (
+                                    docsInCat.map(doc => (
+                                      <div key={doc.id} className="flex flex-col gap-2 p-3 bg-[#faf8f4] border border-[#e2dcd0]/50 rounded-xl hover:bg-[#faf8f4]/90 transition text-left">
+                                        <div className="flex items-center justify-between gap-3">
+                                          <div className="min-w-0 flex-1 flex items-center gap-2">
+                                            <div className="shrink-0 p-1.5 rounded bg-white border border-slate-200 text-slate-500">
+                                              {doc.type.includes('spreadsheet') ? <FileSpreadsheet size={13} className="text-emerald-600" /> : <FileText size={13} className="text-blue-500" />}
+                                            </div>
+                                            <div className="min-w-0 text-left">
+                                              <span className="block font-sans font-semibold text-slate-800 text-xs truncate" title={doc.name}>
+                                                {doc.name}
+                                              </span>
+                                              <span className="block text-[9px] text-slate-400 font-mono mt-0.5">
+                                                By {doc.attachedBy} • {doc.date}
+                                              </span>
+                                            </div>
                                           </div>
-                                          <div className="min-w-0 text-left">
-                                            <span className="block font-sans font-semibold text-slate-800 text-xs truncate" title={doc.name}>
-                                              {doc.name}
-                                            </span>
-                                            <span className="block text-[9px] text-slate-400 font-mono mt-0.5">
-                                              By {doc.attachedBy} • {doc.date}
-                                            </span>
-                                          </div>
-                                        </div>
-                                        <div className="flex items-center gap-1.5 shrink-0">
-                                          <button
-                                            onClick={() => handleAuditDocument(doc)}
-                                            disabled={auditingDocId === doc.id}
-                                            className={`p-1.5 rounded bg-white border border-slate-200 text-slate-450 hover:text-[#856637] hover:border-[#c2aa80] transition shadow-xs cursor-pointer ${
-                                              doc.auditStatus === 'restricted' ? 'border-rose-200 text-rose-600 hover:bg-rose-50' : 
-                                              doc.auditStatus === 'warning' ? 'border-amber-200 text-amber-600 hover:bg-amber-50' : ''
-                                            }`}
-                                            title="Audit Sharing & Access Permissions"
-                                          >
-                                            {auditingDocId === doc.id ? <Loader2 size={11} className="animate-spin" /> : <Shield size={11} />}
-                                          </button>
-                                          <button
-                                            onClick={() => window.open(doc.url, '_blank', 'noopener,noreferrer')}
-                                            className="p-1.5 rounded bg-white border border-slate-200 text-slate-450 hover:text-[#856637] hover:border-[#c2aa80] transition shadow-xs cursor-pointer"
-                                            title="Open in Google Workspace"
-                                          >
-                                            <ExternalLink size={11} />
-                                          </button>
-                                          <button
-                                            onClick={() => handleUnlinkDoc(doc.id)}
-                                            className="p-1.5 rounded bg-white border border-slate-200 text-slate-350 hover:text-red-500 hover:border-red-200 transition shadow-xs cursor-pointer"
-                                            title="Unlink"
-                                          >
-                                            <Trash2 size={11} />
-                                          </button>
-                                        </div>
-                                      </div>
-
-                                      {/* Document Permissions Audit Info row */}
-                                      <div className="pt-2 border-t border-slate-200/50 flex flex-col gap-2">
-                                        {/* Row 1: Access Status */}
-                                        <div className="flex items-center justify-between text-[9px]">
-                                          <span className="text-slate-400 font-mono">Sharing Audit:</span>
-                                          <div className="flex items-center gap-1">
-                                            {doc.auditStatus === 'ok' ? (
-                                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-100 text-[9px] text-emerald-700 font-semibold" title={doc.auditDetails}>
-                                                <ShieldCheck size={10} className="text-emerald-600" />
-                                                Anyone can Edit
-                                              </span>
-                                            ) : doc.auditStatus === 'warning' ? (
-                                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-[9px] text-amber-700 font-semibold" title={doc.auditDetails}>
-                                                <ShieldAlert size={10} className="text-amber-600" />
-                                                View Only (Viewer)
-                                              </span>
-                                            ) : doc.auditStatus === 'restricted' ? (
-                                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-rose-50 border border-rose-200 text-[9px] text-rose-700 font-semibold" title={doc.auditDetails}>
-                                                <Lock size={10} className="text-rose-600" />
-                                                Restricted Access
-                                              </span>
-                                            ) : auditingDocId === doc.id ? (
-                                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-slate-50 border border-slate-200 text-[9px] text-slate-500">
-                                                <Loader2 size={10} className="animate-spin" />
-                                                Auditing...
-                                              </span>
-                                            ) : (
-                                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-[9px] text-slate-400 font-medium">
-                                                <Shield size={10} className="text-slate-400" />
-                                                Unchecked
-                                              </span>
-                                            )}
-                                          </div>
-                                        </div>
-
-                                        {/* Row 2: Intelligent Google Drive Push Notification Webhooks */}
-                                        <div className="flex items-center justify-between text-[9px] bg-slate-100/50 p-1.5 rounded-lg border border-slate-200/40">
-                                          <span className="text-slate-500 font-sans font-medium flex items-center gap-1">
-                                            <span className={`w-1.5 h-1.5 rounded-full ${doc.watchStatus === 'active' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></span>
-                                            Real-time Watcher:
-                                          </span>
-                                          <div className="flex items-center gap-1.5">
-                                            {doc.watchStatus === 'active' ? (
-                                              <>
-                                                <span className="text-[9px] text-emerald-700 font-semibold bg-emerald-50 px-1 rounded-sm">Active</span>
-                                                <button
-                                                  type="button"
-                                                  onClick={(e) => { e.stopPropagation(); handleTriggerWebhook(doc); }}
-                                                  disabled={triggeringWebhookId === doc.id}
-                                                  className="text-[9px] text-[#856637] hover:text-[#5c4422] font-bold underline disabled:opacity-50 cursor-pointer"
-                                                  title="Trigger simulated Drive update events in the background"
-                                                >
-                                                  {triggeringWebhookId === doc.id ? 'Simulating...' : 'Simulate Change'}
-                                                </button>
-                                              </>
-                                            ) : (
-                                              <button
-                                                type="button"
-                                                onClick={(e) => { e.stopPropagation(); handleWatchDocument(doc); }}
-                                                disabled={registeringWatchId === doc.id}
-                                                className="text-[9px] bg-[#856637] hover:bg-[#6c512a] text-white px-2 py-0.5 rounded-md font-bold transition flex items-center gap-1 shrink-0 cursor-pointer font-sans"
-                                              >
-                                                {registeringWatchId === doc.id ? <Loader2 size={8} className="animate-spin" /> : null}
-                                                Enable Watcher
-                                              </button>
-                                            )}
-                                          </div>
-                                        </div>
-
-                                        {doc.auditDetails && (
-                                          <p className="text-[9px] text-slate-500 leading-normal italic bg-white/45 p-1.5 rounded border border-slate-100 mt-0.5">
-                                            {doc.auditDetails}
-                                          </p>
-                                        )}
-
-                                        {/* Collapsible Audit History Section */}
-                                        <div className="mt-1 border-t border-slate-200/40 pt-1.5">
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setExpandedHistoryDocId(expandedHistoryDocId === doc.id ? null : doc.id);
-                                            }}
-                                            className="w-full flex items-center justify-between text-[9px] text-slate-500 hover:text-slate-800 font-semibold cursor-pointer"
-                                          >
-                                            <span className="flex items-center gap-1 font-sans">
-                                              <Clock size={10} />
-                                              Audit History Log ({doc.auditHistory ? doc.auditHistory.length : 0})
-                                            </span>
-                                            <span>{expandedHistoryDocId === doc.id ? 'Hide ▴' : 'Show ▾'}</span>
-                                          </button>
-
-                                          {expandedHistoryDocId === doc.id && (
-                                            <div className="mt-1.5 space-y-1.5 max-h-32 overflow-y-auto pr-1 bg-white p-2 rounded-lg border border-slate-150 text-left">
-                                              {!doc.auditHistory || doc.auditHistory.length === 0 ? (
-                                                <p className="text-[8px] text-slate-400 italic text-center py-1">No historical checks found. Trigger an audit above or via watcher to log status.</p>
+                                          <div className="flex items-center gap-1.5 shrink-0">
+                                            {/* ONE sharing-status badge */}
+                                            <div className="flex items-center gap-1">
+                                              {doc.auditStatus === 'ok' ? (
+                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-100 text-[9px] text-emerald-700 font-semibold">
+                                                  <ShieldCheck size={10} className="text-emerald-600" />
+                                                  Shared
+                                                </span>
+                                              ) : doc.auditStatus === 'warning' ? (
+                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-[9px] text-amber-700 font-semibold">
+                                                  <ShieldAlert size={10} className="text-amber-600" />
+                                                  View only
+                                                </span>
+                                              ) : doc.auditStatus === 'restricted' ? (
+                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-rose-50 border border-rose-200 text-[9px] text-rose-700 font-semibold">
+                                                  <Lock size={10} className="text-rose-600" />
+                                                  Restricted
+                                                </span>
                                               ) : (
-                                                doc.auditHistory.map((hist: any) => (
-                                                  <div key={hist.id} className="text-[8px] border-b border-slate-100 pb-1.5 last:border-0 last:pb-0">
-                                                    <div className="flex items-center justify-between font-mono text-[7.5px] text-slate-400">
-                                                      <span>{new Date(hist.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })} • {hist.triggerType === 'webhook' ? 'Webhook ⚡' : 'Manual 👤'}</span>
-                                                      <span className={`font-semibold px-1 rounded-sm ${
-                                                        hist.status === 'ok' ? 'bg-emerald-50 text-emerald-700' :
-                                                        hist.status === 'warning' ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-700'
-                                                      }`}>
-                                                        {hist.status.toUpperCase()}
-                                                      </span>
-                                                    </div>
-                                                    <p className="text-slate-600 mt-0.5 leading-relaxed font-sans font-medium">
-                                                      Checked by <span className="font-bold text-slate-800">{hist.checkedBy}</span>: {hist.details || 'No additional remarks.'}
-                                                    </p>
-                                                  </div>
-                                                ))
+                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-[9px] text-slate-400 font-medium">
+                                                  <Shield size={10} className="text-slate-400" />
+                                                  Unchecked
+                                                </span>
                                               )}
                                             </div>
-                                          )}
+
+                                            <button
+                                              onClick={() => window.open(doc.url, '_blank', 'noopener,noreferrer')}
+                                              className="p-1.5 rounded bg-white border border-slate-200 text-slate-450 hover:text-[#856637] hover:border-[#c2aa80] transition shadow-xs cursor-pointer"
+                                              title="Open document"
+                                            >
+                                              <ExternalLink size={11} />
+                                            </button>
+
+                                            <button
+                                              onClick={() => setExpandedCardId(expandedCardId === doc.id ? null : doc.id)}
+                                              className={`p-1.5 rounded bg-white border border-slate-200 text-slate-450 hover:text-[#856637] hover:border-[#c2aa80] transition shadow-xs cursor-pointer font-bold ${expandedCardId === doc.id ? 'bg-[#f5ebd6]/50 border-[#c2aa80] text-[#856637]' : ''}`}
+                                              title="Details and options"
+                                            >
+                                              <span>…</span>
+                                            </button>
+                                          </div>
                                         </div>
+
+                                        {/* Collapsible Details section */}
+                                        {expandedCardId === doc.id && (
+                                          <div className="mt-2 pt-2 border-t border-slate-200/50 flex flex-col gap-2 transition-all duration-200 bg-slate-50/50 p-2 rounded-lg">
+                                            <div className="flex items-center justify-between text-[10px] py-1 border-b border-slate-100 last:border-0">
+                                              <span className="text-slate-500 font-medium">Security Access Audit</span>
+                                              <button
+                                                onClick={() => handleAuditDocument(doc)}
+                                                disabled={auditingDocId === doc.id}
+                                                className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-slate-200 rounded-md text-[10px] text-slate-700 hover:text-[#856637] hover:border-[#c2aa80] disabled:opacity-50 transition shadow-xs cursor-pointer"
+                                              >
+                                                {auditingDocId === doc.id ? <Loader2 size={10} className="animate-spin" /> : <Shield size={10} />}
+                                                <span>Audit Permissions</span>
+                                              </button>
+                                            </div>
+
+                                            <div className="flex items-center justify-between text-[10px] py-1 border-b border-slate-100 last:border-0">
+                                              <span className="text-slate-500 font-medium flex items-center gap-1">
+                                                <span className={`w-1.5 h-1.5 rounded-full ${doc.watchStatus === 'active' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></span>
+                                                Real-time Watcher:
+                                              </span>
+                                              <div className="flex items-center gap-1.5">
+                                                {doc.watchStatus === 'active' ? (
+                                                  <>
+                                                    <span className="text-[9px] text-emerald-700 font-semibold bg-emerald-50 px-1 rounded-sm">Active</span>
+                                                    <button
+                                                      type="button"
+                                                      onClick={(e) => { e.stopPropagation(); handleTriggerWebhook(doc); }}
+                                                      disabled={triggeringWebhookId === doc.id}
+                                                      className="text-[9px] text-[#856637] hover:text-[#5c4422] font-bold underline disabled:opacity-50 cursor-pointer"
+                                                    >
+                                                      {triggeringWebhookId === doc.id ? 'Simulating...' : 'Simulate Change'}
+                                                    </button>
+                                                  </>
+                                                ) : (
+                                                  <button
+                                                    type="button"
+                                                    onClick={(e) => { e.stopPropagation(); handleWatchDocument(doc); }}
+                                                    disabled={registeringWatchId === doc.id}
+                                                    className="text-[9px] bg-[#856637] hover:bg-[#6c512a] text-white px-2 py-0.5 rounded-md font-bold transition flex items-center gap-1 shrink-0 cursor-pointer font-sans"
+                                                  >
+                                                    {registeringWatchId === doc.id ? <Loader2 size={8} className="animate-spin" /> : null}
+                                                    Enable Watcher
+                                                  </button>
+                                                )}
+                                              </div>
+                                            </div>
+
+                                            {doc.auditDetails && (
+                                              <div className="text-[9.5px] text-slate-500 leading-normal italic bg-white p-2 rounded border border-slate-150 mt-0.5">
+                                                {doc.auditDetails}
+                                              </div>
+                                            )}
+
+                                            <div className="mt-1 pt-1 border-t border-slate-100">
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setExpandedHistoryDocId(expandedHistoryDocId === doc.id ? null : doc.id);
+                                                }}
+                                                className="w-full flex items-center justify-between text-[9px] text-slate-500 hover:text-slate-800 font-semibold cursor-pointer"
+                                              >
+                                                <span className="flex items-center gap-1 font-sans">
+                                                  <Clock size={10} />
+                                                  Audit History Log ({doc.auditHistory ? doc.auditHistory.length : 0})
+                                                </span>
+                                                <span>{expandedHistoryDocId === doc.id ? 'Hide ▴' : 'Show ▾'}</span>
+                                              </button>
+
+                                              {expandedHistoryDocId === doc.id && (
+                                                <div className="mt-1.5 space-y-1.5 max-h-32 overflow-y-auto pr-1 bg-white p-2 rounded-lg border border-slate-150 text-left">
+                                                  {!doc.auditHistory || doc.auditHistory.length === 0 ? (
+                                                    <p className="text-[8px] text-slate-400 italic text-center py-1">No historical checks found. Trigger an audit above or via watcher to log status.</p>
+                                                  ) : (
+                                                    doc.auditHistory.map((hist: any) => (
+                                                      <div key={hist.id} className="text-[8px] border-b border-slate-100 pb-1.5 last:border-0 last:pb-0">
+                                                        <div className="flex items-center justify-between font-mono text-[7.5px] text-slate-400">
+                                                          <span>{new Date(hist.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })} • {hist.triggerType === 'webhook' ? 'Webhook ⚡' : 'Manual 👤'}</span>
+                                                          <span className={`font-semibold px-1 rounded-sm ${
+                                                            hist.status === 'ok' ? 'bg-emerald-50 text-emerald-700' :
+                                                            hist.status === 'warning' ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-700'
+                                                          }`}>
+                                                            {hist.status.toUpperCase()}
+                                                          </span>
+                                                        </div>
+                                                        <p className="text-slate-600 mt-0.5 leading-relaxed font-sans font-medium">
+                                                          Checked by <span className="font-bold text-slate-800">{hist.checkedBy}</span>: {hist.details || 'No additional remarks.'}
+                                                        </p>
+                                                      </div>
+                                                    ))
+                                                  )}
+                                                </div>
+                                              )}
+                                            </div>
+
+                                            <div className="flex justify-end pt-1 border-t border-slate-100">
+                                              <button
+                                                onClick={() => handleUnlinkDoc(doc.id)}
+                                                className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 hover:text-rose-850 transition cursor-pointer"
+                                                title="Unlink document"
+                                              >
+                                                <Trash2 size={11} />
+                                                <span>Unlink</span>
+                                              </button>
+                                            </div>
+                                          </div>
+                                        )}
                                       </div>
-                                    </div>
-                                  ))
-                                )}
+                                    ))
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                      </div>
                     </div>
 
                     {/* Creation & Linking Controls */}
@@ -1788,10 +1867,10 @@ function PlanningCentre({
                         <div className="space-y-1 text-left">
                           <h5 className="text-xs font-bold text-[#856637] flex items-center gap-1">
                             <Sparkles size={13} />
-                            Instantiate Standard Templates
+                            Create a document
                           </h5>
                           <p className="text-[10px] text-slate-400">
-                            Natively generate official planning files directly within Google Drive mapped to this event scope.
+                            Generate a new document or spreadsheet inside the event folder.
                           </p>
                         </div>
 
@@ -1890,10 +1969,10 @@ function PlanningCentre({
                     <div className="bg-[#fcfaf7] border border-[#e2dcd0] rounded-2xl p-5 text-left space-y-2">
                       <h6 className="text-[11px] font-serif font-bold text-slate-800 flex items-center gap-1.5">
                         <Settings size={12} className="text-[#856637]" />
-                        Operational Permission Recommendations & Shared Drives
+                        Sharing tips
                       </h6>
                       <p className="text-[10px] text-slate-500 leading-relaxed">
-                        To guarantee that all Ministry Leads can edit newly instantiated files natively, configure a dedicated **Google Shared Team Drive**. Creating docs inside a Shared Drive ensures permissions inherit automatically so anyone with a MinistryOS login maintains co-authoring rights without individual invitation friction.
+                        To ensure all team members can edit new files, we recommend using a **Google Shared Drive**. Files created in a Shared Drive automatically inherit permission rules, so anyone on the team can co-author without manual sharing.
                       </p>
                     </div>
 
@@ -1918,10 +1997,10 @@ function PlanningCentre({
             className="w-full flex items-center justify-between bg-[#faf8f4] p-4 border-b border-[#e2dcd0] hover:bg-[#faf8f4]/90 transition text-left cursor-pointer"
           >
             <div className="flex items-center gap-2">
-              <Globe size={18} className="text-[#856637]" />
-              <h3 className="text-sm font-serif font-black text-slate-800">Browse shared drive</h3>
-              <span className="text-[10px] text-slate-400 font-medium">
-                ({savedFolderDetails?.name || currentFolderName})
+              <Folder size={18} className="text-[#856637]" />
+              <h3 className="text-sm font-serif font-black text-slate-800">Browse shared Drive</h3>
+              <span className="text-[10px] font-mono bg-slate-100 border border-slate-200 text-slate-500 px-2 py-0.5 rounded-full font-bold">
+                {driveFiles.length} file{driveFiles.length !== 1 ? 's' : ''}
               </span>
               {unifiedSearch && (
                 <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-mono">
@@ -1929,8 +2008,9 @@ function PlanningCentre({
                 </span>
               )}
             </div>
-            <div className="text-slate-500 font-bold text-xs select-none">
-              {isDriveExpanded ? 'Hide ▴' : 'Show ▾'}
+            <div className="text-slate-400 font-bold text-xs select-none flex items-center gap-1">
+              <span>{isDriveExpanded ? 'Collapse' : 'Expand'}</span>
+              <span className="text-sm font-serif">{isDriveExpanded ? '▴' : '▾'}</span>
             </div>
           </button>
 
@@ -2026,24 +2106,15 @@ function PlanningCentre({
                 <div className="flex-1 flex flex-col space-y-3 min-h-0">
                   
                   {isSimulation && (
-                    <div className="bg-amber-50/60 border border-amber-200 rounded-2xl p-4 text-left flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
-                      <div className="flex gap-2.5 items-start">
-                        <div className="p-1.5 rounded-lg bg-amber-100 text-amber-600 shrink-0 mt-0.5">
-                          <Globe size={15} />
-                        </div>
-                        <div className="space-y-0.5">
-                          <h5 className="text-xs font-bold text-amber-950 font-sans">Simulation Workspace Active</h5>
-                          <p className="text-[10px] text-amber-850 leading-relaxed">
-                            No Google Authentication detected or Google Drive API is unconfigured. Showing high-fidelity interactive placeholder assets to plan event templates offline.
-                          </p>
-                        </div>
-                      </div>
+                    <div className="bg-amber-50/50 border border-amber-200/60 rounded-xl px-4 py-2 flex items-center gap-2 text-xs font-semibold text-amber-800">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                      <span>Showing sample files — connect Drive to see your real files</span>
                       {!googleAccessToken && (
                         <button
                           onClick={handleConnectDrive}
-                          className="shrink-0 bg-[#856637] hover:bg-[#72572e] text-white font-bold text-[10px] px-3 py-1.5 rounded-lg transition shadow-xs cursor-pointer flex items-center gap-1"
+                          className="ml-auto text-[#856637] hover:text-[#72572e] font-bold underline cursor-pointer text-xs"
                         >
-                          <LogIn size={11} /> Connect Drive
+                          Connect Drive
                         </button>
                       )}
                     </div>

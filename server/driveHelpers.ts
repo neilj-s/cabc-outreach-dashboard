@@ -200,7 +200,13 @@ export async function getDriveAccessToken(userBearerToken?: string): Promise<str
   }
 
   if (userBearerToken) {
-    return userBearerToken.replace('Bearer ', '').trim();
+    const cleanToken = userBearerToken.replace('Bearer ', '').trim();
+    // A Firebase ID token is a JWT (3 parts separated by dots).
+    // A real Google OAuth access token is not a 3-part JWT starting with 'ey'.
+    const isJwt = cleanToken.split('.').length === 3;
+    if (!isJwt) {
+      return cleanToken;
+    }
   }
 
   throw new Error('No Google authentication configured. Please provide a user OAuth token or configure a Service Account.');
