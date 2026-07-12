@@ -1336,6 +1336,7 @@ function MainApp() {
         return (
           <PlanningCentre
             events={filteredEvents}
+            activities={activities}
             lanes={lanes}
             onCreateEvent={handleCreateEvent}
             onCloneEvent={handleCloneEvent}

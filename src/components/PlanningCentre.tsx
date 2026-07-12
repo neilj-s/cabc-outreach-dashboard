@@ -28,6 +28,7 @@ import {
   Bold,
   Italic,
   List,
+  Printer,
   Quote,
   Upload,
   Globe,
@@ -53,7 +54,7 @@ import {
   Lock,
   Unlock
 } from 'lucide-react';
-import { MinistryEvent, LaneDetail, MilestoneKey, MinistryLane, EventDoc, Idea, AttachedDoc, CollabTable } from '../types';
+import { MinistryEvent, LaneDetail, MilestoneKey, MinistryLane, EventDoc, Idea, AttachedDoc, CollabTable, RecentActivity } from '../types';
 import ConfirmDialog from './ConfirmDialog';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
@@ -68,6 +69,7 @@ googleProvider.addScope('https://www.googleapis.com/auth/drive');
 
 interface PlanningCentreProps {
   events: MinistryEvent[];
+  activities: RecentActivity[];
   lanes: LaneDetail[];
   onCreateEvent: (name: string, date: string, description: string) => Promise<void>;
   onCloneEvent?: (id: string, newDate: string) => Promise<void>;
@@ -94,6 +96,7 @@ interface PlanningCentreProps {
 
 function PlanningCentre({
   events,
+  activities,
   lanes,
   onCreateEvent,
   onCloneEvent,
@@ -125,6 +128,32 @@ function PlanningCentre({
     if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   };
+
+  const formatRelativeTime = (isoStr: string) => {
+    try {
+      const date = new Date(isoStr);
+      const now = new Date();
+      const diffMs = now.getTime() - date.getTime();
+      const diffMins = Math.floor(diffMs / (1000 * 60));
+      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+      if (diffMins < 1) return 'Just now';
+      if (diffMins < 60) return `${diffMins}m ago`;
+      if (diffHours < 24) {
+        return `${diffHours}h ago`;
+      }
+      if (diffDays === 1) {
+        return 'Yesterday';
+      }
+      if (diffDays < 7) {
+        return `${diffDays}d ago`;
+      }
+      return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    } catch (e) {
+      return isoStr;
+    }
+  };
   
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -155,6 +184,20 @@ function PlanningCentre({
   const [ideas, setIdeas] = useState<any[]>([]);
   const [savingScratchpad, setSavingScratchpad] = useState<boolean>(false);
   const [scratchpadSavedTime, setScratchpadSavedTime] = useState<string | null>(null);
+  const saveTimeoutRef = useRef<any>(null);
+  const [timeTick, setTimeTick] = useState<number>(0);
+
+  useEffect(() => {
+    const tickInterval = setInterval(() => {
+      setTimeTick(prev => prev + 1);
+    }, 15000);
+    return () => {
+      clearInterval(tickInterval);
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const [selectedIdeaForConversion, setSelectedIdeaForConversion] = useState<any | null>(null);
   const [convEventName, setConvEventName] = useState<string>('');
@@ -163,7 +206,16 @@ function PlanningCentre({
   const [convDocName, setConvDocName] = useState<string>('');
   const [categoryFilter, setCategoryFilter] = useState<string>('All');
   
-  const handleSaveScratchpad = (text?: string) => {};
+  const handleSaveScratchpad = (text?: string) => {
+    setSavingScratchpad(true);
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    saveTimeoutRef.current = setTimeout(() => {
+      setSavingScratchpad(false);
+      setScratchpadSavedTime(new Date().toISOString());
+    }, 800);
+  };
 
 
   // Clone Event states
@@ -179,6 +231,25 @@ function PlanningCentre({
   const [linkingDocCategory, setLinkingDocCategory] = useState<'Spreadsheets/Budgets' | 'Meeting Minutes'>('Spreadsheets/Budgets');
   const [isLinkingDocOpen, setIsLinkingDocOpen] = useState<boolean>(false);
   const [creatingFile, setCreatingFile] = useState<boolean>(false);
+
+  // File naming modal state
+  const [namingFileType, setNamingFileType] = useState<'doc' | 'sheet' | null>(null);
+  const [namingFileName, setNamingFileName] = useState<string>('');
+
+  const triggerNamingStep = (fileType: 'doc' | 'sheet') => {
+    if (!selectedEventId) {
+      showNotification('Please select an active event first.', 'error');
+      return;
+    }
+    const eventObj = events.find(e => e.id === selectedEventId);
+    const eventName = eventObj ? eventObj.name : 'Event';
+    const defaultName = fileType === 'doc' 
+      ? `${eventName} - Planning Guide` 
+      : `${eventName} - Budget & Prep Tracker`;
+    
+    setNamingFileType(fileType);
+    setNamingFileName(defaultName);
+  };
 
   const [focusedCell, setFocusedCell] = useState<{ row: number; col: number } | null>(null);
 
@@ -466,12 +537,14 @@ function PlanningCentre({
   // Sync scratchpad edits to WS and save
   const handleScratchpadChange = (text: string) => {
     setScratchpadText(text);
+    setSavingScratchpad(true);
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
         type: 'TEXT_EDIT',
         payload: { text }
       }));
     }
+    handleSaveScratchpad(text);
   };
 
   // Sync cursor position over WS
@@ -562,6 +635,53 @@ function PlanningCentre({
         }
       }));
     }
+  };
+
+  const handleAddRow = () => {
+    const defaultHeaders = collabTable?.headers || ['Time', 'Session / Item', 'Lane', 'Lead Officer', 'Required Prep / Notes'];
+    const newRow = Array(defaultHeaders.length).fill('');
+    const currentRows = collabTable?.rows || [];
+    const updatedRows = [...currentRows, newRow];
+    const updatedTable = { headers: defaultHeaders, rows: updatedRows };
+    setCollabTable(updatedTable);
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'TABLE_EDIT',
+        payload: { collabTable: updatedTable }
+      }));
+    }
+    showNotification('Added a new row to the run-of-show!', 'success');
+  };
+
+  const handleDeleteRow = (rowIndex: number) => {
+    const defaultHeaders = collabTable?.headers || ['Time', 'Session / Item', 'Lane', 'Lead Officer', 'Required Prep / Notes'];
+    const currentRows = collabTable?.rows || [];
+    const updatedRows = currentRows.filter((_, idx) => idx !== rowIndex);
+    const updatedTable = { headers: defaultHeaders, rows: updatedRows };
+    setCollabTable(updatedTable);
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'TABLE_EDIT',
+        payload: { collabTable: updatedTable }
+      }));
+    }
+    showNotification('Removed row from the run-of-show.', 'info');
+  };
+
+  const handleClearTable = async () => {
+    const confirmed = await confirmAction('Clear Run-of-Show Table', 'Are you sure you want to clear all rows in the timing table? This action cannot be undone.');
+    if (!confirmed) return;
+
+    const defaultHeaders = collabTable?.headers || ['Time', 'Session / Item', 'Lane', 'Lead Officer', 'Required Prep / Notes'];
+    const updatedTable = { headers: defaultHeaders, rows: [] };
+    setCollabTable(updatedTable);
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'TABLE_EDIT',
+        payload: { collabTable: updatedTable }
+      }));
+    }
+    showNotification('Cleared all rows in the run-of-show.', 'info');
   };
 
   // Filter state
@@ -701,8 +821,7 @@ function PlanningCentre({
     }
 
     const updatedText = text.substring(0, start) + replacement + text.substring(end);
-    setScratchpadText(updatedText);
-    handleSaveScratchpad(updatedText);
+    handleScratchpadChange(updatedText);
 
     // Refocus textarea and place selection
     setTimeout(() => {
@@ -955,15 +1074,12 @@ function PlanningCentre({
   };
 
   // Create new file natively (Doc or Sheet)
-  const handleCreateNewFile = async (fileType: 'doc' | 'sheet') => {
+  const handleCreateNewFile = async (fileType: 'doc' | 'sheet', fileName: string) => {
     if (!selectedEventId) {
       showNotification('Please select an active event first.', 'error');
       return;
     }
 
-    const eventObj = events.find(e => e.id === selectedEventId);
-    const eventName = eventObj ? eventObj.name : 'Event';
-    const fileName = `${eventName} - ${fileType === 'doc' ? 'Planning Guide' : 'Budget & Prep Tracker'}`;
     const category = fileType === 'doc' ? 'Meeting Minutes' : 'Spreadsheets/Budgets';
 
     setCreatingFile(true);
@@ -1411,6 +1527,84 @@ function PlanningCentre({
           </div>
         </div>
 
+        {/* Recent Activity Section */}
+        <div className="bg-[#faf8f4] border border-[#e2dcd0] rounded-2xl p-4 shadow-xs text-left">
+          <div className="flex items-center gap-1.5 mb-2.5 border-b border-[#e2dcd0]/60 pb-1.5">
+            <Clock size={14} className="text-[#856637]" />
+            <span className="text-[10px] uppercase font-bold tracking-widest text-[#856637]">Recent Event Activity</span>
+          </div>
+
+          {selectedEventId ? (
+            (() => {
+              const eventActivities = (activities || [])
+                .filter(act => {
+                  const metaEventId = act.metadata?.eventId;
+                  const rootEventId = (act as any).eventId;
+                  return metaEventId === selectedEventId || rootEventId === selectedEventId;
+                })
+                .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+                .slice(0, 6);
+
+              if (eventActivities.length === 0) {
+                return (
+                  <p className="text-xs text-slate-400 italic py-1 pl-1">
+                    No activity yet for this event.
+                  </p>
+                );
+              }
+
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 mt-1">
+                  {eventActivities.map(act => {
+                    let IconComponent = Clock;
+                    let iconColor = 'text-slate-500';
+                    let bgColor = 'bg-slate-100/60';
+
+                    if (act.type === 'task_completed') {
+                      IconComponent = CheckCircle;
+                      iconColor = 'text-emerald-600';
+                      bgColor = 'bg-emerald-50';
+                    } else if (act.type === 'event_created') {
+                      IconComponent = Calendar;
+                      iconColor = 'text-indigo-600';
+                      bgColor = 'bg-indigo-50';
+                    } else if (act.type === 'event_updated') {
+                      IconComponent = Edit2;
+                      iconColor = 'text-amber-600';
+                      bgColor = 'bg-amber-50';
+                    } else if (act.type === 'volunteer_registered') {
+                      IconComponent = ThumbsUp;
+                      iconColor = 'text-sky-600';
+                      bgColor = 'bg-sky-50';
+                    }
+
+                    return (
+                      <div key={act.id} className="flex items-center justify-between gap-3 py-1 px-1.5 hover:bg-[#fcfaf7] rounded-lg transition">
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <div className={`p-1 rounded-md shrink-0 ${bgColor} ${iconColor}`}>
+                            <IconComponent size={11} />
+                          </div>
+                          <div className="min-w-0 flex-1 leading-tight">
+                            <p className="text-xs font-bold text-slate-700 truncate">{act.title}</p>
+                            <p className="text-[10px] text-slate-500 truncate" title={act.description}>{act.description}</p>
+                          </div>
+                        </div>
+                        <span className="text-[9px] font-mono font-medium text-slate-400 shrink-0">
+                          {formatRelativeTime(act.timestamp)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()
+          ) : (
+            <p className="text-xs text-slate-400 italic py-1 pl-1">
+              Select an event to view recent activity.
+            </p>
+          )}
+        </div>
+
         {/* Section 1: This event's files */}
         <div className="space-y-6">
           <div className="flex items-center gap-2 border-b border-[#e2dcd0]/60 pb-3">
@@ -1537,7 +1731,7 @@ function PlanningCentre({
                                   type="button"
                                   onClick={() => {
                                     setIsAddMenuOpen(false);
-                                    handleCreateNewFile('doc');
+                                    triggerNamingStep('doc');
                                   }}
                                   className="w-full px-4 py-2 text-xs text-slate-700 hover:bg-[#fcfaf7] flex items-center gap-2 cursor-pointer font-medium"
                                 >
@@ -1548,7 +1742,7 @@ function PlanningCentre({
                                   type="button"
                                   onClick={() => {
                                     setIsAddMenuOpen(false);
-                                    handleCreateNewFile('sheet');
+                                    triggerNamingStep('sheet');
                                   }}
                                   className="w-full px-4 py-2 text-xs text-slate-700 hover:bg-[#fcfaf7] flex items-center gap-2 cursor-pointer font-medium"
                                 >
@@ -1882,24 +2076,24 @@ function PlanningCentre({
                           </p>
                         </div>
 
-                        <div className="flex flex-col sm:flex-row gap-2.5">
-                          <button
-                            onClick={() => handleCreateNewFile('doc')}
-                            disabled={creatingFile}
-                            className="flex-1 bg-[#1e293b] text-white hover:bg-slate-900 font-bold px-3 py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 transition cursor-pointer disabled:opacity-50 shadow-sm"
-                          >
-                            {creatingFile ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
-                            Create New Doc
-                          </button>
-                          <button
-                            onClick={() => handleCreateNewFile('sheet')}
-                            disabled={creatingFile}
-                            className="flex-1 bg-[#1e293b] text-white hover:bg-slate-900 font-bold px-3 py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 transition cursor-pointer disabled:opacity-50 shadow-sm"
-                          >
-                            {creatingFile ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
-                            Create New Sheet
-                          </button>
-                        </div>
+                         <div className="flex flex-col sm:flex-row gap-2.5">
+                           <button
+                             onClick={() => triggerNamingStep('doc')}
+                             disabled={creatingFile}
+                             className="flex-1 bg-[#1e293b] text-white hover:bg-slate-900 font-bold px-3 py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 transition cursor-pointer disabled:opacity-50 shadow-sm"
+                           >
+                             {creatingFile ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+                             Create New Doc
+                           </button>
+                           <button
+                             onClick={() => triggerNamingStep('sheet')}
+                             disabled={creatingFile}
+                             className="flex-1 bg-[#1e293b] text-white hover:bg-slate-900 font-bold px-3 py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 transition cursor-pointer disabled:opacity-50 shadow-sm"
+                           >
+                             {creatingFile ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+                             Create New Sheet
+                           </button>
+                         </div>
                       </div>
 
                       {/* Manual attachment mapping form */}
@@ -1993,6 +2187,374 @@ function PlanningCentre({
               </div>
             )}
 
+          </div>
+        </div>
+
+        {/* Section 3: Collaborative Event Scratchpad */}
+        <div id="scratchpad-section" className="bg-white rounded-2xl border border-[#e2dcd0] shadow-xs overflow-hidden text-left">
+          <div className="bg-[#faf8f4] p-4 border-b border-[#e2dcd0] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <ListTodo size={18} className="text-[#856637]" />
+                <h3 className="text-sm font-serif font-black text-slate-800">Collaborative Event Scratchpad</h3>
+              </div>
+              <div className="flex items-center gap-1.5 min-h-[16px]">
+                {savingScratchpad ? (
+                  <span className="text-[10px] font-semibold text-amber-600 flex items-center gap-1">
+                    <Loader2 size={10} className="animate-spin" />
+                    Saving...
+                  </span>
+                ) : (
+                  scratchpadSavedTime && (
+                    <span className="text-[10px] text-slate-400">
+                      Saved · {formatRelativeTime(scratchpadSavedTime)}
+                    </span>
+                  )
+                )}
+              </div>
+            </div>
+
+            {/* Presence cue for scratchpad editing */}
+            {(() => {
+              const editors = connectedUsers.filter(u => u.cursor !== null && typeof u.cursor === 'number');
+              if (editors.length === 0) return null;
+
+              return (
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center -space-x-1.5 overflow-hidden">
+                    {editors.slice(0, 3).map((user) => (
+                      <div
+                        key={user.id}
+                        className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-bold border-2 border-white shadow-xs relative group cursor-help shrink-0"
+                        style={{ backgroundColor: user.color }}
+                        title={`${user.name} is editing notes`}
+                      >
+                        {getInitials(user.name)}
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block bg-slate-900 text-white text-[8px] px-2 py-0.5 rounded shadow-md whitespace-nowrap z-50">
+                          {user.name} is editing notes
+                        </div>
+                      </div>
+                    ))}
+                    {editors.length > 3 && (
+                      <div 
+                        className="w-6 h-6 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-slate-500 text-[9px] font-bold shadow-xs shrink-0 cursor-help"
+                        title={`${editors.length - 3} other editors active`}
+                      >
+                        +{editors.length - 3}
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-[10px] font-medium text-slate-400 italic">
+                    {editors.length === 1 
+                      ? `${editors[0].name} is editing` 
+                      : `${editors.length} co-authors editing`
+                    }
+                  </span>
+                </div>
+              );
+            })()}
+          </div>
+
+          <div className="p-4 space-y-3">
+            <div className="border border-[#e2dcd0] rounded-xl overflow-hidden focus-within:border-[#c2aa80] focus-within:ring-1 focus-within:ring-[#c2aa80] bg-white transition duration-200">
+              {/* Markdown Toolbar */}
+              <div className="flex items-center gap-1 bg-slate-50 border-b border-[#e2dcd0] px-3 py-2">
+                <button
+                  type="button"
+                  onClick={() => handleAppendMarkdown('bold')}
+                  className="p-1.5 hover:bg-[#faf8f4] hover:text-[#856637] rounded text-slate-500 transition cursor-pointer"
+                  title="Bold text (**bold**)"
+                >
+                  <Bold size={13} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAppendMarkdown('italic')}
+                  className="p-1.5 hover:bg-[#faf8f4] hover:text-[#856637] rounded text-slate-500 transition cursor-pointer"
+                  title="Italic text (*italic*)"
+                >
+                  <Italic size={13} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAppendMarkdown('h3')}
+                  className="p-1.5 hover:bg-[#faf8f4] hover:text-[#856637] rounded text-slate-500 transition cursor-pointer"
+                  title="Heading (### Heading)"
+                >
+                  <Heading size={13} />
+                </button>
+                <div className="w-px h-4 bg-slate-200 mx-1" />
+                <button
+                  type="button"
+                  onClick={() => handleAppendMarkdown('list')}
+                  className="p-1.5 hover:bg-[#faf8f4] hover:text-[#856637] rounded text-slate-500 transition cursor-pointer"
+                  title="Bullet list (- item)"
+                >
+                  <List size={13} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAppendMarkdown('quote')}
+                  className="p-1.5 hover:bg-[#faf8f4] hover:text-[#856637] rounded text-slate-500 transition cursor-pointer"
+                  title="Blockquote (> text)"
+                >
+                  <Quote size={13} />
+                </button>
+              </div>
+
+              {/* Text Area */}
+              <textarea
+                id="scratchpad-textarea"
+                value={scratchpadText || ''}
+                onChange={(e) => handleScratchpadChange(e.target.value)}
+                onSelect={handleTextareaSelectionChange}
+                placeholder="Start typing your shared notes, action items, or meeting agendas here... All updates are instantly synchronized and saved."
+                className="w-full h-44 p-4 text-xs font-sans leading-relaxed text-slate-700 placeholder-slate-400 bg-white focus:outline-none resize-y"
+              />
+            </div>
+            <p className="text-[10px] text-slate-400">
+              Markdown formatting is fully supported. Text edits synchronize instantly with all connected users in real time.
+            </p>
+          </div>
+        </div>
+
+        {/* Run-of-Show Printable Sheet Container */}
+        <div id="run-of-show-print-area" className="hidden print:block bg-white text-black p-10 font-sans leading-relaxed">
+          <style dangerouslySetInnerHTML={{__html: `
+            @media print {
+              body {
+                background-color: white !important;
+                color: black !important;
+              }
+              body * {
+                visibility: hidden !important;
+              }
+              #run-of-show-print-area, #run-of-show-print-area * {
+                visibility: visible !important;
+              }
+              #run-of-show-print-area {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                box-shadow: none !important;
+                border: none !important;
+              }
+              .no-print {
+                display: none !important;
+              }
+            }
+          `}} />
+
+          {/* Header */}
+          <div className="border-b-4 border-[#856637] pb-6 mb-8 flex justify-between items-start">
+            <div className="space-y-2">
+              <span className="text-[10px] font-bold tracking-widest text-[#856637] uppercase border border-[#efe0c2] bg-[#fcfaf7] px-2 py-0.5 rounded">
+                Event Day Run-of-Show
+              </span>
+              <h1 className="text-3xl font-serif font-black text-slate-900 tracking-tight leading-tight mt-1">
+                {events.find(e => e.id === selectedEventId)?.name || 'Event Run-of-Show'}
+              </h1>
+              <p className="text-xs text-slate-500 leading-relaxed max-w-2xl">
+                {events.find(e => e.id === selectedEventId)?.description || 'No formal description.'}
+              </p>
+            </div>
+            <div className="text-right shrink-0 bg-[#fcfaf7] border border-[#efe0c2] rounded-xl p-4 min-w-[200px] text-xs font-medium text-slate-700">
+              <span className="text-[10px] text-slate-400 font-bold uppercase block">Target Event Date</span>
+              <span className="text-sm font-bold text-slate-900">
+                {(() => {
+                  const evt = events.find(e => e.id === selectedEventId);
+                  if (!evt) return '';
+                  return new Date(evt.date).toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+                })()}
+              </span>
+            </div>
+          </div>
+
+          {/* Table */}
+          <table className="w-full border-collapse border border-slate-300 text-left text-xs">
+            <thead>
+              <tr className="bg-slate-100 border-b border-slate-300">
+                {(collabTable?.headers || ['Time', 'Session / Item', 'Lane', 'Lead Officer', 'Required Prep / Notes']).map((header, idx) => (
+                  <th key={idx} className="border border-slate-300 px-3 py-2 font-bold text-slate-800 uppercase tracking-wider">
+                    {header}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {(!collabTable || !collabTable.rows || collabTable.rows.length === 0) ? (
+                <tr>
+                  <td colSpan={collabTable?.headers?.length || 5} className="border border-slate-300 px-3 py-8 text-center text-slate-400 italic bg-white">
+                    No run-of-show timeline entries.
+                  </td>
+                </tr>
+              ) : (
+                collabTable.rows.map((row, rowIndex) => (
+                  <tr key={rowIndex} className={rowIndex % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                    {row.map((cell, colIndex) => (
+                      <td key={colIndex} className="border border-slate-300 px-3 py-2 text-slate-800 leading-normal">
+                        {cell || '-'}
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+
+          {/* Footer */}
+          <div className="border-t border-slate-200 mt-12 pt-4 flex justify-between text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+            <span>Community Relations Planning Hub</span>
+            <span>Printed on {new Date().toLocaleDateString()}</span>
+          </div>
+        </div>
+
+        {/* Section 4: Collaborative Run-of-Show & Timing Table */}
+        <div id="run-of-show-section" className="bg-white rounded-2xl border border-[#e2dcd0] shadow-xs overflow-hidden text-left">
+          <div className="bg-[#faf8f4] p-4 border-b border-[#e2dcd0] flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet size={18} className="text-[#856637]" />
+                <h3 className="text-sm font-serif font-black text-slate-800">Event Run-of-Show & Timing</h3>
+              </div>
+              <p className="text-[10px] text-slate-400 leading-relaxed">
+                Co-author and log minute-by-minute schedules with your team in real time.
+              </p>
+            </div>
+
+            {/* Actions Panel */}
+            <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+              <button
+                onClick={() => window.print()}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#e2dcd0] hover:border-[#c2aa80] hover:bg-[#faf8f4] text-slate-600 hover:text-[#856637] text-xs font-semibold rounded-xl transition cursor-pointer"
+                title="Print Event Day Run-of-Show"
+              >
+                <Printer size={13} />
+                <span>Print Run-of-Show</span>
+              </button>
+
+              <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#e2dcd0] hover:border-[#c2aa80] hover:bg-[#faf8f4] text-slate-600 hover:text-[#856637] text-xs font-semibold rounded-xl transition cursor-pointer">
+                <Upload size={13} className="text-slate-500" />
+                <span>Import Excel/CSV</span>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={handleSpreadsheetUpload}
+                  className="hidden"
+                />
+              </label>
+
+              <button
+                onClick={handleAddRow}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#856637] hover:bg-[#72572e] text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer"
+              >
+                <Plus size={13} />
+                <span>Add Row</span>
+              </button>
+
+              {collabTable?.rows && collabTable.rows.length > 0 && (
+                <button
+                  onClick={handleClearTable}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-600 text-xs font-semibold rounded-xl transition cursor-pointer"
+                  title="Clear Table"
+                >
+                  <Trash2 size={13} />
+                  <span>Clear All</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="p-4 space-y-3">
+            <div className="border border-[#e2dcd0] rounded-xl overflow-hidden bg-white">
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-left text-xs min-w-[750px]">
+                  <thead>
+                    <tr className="bg-slate-50/70 border-b border-[#e2dcd0]">
+                      {(collabTable?.headers || ['Time', 'Session / Item', 'Lane', 'Lead Officer', 'Required Prep / Notes']).map((header, idx) => (
+                        <th key={idx} className="px-3.5 py-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 border-r border-[#efe0c2]/30 last:border-r-0">
+                          {header}
+                        </th>
+                      ))}
+                      <th className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500 w-12 text-center">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#e2dcd0]/50">
+                    {!collabTable || !collabTable.rows || collabTable.rows.length === 0 ? (
+                      <tr>
+                        <td colSpan={(collabTable?.headers?.length || 5) + 1} className="px-4 py-12 text-center text-slate-400 italic bg-slate-50/20">
+                          <div className="max-w-md mx-auto space-y-2">
+                            <p className="text-xs font-semibold text-slate-500">No timing rows in run-of-show.</p>
+                            <p className="text-[11px] text-slate-400">
+                              Upload a minute-by-minute scheduling spreadsheet (.xlsx, .xls, .csv) or click "Add Row" above to co-author with your team in real time.
+                            </p>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      collabTable.rows.map((row, rowIndex) => (
+                        <tr key={rowIndex} className="hover:bg-[#faf8f4]/20 group transition-colors">
+                          {row.map((cell, colIndex) => {
+                            const otherFocus = connectedUsers.find(
+                              (u) =>
+                                u.cellFocus &&
+                                u.cellFocus.row === rowIndex &&
+                                u.cellFocus.col === colIndex
+                            );
+
+                            return (
+                              <td key={colIndex} className="p-1 border-r border-[#efe0c2]/30 last:border-r-0 relative">
+                                <input
+                                  type="text"
+                                  value={cell}
+                                  onChange={(e) => handleCellEdit(rowIndex, colIndex, e.target.value)}
+                                  onFocus={() => handleCellFocus(rowIndex, colIndex)}
+                                  placeholder="..."
+                                  className={`w-full bg-transparent px-2.5 py-1.5 text-xs text-slate-700 outline-none border-0 focus:bg-white focus:ring-1 focus:ring-[#c2aa80] transition-all rounded ${
+                                    focusedCell?.row === rowIndex && focusedCell?.col === colIndex
+                                      ? 'bg-[#faf8f4]/60 ring-1 ring-[#efe0c2]'
+                                      : ''
+                                  }`}
+                                  style={{
+                                    borderLeft: otherFocus ? `3px solid ${otherFocus.color}` : undefined,
+                                  }}
+                                  title={otherFocus ? `${otherFocus.name} is editing this cell` : undefined}
+                                />
+                                {otherFocus && (
+                                  <div
+                                    className="absolute right-1 top-1 w-2 h-2 rounded-full pointer-events-none animate-pulse"
+                                    style={{ backgroundColor: otherFocus.color }}
+                                    title={`${otherFocus.name} is focusing here`}
+                                  />
+                                )}
+                              </td>
+                            );
+                          })}
+                          <td className="px-2 py-1 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteRow(rowIndex)}
+                              className="p-1 text-slate-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
+                              title="Delete Row"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <p className="text-[10px] text-slate-400">
+              Changes synchronize instantly across all co-authors in real time. Use the "Print" button to generate a beautifully styled hard copy or PDF of the schedule.
+            </p>
           </div>
         </div>
 
@@ -2692,6 +3254,88 @@ function PlanningCentre({
                   >
                     {isCloning ? <Loader2 className="animate-spin" size={14} /> : <Copy size={14} />}
                     {isCloning ? 'Cloning...' : 'Confirm Clone'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* File Naming Modal */}
+      <AnimatePresence>
+        {namingFileType && (
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <motion.div 
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="file-naming-title"
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-sm overflow-hidden"
+            >
+              <div className="bg-[#faf8f4] border-b border-[#efe0c2] px-5 py-4 flex justify-between items-center text-left">
+                <div>
+                  <h3 id="file-naming-title" className="font-serif font-bold text-slate-800 text-base">
+                    Create Google {namingFileType === 'doc' ? 'Document' : 'Spreadsheet'}
+                  </h3>
+                  <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-0.5 font-bold">Document Creator</p>
+                </div>
+                <button 
+                  onClick={() => { setNamingFileType(null); setNamingFileName(''); }}
+                  aria-label="Close naming modal"
+                  className="text-slate-400 hover:text-slate-600 p-1 transition cursor-pointer"
+                >
+                  <X size={16} aria-hidden="true" />
+                </button>
+              </div>
+              <div className="p-5 space-y-4 text-left">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">File Name *</label>
+                  <input
+                    type="text"
+                    required
+                    autoFocus
+                    value={namingFileName}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => setNamingFileName(e.target.value)}
+                    className="w-full p-2 border border-[#e2dcd0] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#856637] bg-white text-sm"
+                    placeholder={`e.g. My Event - ${namingFileType === 'doc' ? 'Planning Guide' : 'Budget'}`}
+                  />
+                  <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
+                    This file will be created inside your Google Drive parent folder and linked to this event.
+                  </p>
+                </div>
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => { setNamingFileType(null); setNamingFileName(''); }}
+                    className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-lg transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const trimmedName = namingFileName.trim();
+                      const eventObj = events.find(e => e.id === selectedEventId);
+                      const eventName = eventObj ? eventObj.name : 'Event';
+                      const finalName = trimmedName || `${eventName} - ${namingFileType === 'doc' ? 'Planning Guide' : 'Budget & Prep Tracker'}`;
+                      
+                      try {
+                        await handleCreateNewFile(namingFileType, finalName);
+                        setNamingFileType(null);
+                        setNamingFileName('');
+                      } catch (err) {
+                        // Error is handled inside handleCreateNewFile
+                      }
+                    }}
+                    disabled={creatingFile}
+                    className="px-4 py-2 bg-[#856637] hover:bg-[#6c532b] disabled:opacity-50 text-white font-bold text-xs rounded-lg transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    {creatingFile ? <Loader2 className="animate-spin" size={14} /> : <Plus size={14} />}
+                    {creatingFile ? 'Creating...' : 'Create'}
                   </button>
                 </div>
               </div>
