@@ -172,6 +172,7 @@ export interface AttachedDoc {
   watchChannelId?: string;
   watchResourceId?: string;
   watchExpiration?: string;
+  watchChannelToken?: string;
 }
 
 export interface CollabTable {

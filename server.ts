@@ -12,7 +12,8 @@ import {
   SEED_DATA, 
   generateTasksForEvent,
   normalizeDb,
-  logActivity
+  logActivity,
+  verifyTokenAndEmail
 } from './server/storage';
 
 import eventsRouter from './server/routes/events';
@@ -257,7 +258,25 @@ async function startServer() {
   // Register broadcast handler with storage.ts
   setBroadcastHandler(broadcast);
 
-  wss.on('connection', (ws) => {
+  wss.on('connection', async (ws, req) => {
+    const reqUrl = req.url || '';
+    const tokenMatch = reqUrl.match(/[?&]token=([^&]+)/);
+    const idToken = tokenMatch ? decodeURIComponent(tokenMatch[1]) : undefined;
+
+    if (!idToken) {
+      console.warn('WebSocket connection rejected: Missing Firebase token.');
+      ws.close(4001, 'Unauthorized: Missing token');
+      return;
+    }
+
+    try {
+      await verifyTokenAndEmail(idToken);
+    } catch (err: any) {
+      console.warn('WebSocket connection rejected: Token verification failed:', err.message);
+      ws.close(4003, 'Unauthorized: Access restricted');
+      return;
+    }
+
     let clientId = `user_${Date.now()}`;
     
     ws.on('message', (messageStr) => {

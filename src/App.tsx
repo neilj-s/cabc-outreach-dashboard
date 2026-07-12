@@ -1,4 +1,5 @@
-import { apiFetch } from "./lib/api";
+import { apiFetch, auth } from "./lib/api";
+import { signInWithPopup, GoogleAuthProvider, User, onAuthStateChanged } from 'firebase/auth';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { NotificationProvider, useNotification } from './context/NotificationContext';
@@ -149,6 +150,21 @@ const recalculateSummary = (
 
 function MainApp() {
   const { showNotification } = useNotification();
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  const [authChecking, setAuthChecking] = useState<boolean>(true);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (usr) => {
+      setAuthUser(usr);
+      setAuthChecking(false);
+      if (usr) {
+        setAuthError(null);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [events, setEvents] = useState<MinistryEvent[]>([]);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
@@ -168,6 +184,12 @@ function MainApp() {
     const names = ['Neil S.', 'Joy P.', 'Bea P.', 'Iya M.', 'Eva L.', 'Jaeden O.', 'Solo K.'];
     return names[Math.floor(Math.random() * names.length)];
   });
+
+  useEffect(() => {
+    if (authUser && authUser.displayName) {
+      setUserName(authUser.displayName);
+    }
+  }, [authUser]);
   const [userColor] = useState<string>(() => {
     const colors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f43f5e'];
     return colors[Math.floor(Math.random() * colors.length)];
@@ -194,36 +216,52 @@ function MainApp() {
   // Centralized WebSocket Connection with automatic reconnection and backoff
   useEffect(() => {
     let isUnmounted = false;
+    let socket: WebSocket | null = null;
     reconnectDelayRef.current = 1000;
 
     const connect = () => {
       if (isUnmounted) return;
 
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const socket = new WebSocket(`${protocol}//${window.location.host}`);
-      wsRef.current = socket;
-
-      socket.onopen = () => {
-        if (isUnmounted) {
-          socket.close();
-          return;
-        }
-        console.log('Connected to shared operations WS');
-        reconnectDelayRef.current = 1000;
-        socket.send(JSON.stringify({
-          type: 'JOIN',
-          payload: {
-            userId,
-            name: userName,
-            color: userColor
+      const user = auth.currentUser;
+      if (!user) {
+        console.log('WebSocket waiting for user auth state...');
+        const unsubscribe = auth.onAuthStateChanged((usr) => {
+          unsubscribe();
+          if (!isUnmounted) {
+            connect();
           }
-        }));
-      };
+        });
+        return;
+      }
 
-      socket.onmessage = (event) => {
+      user.getIdToken().then((token) => {
         if (isUnmounted) return;
-        try {
-          const msg = JSON.parse(event.data);
+
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        socket = new WebSocket(`${protocol}//${window.location.host}?token=${encodeURIComponent(token)}`);
+        wsRef.current = socket;
+
+        socket.onopen = () => {
+          if (isUnmounted) {
+            socket.close();
+            return;
+          }
+          console.log('Connected to shared operations WS');
+          reconnectDelayRef.current = 1000;
+          socket.send(JSON.stringify({
+            type: 'JOIN',
+            payload: {
+              userId,
+              name: userName,
+              color: userColor
+            }
+          }));
+        };
+
+        socket.onmessage = (event) => {
+          if (isUnmounted) return;
+          try {
+            const msg = JSON.parse(event.data);
           switch (msg.type) {
             case 'INIT_STATE': {
               setScratchpadText(msg.payload.scratchpad);
@@ -329,7 +367,13 @@ function MainApp() {
           connect();
         }, reconnectDelayRef.current);
       };
-    };
+    }).catch((err) => {
+      console.error('Error fetching ID token for WebSocket:', err);
+      if (!isUnmounted) {
+        reconnectTimeoutRef.current = setTimeout(connect, 5000);
+      }
+    });
+  };
 
     connect();
 
@@ -412,6 +456,9 @@ function MainApp() {
         apiFetch('/api/expenses').then(r => r.json())
       ]);
 
+      if (resSummary && resSummary.error) {
+        throw new Error(resSummary.error);
+      }
       if (resSummary && !resSummary.error) {
         setSummary(resSummary);
       }
@@ -442,9 +489,14 @@ function MainApp() {
         setExpenses(resExpenses);
       }
       setError(null);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error fetching operations dashboard data", err);
-      setError("Failed to synch operations data with MinistryOS API.");
+      if (err.message && (err.message.includes('restricted') || err.message.includes('Unauthorized') || err.message.includes('Access denied'))) {
+        setAuthError(err.message);
+        auth.signOut();
+      } else {
+        setError("Failed to synch operations data with MinistryOS API.");
+      }
     } finally {
       setLoading(false);
     }
@@ -459,8 +511,10 @@ function MainApp() {
   }, [selectedYear, filteredEvents, selectedEventId]);
 
   useEffect(() => {
-    fetchAllData();
-  }, []);
+    if (authUser) {
+      fetchAllData();
+    }
+  }, [authUser]);
 
   // Keep summary numbers accurate by recomputing them locally when state changes
   useEffect(() => {
@@ -1321,6 +1375,74 @@ function MainApp() {
       </div>
     );
   };  // 1. Classic Top Nav Layout
+  if (authChecking) {
+    return (
+      <div className="min-h-screen bg-[#faf8f4] flex flex-col items-center justify-center p-6 text-slate-800 font-sans selection:bg-[#f5ebd6] selection:text-[#856637]">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <div className="w-10 h-10 border-4 border-[#efe0c2] border-t-[#856637] rounded-full animate-spin" />
+          <h2 className="text-[11px] font-bold tracking-widest uppercase text-slate-400 font-mono">Verifying credentials...</h2>
+        </div>
+      </div>
+    );
+  }
+
+  if (!authUser) {
+    return (
+      <div className="min-h-screen bg-[#faf8f4] flex flex-col items-center justify-center p-6 text-slate-800 font-sans selection:bg-[#f5ebd6] selection:text-[#856637]">
+        <div className="w-full max-w-md bg-white border border-[#e2dcd0] rounded-2xl shadow-xl overflow-hidden p-8 space-y-6">
+          <div className="text-center space-y-2">
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-[#fcfaf7] border border-[#e2dcd0] text-[#856637] mb-2 shadow-sm">
+              <LayoutDashboard size={20} />
+            </div>
+            <h1 className="text-2xl font-serif font-black tracking-tight text-[#0f172a]">MinistryOS</h1>
+            <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Community Relations & Operations Hub</p>
+          </div>
+
+          <p className="text-xs text-slate-500 text-center leading-relaxed font-medium font-sans">
+            Access is restricted to authorized ministry accounts. Please sign in with your verified Google account to manage resources.
+          </p>
+
+          {authError && (
+            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs flex items-start gap-2.5 shadow-sm leading-relaxed font-sans">
+              <AlertTriangle size={16} className="text-rose-500 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold block mb-0.5 text-rose-950">Authorization Failed</span>
+                <span>{authError}</span>
+              </div>
+            </div>
+          )}
+
+          <button
+            onClick={async () => {
+              try {
+                setAuthChecking(true);
+                setAuthError(null);
+                const googleProvider = new GoogleAuthProvider();
+                googleProvider.addScope('https://www.googleapis.com/auth/drive.metadata.readonly');
+                googleProvider.addScope('https://www.googleapis.com/auth/drive.readonly');
+                await signInWithPopup(auth, googleProvider);
+              } catch (err: any) {
+                console.error(err);
+                setAuthError(err.message || 'Failed to authenticate');
+              } finally {
+                setAuthChecking(false);
+              }
+            }}
+            className="w-full flex items-center justify-center gap-3 py-3 px-4 bg-slate-900 hover:bg-slate-950 text-white font-semibold text-xs rounded-xl shadow-md transition cursor-pointer font-sans"
+          >
+            <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+            </svg>
+            Sign in with Google
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#faf8f4] text-slate-800 font-sans flex flex-col selection:bg-[#f5ebd6] selection:text-[#856637]">
       
@@ -1453,6 +1575,28 @@ function MainApp() {
                         <RotateCcw size={12} />
                         Reset to Starter Data
                       </button>
+                    </div>
+
+                    {/* Account Section */}
+                    <div className="space-y-2 pt-2 border-t border-slate-100">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block">
+                        Account
+                      </span>
+                      <div className="flex items-center justify-between text-xs text-slate-700 bg-slate-50 p-2.5 rounded-xl border border-slate-100 gap-2">
+                        <div className="flex flex-col truncate">
+                          <span className="font-bold truncate text-slate-800">{authUser?.displayName || authUser?.email || 'Active User'}</span>
+                          <span className="text-[10px] text-slate-400 truncate">{authUser?.email}</span>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            setShowSettings(false);
+                            await auth.signOut();
+                          }}
+                          className="px-2.5 py-1.5 border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] font-bold rounded-lg transition cursor-pointer shrink-0"
+                        >
+                          Sign Out
+                        </button>
+                      </div>
                     </div>
                   </motion.div>
                 )}

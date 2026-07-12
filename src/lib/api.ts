@@ -100,8 +100,37 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
   const headers = new Headers(options.headers || {});
   headers.set('Authorization', `Bearer ${token}`);
 
-  return fetch(url, {
+  const res = await fetch(url, {
     ...options,
     headers
   });
+
+  // Override res.json to gracefully handle HTML errors or non-JSON payloads
+  const originalJson = res.json.bind(res);
+  res.json = async () => {
+    try {
+      const contentType = res.headers.get('content-type');
+      if (!res.ok && (!contentType || !contentType.toLowerCase().includes('application/json'))) {
+        let errorMsg = `Server error: ${res.status}`;
+        if (res.status === 403) {
+          errorMsg = 'Access restricted to authorized ministry accounts';
+        } else if (res.status === 401) {
+          errorMsg = 'Authentication required';
+        }
+        return { error: errorMsg };
+      }
+      return await originalJson();
+    } catch (err) {
+      console.error('Error parsing response JSON in apiFetch:', err);
+      let errorMsg = `Invalid response format (${res.status})`;
+      if (res.status === 403) {
+        errorMsg = 'Access restricted to authorized ministry accounts';
+      } else if (res.status === 401) {
+        errorMsg = 'Authentication required';
+      }
+      return { error: errorMsg };
+    }
+  };
+
+  return res;
 }

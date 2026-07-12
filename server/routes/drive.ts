@@ -210,6 +210,13 @@ router.post('/webhook', async (req, res) => {
     return res.status(200).json({ received: true, error: 'Document deleted' });
   }
 
+  // Verify channel token from X-Goog-Channel-Token header
+  const channelToken = req.headers['x-goog-channel-token'] as string || req.body.channelToken || req.body.watchChannelToken;
+  if (!doc.watchChannelToken || doc.watchChannelToken !== channelToken) {
+    console.warn(`[Webhook] Invalid or missing channel token for resourceId "${resourceId}". Rejecting forged webhook call.`);
+    return res.status(403).json({ error: 'Access denied: Invalid or missing channel token' });
+  }
+
   interface DrivePermission {
     id: string;
     type: string;

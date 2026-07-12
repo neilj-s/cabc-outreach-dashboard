@@ -771,6 +771,33 @@ export function logActivity(
   }
 }
 
+// --- Email Allowlist Initialization ---
+const allowedEmailsEnv = process.env.ALLOWED_EMAILS || '';
+const allowedEmailsSet = new Set<string>();
+
+if (!allowedEmailsEnv.trim()) {
+  console.warn('WARNING: ALLOWED_EMAILS environment variable is not configured or empty. Failing closed: all user authentication attempts will be denied.');
+} else {
+  allowedEmailsEnv.split(',').forEach(email => {
+    const trimmed = email.trim().toLowerCase();
+    if (trimmed) {
+      allowedEmailsSet.add(trimmed);
+    }
+  });
+}
+
+export async function verifyTokenAndEmail(idToken: string): Promise<any> {
+  if (!firebaseAdminApp) {
+    throw new Error('Firebase Admin not initialized on server');
+  }
+  const decodedToken = await getAuth(firebaseAdminApp).verifyIdToken(idToken);
+  const userEmail = decodedToken.email ? decodedToken.email.toLowerCase() : '';
+  if (!decodedToken.email_verified || !userEmail || !allowedEmailsSet.has(userEmail)) {
+    throw new Error('Access restricted to authorized ministry accounts');
+  }
+  return decodedToken;
+}
+
 export const requireAuth = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
   if (req.path === '/api/drive/webhook' || req.path === '/drive/webhook') {
     return next();
@@ -789,14 +816,14 @@ export const requireAuth = async (req: express.Request, res: express.Response, n
   }
 
   try {
-    if (!firebaseAdminApp) {
-      throw new Error('Firebase Admin not initialized on server');
-    }
-    const decodedToken = await getAuth(firebaseAdminApp).verifyIdToken(idToken);
+    const decodedToken = await verifyTokenAndEmail(idToken);
     (req as any).user = decodedToken;
     next();
-  } catch (error) {
-    console.error('Error verifying Firebase ID token:', error);
+  } catch (error: any) {
+    console.error('Error verifying Firebase ID token in requireAuth:', error);
+    if (error.message === 'Access restricted to authorized ministry accounts') {
+      return res.status(403).json({ error: error.message });
+    }
     return res.status(401).json({ error: 'Unauthorized: Invalid ID token' });
   }
 };

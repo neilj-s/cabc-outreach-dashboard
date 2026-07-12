@@ -1113,7 +1113,10 @@ function PlanningCentre({
     try {
       const res = await apiFetch('/api/drive/webhook', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-Goog-Channel-Token': doc.watchChannelToken || ''
+        },
         body: JSON.stringify({
           channelId: doc.watchChannelId,
           resourceId: doc.watchResourceId,

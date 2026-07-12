@@ -1,4 +1,5 @@
 import express from 'express';
+import crypto from 'crypto';
 import { getDb, saveDb, broadcast, logActivity } from '../storage';
 import { extractFileId, getOrRefreshDriveToken, getDriveAccessToken } from '../driveHelpers';
 import { MinistryEvent, EventDoc, AttachedDoc } from '../../src/types';
@@ -338,6 +339,7 @@ router.post('/attached-docs/:id/watch', async (req, res) => {
 
     const channelId = `channel_${id}_${Date.now()}`;
     const resourceId = `resource_${id}_${Math.random().toString(36).substring(2, 8)}`;
+    const watchToken = crypto.randomBytes(16).toString('hex');
 
     console.log(`[Webhook] Registering Google Drive watch channel ${channelId} for file ${fileId} pointing to ${address}`);
 
@@ -347,6 +349,7 @@ router.post('/attached-docs/:id/watch', async (req, res) => {
     doc.watchStatus = 'active';
     doc.watchChannelId = channelId;
     doc.watchResourceId = resourceId;
+    doc.watchChannelToken = watchToken;
     doc.watchExpiration = new Date(Date.now() + 86400 * 1000 * 7).toISOString(); // 7 days watch
 
     doc.auditHistory = doc.auditHistory || [];
@@ -374,6 +377,7 @@ router.post('/attached-docs/:id/watch', async (req, res) => {
       success: true,
       channelId,
       resourceId,
+      watchChannelToken: watchToken,
       expiration: doc.watchExpiration,
       message: 'Google Drive real-time webhook watch registered successfully.'
     });
@@ -383,10 +387,12 @@ router.post('/attached-docs/:id/watch', async (req, res) => {
     db.driveWatchChannels = db.driveWatchChannels || {};
     const resourceId = `resource_sim_${id}`;
     db.driveWatchChannels[resourceId] = id;
+    const watchToken = crypto.randomBytes(16).toString('hex');
 
     doc.watchStatus = 'active';
     doc.watchChannelId = `channel_sim_${id}`;
     doc.watchResourceId = resourceId;
+    doc.watchChannelToken = watchToken;
     doc.watchExpiration = new Date(Date.now() + 86400 * 1000 * 7).toISOString();
 
     doc.auditHistory = doc.auditHistory || [];
@@ -415,6 +421,7 @@ router.post('/attached-docs/:id/watch', async (req, res) => {
       simulated: true,
       channelId: doc.watchChannelId,
       resourceId: doc.watchResourceId,
+      watchChannelToken: watchToken,
       expiration: doc.watchExpiration,
       message: 'Simulated webhook watch registered successfully.'
     });
