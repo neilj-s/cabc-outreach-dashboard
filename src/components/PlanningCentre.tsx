@@ -17,6 +17,7 @@ import {
   TrendingUp, 
   Compass,
   CheckCircle,
+  Check,
   Clock,
   ExternalLink,
   ChevronRight,
@@ -115,6 +116,14 @@ function PlanningCentre({
 }: PlanningCentreProps) {
   const { showNotification } = useNotification();
   
+  const getInitials = (name: string) => {
+    if (!name) return '?';
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return '?';
+    if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  };
+  
   const [loading, setLoading] = useState<boolean>(true);
 
   // Reusable Confirmation Dialog state
@@ -139,7 +148,7 @@ function PlanningCentre({
     });
   };
 
-  const [activeTab, setActiveTab] = useState<'docs' | 'drive'>('docs');
+  const [isDriveExpanded, setIsDriveExpanded] = useState<boolean>(true);
 
   const [ideas, setIdeas] = useState<any[]>([]);
   const [savingScratchpad, setSavingScratchpad] = useState<boolean>(false);
@@ -177,7 +186,7 @@ function PlanningCentre({
   const [driveStatus, setDriveStatus] = useState<{ connected: boolean; expired: boolean; folderName: string | null } | null>(null);
   const [driveFiles, setDriveFiles] = useState<any[]>([]);
   const [loadingDrive, setLoadingDrive] = useState<boolean>(false);
-  const [driveSearch, setDriveSearch] = useState<string>('');
+  const [unifiedSearch, setUnifiedSearch] = useState<string>('');
   const [selectedEmbedDoc, setSelectedEmbedDoc] = useState<AttachedDoc | null>(null);
 
   // New Centralized Document Hub states
@@ -199,6 +208,16 @@ function PlanningCentre({
   const [expandedHistoryDocId, setExpandedHistoryDocId] = useState<string | null>(null);
   const [registeringWatchId, setRegisteringWatchId] = useState<string | null>(null);
   const [triggeringWebhookId, setTriggeringWebhookId] = useState<string | null>(null);
+
+  const allEventDocs = selectedEventId ? attachedDocs.filter(d => d.eventId === selectedEventId) : [];
+  const filteredEventDocs = unifiedSearch 
+    ? allEventDocs.filter(d => d.name.toLowerCase().includes(unifiedSearch.toLowerCase())) 
+    : allEventDocs;
+
+  const driveFileMatchesCount = driveFiles.filter(file => {
+    const isFolder = file.mimeType === 'application/vnd.google-apps.folder';
+    return !isFolder && file.name.toLowerCase().includes(unifiedSearch.toLowerCase());
+  }).length;
 
   const sharingAuditorModalRef = useFocusTrap(isAuditModalOpen && !!activeAuditDoc, () => {
     setIsAuditModalOpen(false);
@@ -830,6 +849,57 @@ function PlanningCentre({
     return categoryMatch && statusMatch;
   });
 
+  const createAttachedDoc = async (docData: {
+    name: string;
+    type: string;
+    source: 'google' | 'upload';
+    url: string;
+    embedUrl: string;
+    attachedBy: string;
+    eventId: string;
+    category: 'Spreadsheets/Budgets' | 'Meeting Minutes';
+  }) => {
+    try {
+      const response = await apiFetch('/api/planning/attached-docs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(docData)
+      });
+
+      if (response.ok) {
+        const newDoc = await response.json();
+        // Event broadcast is handled by server API POST now.
+        setAttachedDocs(prev => prev.some(d => d.id === newDoc.id) ? prev : [...prev, newDoc]);
+        showNotification('Document linked to event successfully!', 'success');
+        return true;
+      } else {
+        showNotification('Failed to link document.', 'error');
+        return false;
+      }
+    } catch (err: any) {
+      showNotification(`Error: ${err.message}`, 'error');
+      return false;
+    }
+  };
+
+  const handleAttachDriveFile = async (file: any) => {
+    if (!selectedEventId) {
+      showNotification('Please select an active event first.', 'error');
+      return;
+    }
+    const isSheet = file.mimeType ? file.mimeType.includes('spreadsheet') : false;
+    await createAttachedDoc({
+      name: file.name,
+      type: file.mimeType || 'application/vnd.google-apps.document',
+      source: 'google',
+      url: file.webViewLink,
+      embedUrl: file.webViewLink,
+      attachedBy: userName,
+      eventId: selectedEventId,
+      category: isSheet ? 'Spreadsheets/Budgets' : 'Meeting Minutes'
+    });
+  };
+
   // Link document to event
   const handleLinkDoc = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -842,35 +912,22 @@ function PlanningCentre({
       return;
     }
 
-    try {
-      const response = await apiFetch('/api/planning/attached-docs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: linkingDocName.trim(),
-          type: linkingDocUrl.toLowerCase().includes('sheet') ? 'application/vnd.google-apps.spreadsheet' : 'application/vnd.google-apps.document',
-          source: 'google',
-          url: linkingDocUrl.trim(),
-          embedUrl: linkingDocUrl.trim(),
-          attachedBy: userName,
-          eventId: selectedEventId,
-          category: linkingDocCategory
-        })
-      });
+    const isSheet = linkingDocUrl.toLowerCase().includes('sheet');
+    const success = await createAttachedDoc({
+      name: linkingDocName.trim(),
+      type: isSheet ? 'application/vnd.google-apps.spreadsheet' : 'application/vnd.google-apps.document',
+      source: 'google',
+      url: linkingDocUrl.trim(),
+      embedUrl: linkingDocUrl.trim(),
+      attachedBy: userName,
+      eventId: selectedEventId,
+      category: linkingDocCategory
+    });
 
-      if (response.ok) {
-        const newDoc = await response.json();
-        // Event broadcast is handled by server API POST now.
-              setAttachedDocs(prev => prev.some(d => d.id === newDoc.id) ? prev : [...prev, newDoc]);
-        setLinkingDocName('');
-        setLinkingDocUrl('');
-        setIsLinkingDocOpen(false);
-        showNotification('Document linked to event successfully!', 'success');
-      } else {
-        showNotification('Failed to link document.', 'error');
-      }
-    } catch (err: any) {
-      showNotification(`Error: ${err.message}`, 'error');
+    if (success) {
+      setLinkingDocName('');
+      setLinkingDocUrl('');
+      setIsLinkingDocOpen(false);
     }
   };
 
@@ -1192,44 +1249,59 @@ function PlanningCentre({
       {/* Centralized Document Hub Workspace */}
       <div className="max-w-4xl mx-auto space-y-6">
 
-        {/* Local Tab Sub-Navigation Menu */}
-        <div className="flex border border-[#e2dcd0] p-1 bg-[#faf8f4] rounded-2xl overflow-x-auto gap-1">
-          <button
-            onClick={() => setActiveTab('docs')}
-            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-xl transition-all cursor-pointer shrink-0 ${
-              activeTab === 'docs'
-                ? 'bg-white border border-[#e2dcd0] text-[#856637] shadow-sm font-bold'
-                : 'text-slate-500 hover:text-slate-800 hover:bg-white/40'
-            }`}
-          >
-            <FolderOpen size={14} className="text-[#856637]" />
-            Event Document Hub
-          </button>
-          <button
-            onClick={() => setActiveTab('drive')}
-            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-xl transition-all cursor-pointer shrink-0 ${
-              activeTab === 'drive'
-                ? 'bg-white border border-[#e2dcd0] text-[#856637] shadow-sm font-bold'
-                : 'text-slate-500 hover:text-slate-800 hover:bg-white/40'
-            }`}
-          >
-            <Globe size={14} className="text-slate-500" />
-            Shared Team Directory
-          </button>
-        </div>
+        {/* Presence Avatars Row */}
+        {(() => {
+          const allPresent = [
+            { id: userId || 'current', name: userName || 'You', color: userColor || '#856637', isMe: true },
+            ...connectedUsers.map(u => ({ id: u.id, name: u.name, color: u.color, isMe: false }))
+          ];
+          const firstFive = allPresent.slice(0, 5);
+          const overflowCount = allPresent.length > 5 ? allPresent.length - 5 : 0;
 
-        {/* Tab 1: Event Document Hub */}
-        {activeTab === 'docs' && (
-          <div className="space-y-6">
-            
-            {/* Context / Selector Panel */}
-            <div className="bg-[#faf8f4] border border-[#e2dcd0] rounded-2xl p-5 shadow-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <div className="space-y-1 flex-1">
-                <span className="text-[10px] uppercase font-bold tracking-widest text-[#856637]">Active Hub Focus</span>
-                <h4 className="text-sm font-serif font-black text-slate-800">Event Context Selection</h4>
-                <p className="text-[11px] text-slate-500">Select an event to view, create, or link its direct document checklist and templates.</p>
+          return (
+            <div className="flex items-center justify-between bg-[#faf8f4] border border-[#e2dcd0] rounded-2xl px-5 py-3 shadow-xs">
+              <div className="flex items-center gap-2">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span className="text-[11px] font-bold text-slate-600 font-sans">Active in Planning Centre</span>
               </div>
-              <div className="w-full sm:w-auto flex items-center gap-2">
+              <div className="flex items-center -space-x-1.5 overflow-hidden">
+                {firstFive.map((user) => (
+                  <div
+                    key={user.id}
+                    className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-bold border-2 border-[#faf8f4] shadow-xs relative group cursor-help shrink-0"
+                    style={{ backgroundColor: user.color }}
+                    title={user.isMe ? `${user.name} (You)` : user.name}
+                  >
+                    {getInitials(user.name)}
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block bg-slate-900 text-white text-[9px] px-2 py-0.5 rounded shadow-md whitespace-nowrap z-50">
+                      {user.isMe ? 'You' : user.name}
+                    </div>
+                  </div>
+                ))}
+                {overflowCount > 0 && (
+                  <div 
+                    className="w-7 h-7 rounded-full bg-slate-200 border-2 border-[#faf8f4] flex items-center justify-center text-slate-600 text-[10px] font-bold shadow-xs shrink-0 cursor-help"
+                    title={`${overflowCount} other user${overflowCount > 1 ? 's' : ''} active`}
+                  >
+                    +{overflowCount}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Top Control Panel containing Event Selector & Drive connection badge */}
+        <div className="bg-[#faf8f4] border border-[#e2dcd0] rounded-2xl p-5 shadow-xs flex flex-col gap-4 text-left">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 w-full">
+            <div className="space-y-1 flex-1 w-full">
+              <span className="text-[10px] uppercase font-bold tracking-widest text-[#856637]">Active Hub Focus</span>
+              <h4 className="text-sm font-serif font-black text-slate-800">Event Context Selection</h4>
+              <p className="text-[11px] text-slate-500">Select an event to view, create, or link its direct document checklist and templates.</p>
+              <div className="w-full pt-2.5 flex items-center gap-2">
                 <select
                   value={selectedEventId}
                   onChange={(e) => { setSelectedEventId(e.target.value); const evt = events.find(ev => ev.id === e.target.value); setEventFolderInput(evt?.driveFolderId || ''); }}
@@ -1253,6 +1325,101 @@ function PlanningCentre({
                 )}
               </div>
             </div>
+
+            <div className="w-full md:w-auto flex flex-col items-start md:items-end gap-2 border-t md:border-t-0 border-[#e2dcd0]/50 pt-3 md:pt-0">
+              <span className="text-[10px] uppercase font-bold tracking-widest text-slate-400">Google Drive Integration</span>
+              <div className="flex items-center gap-1.5">
+                {/* Connection Status Badge */}
+                <div className="flex items-center gap-1.5 shrink-0 mr-1">
+                  {(!driveStatus || (!driveStatus.connected)) ? (
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-slate-500 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-full shrink-0">
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                        <span className="hidden sm:inline">Drive not connected</span>
+                      </span>
+                      <button
+                        onClick={handleConnectDrive}
+                        className="shrink-0 bg-[#856637] hover:bg-[#72572e] text-white font-bold text-[10px] px-2.5 py-1 rounded-lg transition shadow-xs cursor-pointer flex items-center gap-1"
+                      >
+                        <LogIn size={11} /> Connect Drive
+                      </button>
+                    </div>
+                  ) : driveStatus.connected && driveStatus.expired ? (
+                    <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-amber-850 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full shrink-0">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                      <span>Needs reconnect</span>
+                      <button
+                        onClick={handleConnectDrive}
+                        className="text-[#856637] hover:text-[#72572e] font-bold underline cursor-pointer shrink-0 text-[10px]"
+                      >
+                        Reconnect
+                      </button>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full shrink-0">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                      <span className="truncate max-w-[130px] sm:max-w-[200px]" title={`Drive connected${driveStatus.folderName ? ` (${driveStatus.folderName})` : ''}`}>
+                        Drive connected{driveStatus.folderName ? ` (${driveStatus.folderName})` : ''}
+                      </span>
+                      <button
+                        onClick={handleDisconnectDrive}
+                        className="text-emerald-600 hover:text-emerald-800 font-bold underline cursor-pointer shrink-0 text-[10px]"
+                      >
+                        Disconnect
+                      </button>
+                    </span>
+                  )}
+                </div>
+
+                <button
+                  onClick={() => setIsEditingFolder(!isEditingFolder)}
+                  className={`p-1.5 rounded-lg border transition cursor-pointer ${
+                    isEditingFolder 
+                      ? 'bg-[#f5ebd6] border-[#efe0c2] text-[#856637]' 
+                      : 'bg-white border-[#e2dcd0] text-slate-500 hover:text-slate-800'
+                  }`}
+                  title="Configure Target Folder ID"
+                >
+                  <Settings size={14} />
+                </button>
+                
+                <button
+                  onClick={() => fetchDriveFilesFromBackend(activeFolderId || undefined)}
+                  disabled={loadingDrive}
+                  className="p-1.5 bg-white border border-[#e2dcd0] hover:bg-slate-50 text-slate-500 hover:text-slate-800 rounded-lg transition cursor-pointer disabled:opacity-50 shrink-0"
+                  title="Reload Files"
+                >
+                  <RefreshCw size={14} className={loadingDrive ? 'animate-spin' : ''} />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Unified Search Input Row */}
+          <div className="pt-3 border-t border-[#e2dcd0]/60 relative w-full">
+            <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search all files and event documents across the Planning Centre..."
+              value={unifiedSearch}
+              onChange={(e) => setUnifiedSearch(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 border border-[#e2dcd0] rounded-xl bg-white focus:outline-none focus:border-[#c2aa80] focus:ring-1 focus:ring-[#c2aa80] text-xs font-semibold text-slate-700"
+            />
+          </div>
+        </div>
+
+        {/* Section 1: This event's files */}
+        <div className="space-y-6">
+          <div className="flex items-center gap-2 border-b border-[#e2dcd0]/60 pb-3">
+            <FolderOpen size={18} className="text-[#856637]" />
+            <h3 className="text-base font-serif font-black text-slate-800">This event's files</h3>
+            {unifiedSearch && (
+              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-mono">
+                {filteredEventDocs.length} match{filteredEventDocs.length !== 1 ? 'es' : ''}
+              </span>
+            )}
+          </div>
+          <div className="space-y-6">
 
             {selectedEventId && (
               <div className="bg-[#fcfaf7] border border-[#e2dcd0] rounded-xl p-4 shadow-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 -mt-2 mb-2">
@@ -1292,7 +1459,7 @@ function PlanningCentre({
             {selectedEventId ? (
               (() => {
                 const activeEvt = events.find(e => e.id === selectedEventId);
-                const eventDocs = attachedDocs.filter(d => d.eventId === selectedEventId);
+                const eventDocs = filteredEventDocs;
 
                 // Categories split
                 const categories = [
@@ -1740,89 +1907,36 @@ function PlanningCentre({
             )}
 
           </div>
-        )}
+        </div>
 
-        {/* Tab 2: Shared Team Directory (Google Drive Folder) */}
-        {activeTab === 'drive' && (
-          <div className="bg-white rounded-2xl border border-[#e2dcd0] shadow-sm hover:shadow-md hover:-translate-y-1 transition duration-200 flex flex-col min-h-[580px] overflow-hidden">
-            
-            {/* Hub Header */}
-            <div className="border-b border-[#e2dcd0] bg-[#faf8f4] p-4 flex items-center justify-between gap-4">
-              <div className="min-w-0 text-left">
-                <h4 className="text-sm font-serif font-bold text-slate-800 flex items-center gap-2">
-                  <FolderOpen size={16} className="text-[#856637]" />
-                  Centralized Document Hub
-                </h4>
-                <p className="text-[10px] text-slate-400 mt-0.5 truncate">
-                  Target: <span className="font-semibold text-slate-600 font-mono">{savedFolderDetails?.name || currentFolderName}</span>
-                </p>
-              </div>
-
-              <div className="flex items-center gap-1.5 shrink-0">
-                {/* Connection Status Badge */}
-                <div className="flex items-center gap-1.5 shrink-0 mr-1">
-                  {(!driveStatus || (!driveStatus.connected)) ? (
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-slate-500 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-full shrink-0">
-                        <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-                        <span className="hidden sm:inline">Drive not connected</span>
-                      </span>
-                      <button
-                        onClick={handleConnectDrive}
-                        className="shrink-0 bg-[#856637] hover:bg-[#72572e] text-white font-bold text-[10px] px-2.5 py-1 rounded-lg transition shadow-xs cursor-pointer flex items-center gap-1 shrink-0"
-                      >
-                        <LogIn size={11} /> Connect Drive
-                      </button>
-                    </div>
-                  ) : driveStatus.connected && driveStatus.expired ? (
-                    <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-amber-850 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full shrink-0">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
-                      <span>Needs reconnect</span>
-                      <button
-                        onClick={handleConnectDrive}
-                        className="text-[#856637] hover:text-[#72572e] font-bold underline cursor-pointer shrink-0"
-                      >
-                        Reconnect
-                      </button>
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full shrink-0">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                      <span className="truncate max-w-[130px] sm:max-w-[200px]" title={`Drive connected${driveStatus.folderName ? ` (${driveStatus.folderName})` : ''}`}>
-                        Drive connected{driveStatus.folderName ? ` (${driveStatus.folderName})` : ''}
-                      </span>
-                      <button
-                        onClick={handleDisconnectDrive}
-                        className="text-emerald-600 hover:text-emerald-800 font-bold underline cursor-pointer shrink-0"
-                      >
-                        Disconnect
-                      </button>
-                    </span>
-                  )}
-                </div>
-
-                <button
-                  onClick={() => setIsEditingFolder(!isEditingFolder)}
-                  className={`p-1.5 rounded-lg border transition cursor-pointer ${
-                    isEditingFolder 
-                      ? 'bg-[#f5ebd6] border-[#efe0c2] text-[#856637]' 
-                      : 'bg-white border-[#e2dcd0] text-slate-500 hover:text-slate-800'
-                  }`}
-                  title="Configure Target Folder ID"
-                >
-                  <Settings size={14} />
-                </button>
-                
-                <button
-                  onClick={() => fetchDriveFilesFromBackend(activeFolderId || undefined)}
-                  disabled={loadingDrive}
-                  className="p-1.5 bg-white border border-[#e2dcd0] hover:bg-slate-50 text-slate-500 hover:text-slate-800 rounded-lg transition cursor-pointer disabled:opacity-50 shrink-0"
-                  title="Reload Files"
-                >
-                  <RefreshCw size={14} className={loadingDrive ? 'animate-spin' : ''} />
-                </button>
-              </div>
+        {/* Section 2: Browse shared drive (Collapsible) */}
+        <div className="bg-white rounded-2xl border border-[#e2dcd0] shadow-xs overflow-hidden">
+          {/* Header (Click to expand/collapse) */}
+          <button
+            type="button"
+            onClick={() => setIsDriveExpanded(!isDriveExpanded)}
+            className="w-full flex items-center justify-between bg-[#faf8f4] p-4 border-b border-[#e2dcd0] hover:bg-[#faf8f4]/90 transition text-left cursor-pointer"
+          >
+            <div className="flex items-center gap-2">
+              <Globe size={18} className="text-[#856637]" />
+              <h3 className="text-sm font-serif font-black text-slate-800">Browse shared drive</h3>
+              <span className="text-[10px] text-slate-400 font-medium">
+                ({savedFolderDetails?.name || currentFolderName})
+              </span>
+              {unifiedSearch && (
+                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-mono">
+                  {driveFileMatchesCount} match{driveFileMatchesCount !== 1 ? 'es' : ''}
+                </span>
+              )}
             </div>
+            <div className="text-slate-500 font-bold text-xs select-none">
+              {isDriveExpanded ? 'Hide ▴' : 'Show ▾'}
+            </div>
+          </button>
+
+          {/* Collapsible Content */}
+          {isDriveExpanded && (
+            <div className="p-4 flex flex-col space-y-4 min-h-[400px]">
 
             {/* Folder Configuration Form */}
             {isEditingFolder && (
@@ -1857,8 +1971,7 @@ function PlanningCentre({
               </div>
             )}
 
-            {/* Hub Body */}
-            <div className="p-4 flex-1 flex flex-col space-y-4">
+
               
               {/* If there is an error configuration */}
               {errorDrive && (
@@ -1937,18 +2050,7 @@ function PlanningCentre({
                   )}
 
                   {/* Filter Toolbar */}
-                  <div className="flex items-center gap-2">
-                    <div className="relative flex-1">
-                      <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                      <input
-                        type="text"
-                        placeholder="Search current folder..."
-                        value={driveSearch}
-                        onChange={(e) => setDriveSearch(e.target.value)}
-                        className="w-full pl-8 pr-3 py-1.5 border border-[#e2dcd0] rounded-xl bg-white focus:outline-none focus:border-[#c2aa80] text-xs text-left"
-                      />
-                    </div>
-
+                  <div className="flex items-center justify-end gap-2">
                     {/* View mode toggle */}
                     <div className="flex border border-[#e2dcd0] rounded-xl overflow-hidden bg-white shrink-0">
                       <button
@@ -2021,9 +2123,11 @@ function PlanningCentre({
                       </div>
                     ) : (
                       (() => {
-                        const filtered = driveFiles.filter(file => 
-                          file.name.toLowerCase().includes(driveSearch.toLowerCase())
-                        );
+                        const filtered = driveFiles.filter(file => {
+                          const isFolder = file.mimeType === 'application/vnd.google-apps.folder';
+                          if (isFolder) return true;
+                          return file.name.toLowerCase().includes(unifiedSearch.toLowerCase());
+                        });
 
                         if (filtered.length === 0) {
                           return (
@@ -2063,6 +2167,15 @@ function PlanningCentre({
                                   IconCmp = FileText;
                                 }
 
+                                const isAttached = selectedEventId && attachedDocs.some(d => 
+                                  d.eventId === selectedEventId && (
+                                    d.url === file.webViewLink || 
+                                    d.embedUrl === file.webViewLink || 
+                                    (d.url && d.url.includes(file.id)) ||
+                                    (d.embedUrl && d.embedUrl.includes(file.id))
+                                  )
+                                );
+
                                 return (
                                   <div
                                     key={file.id}
@@ -2075,7 +2188,9 @@ function PlanningCentre({
                                         window.open(file.webViewLink, '_blank', 'noopener,noreferrer');
                                       }
                                     }}
-                                    className="bg-[#faf8f4] hover:bg-white border border-[#e2dcd0] hover:border-[#c2aa80] rounded-2xl p-4 flex flex-col justify-between hover:shadow-lg transition-all duration-300 cursor-pointer h-40 text-left group relative overflow-hidden"
+                                    className={`bg-[#faf8f4] hover:bg-white border border-[#e2dcd0] hover:border-[#c2aa80] rounded-2xl p-4 flex flex-col justify-between hover:shadow-lg transition-all duration-300 cursor-pointer text-left group relative overflow-hidden ${
+                                      isFolder ? 'h-40' : 'min-h-[11rem] h-auto'
+                                    }`}
                                   >
                                     <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-br from-[#f5ebd6]/10 to-transparent rounded-full -mr-4 -mt-4 group-hover:scale-150 transition-transform duration-500" />
                                     
@@ -2096,12 +2211,18 @@ function PlanningCentre({
                                         )}
                                       </div>
                                       
-                                      <div className="flex items-center gap-1.5">
-                                        <span className="text-[8px] font-bold uppercase tracking-wider text-slate-400 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded font-mono">
+                                      <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                                        {isAttached && (
+                                          <span className="text-[8px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-mono flex items-center gap-0.5 shrink-0">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse" />
+                                            Linked
+                                          </span>
+                                        )}
+                                        <span className="text-[8px] font-bold uppercase tracking-wider text-slate-400 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded font-mono shrink-0">
                                           {isFolder ? 'Folder' : isDoc ? 'Doc' : isSheet ? 'Sheet' : isSlide ? 'Slide' : isPdf ? 'PDF' : 'File'}
                                         </span>
                                         {!isFolder && (
-                                          <div className="p-1 rounded bg-white border border-slate-100 shadow-xs text-slate-300 group-hover:text-[#856637] group-hover:border-[#c2aa80] transition duration-300">
+                                          <div className="p-1 rounded bg-white border border-slate-100 shadow-xs text-slate-300 group-hover:text-[#856637] group-hover:border-[#c2aa80] transition duration-300 shrink-0">
                                             <ExternalLink size={10} />
                                           </div>
                                         )}
@@ -2125,6 +2246,44 @@ function PlanningCentre({
                                         </span>
                                       </div>
                                     </div>
+
+                                    {!isFolder && (
+                                      <div className="mt-3 relative z-20" onClick={(e) => e.stopPropagation()}>
+                                        {isAttached ? (
+                                          <button
+                                            disabled
+                                            className="w-full bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg py-1 px-2 text-[10px] font-bold flex items-center justify-center gap-1 cursor-default"
+                                          >
+                                            <Check size={11} className="stroke-[3]" />
+                                            Linked
+                                          </button>
+                                        ) : (
+                                          <div className="relative group/tooltip w-full">
+                                            <button
+                                              disabled={!selectedEventId}
+                                              onClick={() => {
+                                                if (selectedEventId) {
+                                                  handleAttachDriveFile(file);
+                                                }
+                                              }}
+                                              className={`w-full py-1 px-2 text-[10px] font-bold rounded-lg transition-all duration-200 flex items-center justify-center gap-1 ${
+                                                selectedEventId
+                                                  ? 'bg-[#856637] hover:bg-[#72572e] text-white cursor-pointer shadow-xs active:scale-[0.98]'
+                                                  : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                                              }`}
+                                            >
+                                              <Plus size={11} className="stroke-[3]" />
+                                              Attach to Event
+                                            </button>
+                                            {!selectedEventId && (
+                                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover/tooltip:block bg-slate-900 text-white text-[9px] px-2 py-1 rounded shadow-md whitespace-nowrap z-50">
+                                                Please select an event first
+                                              </div>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
                                     
                                     <div className="h-1 w-full bg-transparent absolute bottom-0 left-0 right-0 group-hover:bg-[#c2aa80] transition-colors duration-300" />
                                   </div>
@@ -2164,6 +2323,15 @@ function PlanningCentre({
                                 IconCmp = FileText;
                               }
 
+                              const isAttached = selectedEventId && attachedDocs.some(d => 
+                                d.eventId === selectedEventId && (
+                                  d.url === file.webViewLink || 
+                                  d.embedUrl === file.webViewLink || 
+                                  (d.url && d.url.includes(file.id)) ||
+                                  (d.embedUrl && d.embedUrl.includes(file.id))
+                                )
+                              );
+
                               return (
                                 <div
                                   key={file.id}
@@ -2183,27 +2351,70 @@ function PlanningCentre({
                                       <IconCmp size={16} />
                                     </div>
                                     <div className="min-w-0 text-left">
-                                      <span className="font-bold text-slate-700 truncate block font-sans" title={file.name}>
-                                        {file.name}
-                                      </span>
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="font-bold text-slate-700 truncate block font-sans" title={file.name}>
+                                          {file.name}
+                                        </span>
+                                        {isAttached && (
+                                          <span className="text-[8px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-mono shrink-0 flex items-center gap-0.5">
+                                            <span className="w-1 h-1 rounded-full bg-emerald-500 inline-block animate-pulse" />
+                                            Linked
+                                          </span>
+                                        )}
+                                      </div>
                                       <span className="text-[9px] text-slate-400 block font-mono mt-0.5">
                                         {isFolder ? 'Folder' : `Modified ${file.modifiedTime ? new Date(file.modifiedTime).toLocaleDateString() : 'N/A'}`}
                                       </span>
                                     </div>
                                   </div>
 
-                                  <div className="flex items-center gap-1.5 shrink-0">
+                                  <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                                     {!isFolder ? (
-                                      <a
-                                        href={file.webViewLink}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        onClick={(e) => e.stopPropagation()}
-                                        className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-2.5 py-1 rounded-lg transition flex items-center gap-1"
-                                      >
-                                        <ExternalLink size={10} />
-                                        Open Workspace
-                                      </a>
+                                      <>
+                                        <a
+                                          href={file.webViewLink}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-2.5 py-1 rounded-lg transition flex items-center gap-1"
+                                        >
+                                          <ExternalLink size={10} />
+                                          Open Workspace
+                                        </a>
+
+                                        {isAttached ? (
+                                          <button
+                                            disabled
+                                            className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 cursor-default"
+                                          >
+                                            <Check size={10} className="stroke-[3]" />
+                                            Linked
+                                          </button>
+                                        ) : (
+                                          <div className="relative group/tooltip">
+                                            <button
+                                              disabled={!selectedEventId}
+                                              onClick={() => {
+                                                if (selectedEventId) {
+                                                  handleAttachDriveFile(file);
+                                                }
+                                              }}
+                                              className={`text-[10px] font-bold px-2.5 py-1 rounded-lg transition flex items-center gap-1 ${
+                                                selectedEventId
+                                                  ? 'bg-[#856637] hover:bg-[#72572e] text-white cursor-pointer shadow-xs active:scale-[0.98]'
+                                                  : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                                              }`}
+                                            >
+                                              <Plus size={10} className="stroke-[3]" />
+                                              Attach to Event
+                                            </button>
+                                            {!selectedEventId && (
+                                              <div className="absolute bottom-full right-0 mb-1.5 hidden group-hover/tooltip:block bg-slate-900 text-white text-[9px] px-2 py-1 rounded shadow-md whitespace-nowrap z-50">
+                                                Please select an event first
+                                              </div>
+                                            )}
+                                          </div>
+                                        )}
+                                      </>
                                     ) : (
                                       <span className="text-[10px] text-slate-300 font-medium px-2 py-1">
                                         View Folder
@@ -2223,8 +2434,8 @@ function PlanningCentre({
               )}
 
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
 
 

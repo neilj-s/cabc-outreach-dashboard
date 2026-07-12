@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNotification } from '../context/NotificationContext';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { 
   Calendar, 
@@ -64,6 +65,8 @@ export default function ReverseTimeline({
   lanes = [],
   volunteers = []
 }: ReverseTimelineProps) {
+  const { showNotification } = useNotification();
+
   // Event creation form state
   const [newEventName, setNewEventName] = useState('');
   const [newEventDate, setNewEventDate] = useState('');
@@ -100,10 +103,15 @@ export default function ReverseTimeline({
 
   // Rescale Timeline modal & formula states
   const [showRescaleModal, setShowRescaleModal] = useState(false);
+  const [rescaleConfirming, setRescaleConfirming] = useState(false);
   const [planningStartDate, setPlanningStartDate] = useState(() => {
     const d = new Date();
     return d.toISOString().split('T')[0];
   });
+
+  useEffect(() => {
+    setRescaleConfirming(false);
+  }, [showRescaleModal]);
   
   // Reusable Confirmation Dialog state
   const [confirmState, setConfirmState] = useState<{
@@ -209,42 +217,30 @@ export default function ReverseTimeline({
     });
   };
 
-  const handleApplyRescale = async () => {
-    console.log("handleApplyRescale initiated", { selectedEvent, onRescaleTimeline });
-    if (!selectedEvent || !onRescaleTimeline) {
-      console.warn("Rescale cancelled: selectedEvent or onRescaleTimeline missing", { selectedEvent, hasCallback: !!onRescaleTimeline });
-      return;
-    }
+  const handleApplyRescale = () => {
+    if (!selectedEvent || !onRescaleTimeline) return;
+    setRescaleConfirming(true);
+  };
+
+  const handleConfirmRescale = async () => {
+    if (!selectedEvent || !onRescaleTimeline) return;
 
     const previewTasks = getRescaledTasks();
-    console.log("Calculated preview tasks for rescale", { previewTasks });
     const updates = previewTasks.map(t => ({
       taskId: t.taskId,
       dueDate: t.newDueDate
     }));
-    console.log("Formed updates payload", { updates });
-
-    const isConfirmed = await confirmAction(
-      "Rescale Timeline Dates",
-      `Are you sure you want to rescale the timeline? This will shift the due dates of ${updates.length} tasks for "${selectedEvent.name}" to fit the new planning window starting on ${formatHumanDate(planningStartDate)}.`
-    );
-    console.log("Confirmation dialog response received", { isConfirmed });
-
-    if (!isConfirmed) {
-      console.log("Rescale timeline action rejected by user");
-      return;
-    }
 
     try {
       setSubmitting(true);
-      console.log("Dispatching onRescaleTimeline with parameters", { id: selectedEvent.id, updates });
       await onRescaleTimeline(selectedEvent.id, updates);
-      console.log("onRescaleTimeline execution succeeded!");
+      showNotification('Timeline rescaled successfully!', 'success');
       setShowRescaleModal(false);
     } catch (err) {
-      console.error("Failed to rescale timeline", err);
+      showNotification('Failed to rescale timeline. Please try again.', 'error');
     } finally {
       setSubmitting(false);
+      setRescaleConfirming(false);
     }
   };
 
@@ -394,6 +390,38 @@ export default function ReverseTimeline({
       return d.toLocaleDateString('en-US', options);
     } catch (e) {
       return dateStr;
+    }
+  };
+
+  const milestoneNames: Record<string, string> = {
+    '12_weeks_out': 'Vision & Scope',
+    '10_weeks_out': 'Planning',
+    '8_weeks_out': 'Build',
+    '4_weeks_out': 'Confirmation',
+    '2_weeks_out': 'Final Push'
+  };
+
+  const getTimeOutLabel = (dueDateStr: string, eventDateStr: string): string => {
+    if (!dueDateStr || !eventDateStr) return '';
+    try {
+      const parseLocalDate = (dateStr: string): Date => {
+        const [year, month, day] = dateStr.split('-').map(Number);
+        return new Date(year, month - 1, day);
+      };
+      const dateA = parseLocalDate(eventDateStr);
+      const dateB = parseLocalDate(dueDateStr);
+      const diffMs = dateA.getTime() - dateB.getTime();
+      const days = Math.round(diffMs / (1000 * 60 * 60 * 24));
+      
+      if (days <= 0) {
+        return "Due on event day";
+      }
+      if (days >= 1 && days <= 13) {
+        return `${days} days out`;
+      }
+      return `${Math.round(days / 7)} weeks out`;
+    } catch (e) {
+      return '';
     }
   };
 
@@ -770,6 +798,10 @@ export default function ReverseTimeline({
                 const completedInGroup = group.tasks.filter(t => t.completed).length;
                 const groupDate = group.tasks[0]?.dueDate || selectedEvent.date;
 
+                const cleanedTitle = group.title.replace(/\s*\(\d+\s*Weeks\s*Out\)/i, '').trim();
+                const dynamicLabel = getTimeOutLabel(groupDate, selectedEvent.date);
+                const displayedTitle = dynamicLabel ? `${cleanedTitle} (${dynamicLabel})` : cleanedTitle;
+
                 return (
                   <div key={group.key} className="relative">
                     {/* Timeline Node Ring */}
@@ -780,7 +812,7 @@ export default function ReverseTimeline({
                     {/* Milestone Header */}
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 bg-[#fcfaf7] border border-[#e2dcd0] p-3 rounded-xl">
                       <div>
-                        <h4 className="font-serif font-bold text-[#1e293b] text-sm leading-tight">{group.title}</h4>
+                        <h4 className="font-serif font-bold text-[#1e293b] text-sm leading-tight">{displayedTitle}</h4>
                         <div className="flex items-center gap-1.5 text-[10px] text-slate-500 mt-1">
                           <Clock size={10} />
                           <span>Estimated Due: {formatHumanDate(groupDate)}</span>
@@ -1279,7 +1311,13 @@ export default function ReverseTimeline({
                       {selectedEvent.tasks.map((task) => (
                         <tr key={task.id} className="hover:bg-slate-50/50">
                           <td className="py-3 px-2 font-bold text-slate-900 whitespace-nowrap align-top">
-                            {task.milestoneTitle || task.milestoneKey.replace(/_/g, ' ').replace('out', 'Out')}
+                            {(() => {
+                              const phaseName = task.milestoneTitle 
+                                ? task.milestoneTitle.replace(/\s*\(\d+\s*Weeks\s*Out\)/i, '').trim() 
+                                : (milestoneNames[task.milestoneKey] || 'Milestone');
+                              const taskDynamicLabel = getTimeOutLabel(task.dueDate, selectedEvent.date);
+                              return taskDynamicLabel ? `${phaseName} (${taskDynamicLabel})` : phaseName;
+                            })()}
                           </td>
                           <td className="py-3 px-2 align-top">
                             <p className="font-bold text-slate-900 leading-tight">{task.title}</p>
@@ -1575,24 +1613,50 @@ export default function ReverseTimeline({
               </div>
             </div>
 
-            <div className="bg-[#fcfaf7] border-t border-[#efe0c2] px-6 py-4 flex items-center justify-end gap-3 rounded-b-xl">
-              <button
-                type="button"
-                onClick={() => setShowRescaleModal(false)}
-                disabled={submitting}
-                className="px-4 py-2 border border-[#e2dcd0] bg-white text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-50 transition cursor-pointer disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleApplyRescale}
-                disabled={submitting || (selectedEvent.tasks || []).length === 0}
-                className="px-4 py-2 bg-[#856637] hover:bg-[#6b522b] text-white text-xs font-bold rounded-lg transition shadow-sm cursor-pointer disabled:opacity-50"
-              >
-                {submitting ? 'Applying...' : 'Apply New Dates'}
-              </button>
-            </div>
+            {rescaleConfirming ? (
+              <div className="bg-[#fcfaf7] border-t border-[#efe0c2] px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4 rounded-b-xl w-full">
+                <span className="text-xs font-medium text-slate-700">
+                  This will shift {getRescaledTasks().length} task dates for "{selectedEvent.name}". Apply?
+                </span>
+                <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setRescaleConfirming(false)}
+                    disabled={submitting}
+                    className="px-4 py-2 border border-[#e2dcd0] bg-white text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-50 transition cursor-pointer disabled:opacity-50"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmRescale}
+                    disabled={submitting}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition shadow-sm cursor-pointer disabled:opacity-50"
+                  >
+                    {submitting ? 'Applying...' : 'Confirm'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-[#fcfaf7] border-t border-[#efe0c2] px-6 py-4 flex items-center justify-end gap-3 rounded-b-xl">
+                <button
+                  type="button"
+                  onClick={() => setShowRescaleModal(false)}
+                  disabled={submitting}
+                  className="px-4 py-2 border border-[#e2dcd0] bg-white text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-50 transition cursor-pointer disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApplyRescale}
+                  disabled={submitting || (selectedEvent.tasks || []).length === 0}
+                  className="px-4 py-2 bg-[#856637] hover:bg-[#6b522b] text-white text-xs font-bold rounded-lg transition shadow-sm cursor-pointer disabled:opacity-50"
+                >
+                  {submitting ? 'Applying...' : 'Apply New Dates'}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
