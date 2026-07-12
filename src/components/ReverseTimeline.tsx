@@ -18,10 +18,12 @@ import {
   ArrowUpDown,
   ChevronLeft,
   ChevronRight,
-  List
+  List,
+  Scale
 } from 'lucide-react';
 import { MinistryEvent, Task, MinistryLane, MilestoneKey, EventDoc, LaneDetail, Volunteer } from '../types';
 import TaskCard from './TaskCard';
+import ConfirmDialog from './ConfirmDialog';
 
 interface ReverseTimelineProps {
   events: MinistryEvent[];
@@ -36,6 +38,7 @@ interface ReverseTimelineProps {
   onUpdateEventDocs?: (eventId: string, docs: EventDoc[]) => Promise<void>;
   onUpdateEvent?: (eventId: string, data: Partial<MinistryEvent>) => Promise<void>;
   onUpdateTaskDueDate?: (eventId: string, taskId: string, dueDate: string) => Promise<void>;
+  onRescaleTimeline?: (eventId: string, updates: { taskId: string; dueDate: string }[]) => Promise<void>;
   onUpdateTask?: (eventId: string, taskId: string, updates: Partial<Task>) => Promise<void>;
   onDeleteTask?: (eventId: string, taskId: string) => Promise<void>;
   lanes?: LaneDetail[];
@@ -55,6 +58,7 @@ export default function ReverseTimeline({
   onUpdateEventDocs,
   onUpdateEvent,
   onUpdateTaskDueDate,
+  onRescaleTimeline,
   onUpdateTask,
   onDeleteTask,
   lanes = [],
@@ -94,9 +98,155 @@ export default function ReverseTimeline({
 
   const [showBriefingModal, setShowBriefingModal] = useState(false);
 
+  // Rescale Timeline modal & formula states
+  const [showRescaleModal, setShowRescaleModal] = useState(false);
+  const [planningStartDate, setPlanningStartDate] = useState(() => {
+    const d = new Date();
+    return d.toISOString().split('T')[0];
+  });
+  
+  // Reusable Confirmation Dialog state
+  const [confirmState, setConfirmState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    resolve: (val: boolean) => void;
+  } | null>(null);
+
+  const confirmAction = (title: string, message: string): Promise<boolean> => {
+    return new Promise((resolve) => {
+      setConfirmState({
+        isOpen: true,
+        title,
+        message,
+        resolve: (val) => {
+          resolve(val);
+          setConfirmState(null);
+        }
+      });
+    });
+  };
+
   const selectedEvent = events.find(e => e.id === selectedEventId) || events[0];
 
   const briefingModalRef = useFocusTrap(showBriefingModal && !!selectedEvent, () => setShowBriefingModal(false));
+  const rescaleModalRef = useFocusTrap(showRescaleModal && !!selectedEvent, () => setShowRescaleModal(false));
+
+  const getRescaledTasks = () => {
+    if (!selectedEvent || !selectedEvent.tasks || selectedEvent.tasks.length === 0) return [];
+
+    const eventDateStr = selectedEvent.date;
+    const parseLocalDate = (dateStr: string): Date => {
+      const [year, month, day] = dateStr.split('-').map(Number);
+      return new Date(year, month - 1, day);
+    };
+
+    const formatLocalDate = (date: Date): string => {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    };
+
+    const getDaysDiff = (dateAStr: string, dateBStr: string): number => {
+      const dateA = parseLocalDate(dateAStr);
+      const dateB = parseLocalDate(dateBStr);
+      const diffMs = dateA.getTime() - dateB.getTime();
+      return Math.round(diffMs / (1000 * 60 * 60 * 24));
+    };
+
+    const addDays = (dateStr: string, days: number): string => {
+      const date = parseLocalDate(dateStr);
+      date.setDate(date.getDate() + days);
+      return formatLocalDate(date);
+    };
+
+    // Compute offset = (event date - current due date) in days
+    const tasksWithOffset = selectedEvent.tasks.map(t => {
+      const offset = getDaysDiff(eventDateStr, t.dueDate);
+      return { task: t, offset };
+    });
+
+    // originalSpan = largest offset among tasks (earliest task)
+    const originalSpan = Math.max(...tasksWithOffset.map(t => t.offset), 0);
+
+    // newSpan = (event date - planning start date) in days
+    const newSpan = getDaysDiff(eventDateStr, planningStartDate);
+
+    // scale = newSpan / originalSpan (guard against divide-by-zero and negative spans)
+    let scale = 1;
+    if (originalSpan > 0 && newSpan >= 0) {
+      scale = newSpan / originalSpan;
+    }
+
+    // Calculate new due dates
+    return tasksWithOffset.map(({ task, offset }) => {
+      let newDueDateStr = task.dueDate;
+      if (originalSpan > 0 && newSpan >= 0) {
+        const daysToSubtract = Math.round(offset * scale);
+        newDueDateStr = addDays(eventDateStr, -daysToSubtract);
+      }
+
+      // Clamp: never after event date, never before planning start date
+      const dNew = parseLocalDate(newDueDateStr);
+      const dEvent = parseLocalDate(eventDateStr);
+      const dStart = parseLocalDate(planningStartDate);
+
+      if (dNew.getTime() > dEvent.getTime()) {
+        newDueDateStr = eventDateStr;
+      } else if (dNew.getTime() < dStart.getTime()) {
+        newDueDateStr = planningStartDate;
+      }
+
+      return {
+        taskId: task.id,
+        title: task.title,
+        currentDueDate: task.dueDate,
+        newDueDate: newDueDateStr,
+        milestoneKey: task.milestoneKey,
+        milestoneTitle: task.milestoneTitle || ''
+      };
+    });
+  };
+
+  const handleApplyRescale = async () => {
+    console.log("handleApplyRescale initiated", { selectedEvent, onRescaleTimeline });
+    if (!selectedEvent || !onRescaleTimeline) {
+      console.warn("Rescale cancelled: selectedEvent or onRescaleTimeline missing", { selectedEvent, hasCallback: !!onRescaleTimeline });
+      return;
+    }
+
+    const previewTasks = getRescaledTasks();
+    console.log("Calculated preview tasks for rescale", { previewTasks });
+    const updates = previewTasks.map(t => ({
+      taskId: t.taskId,
+      dueDate: t.newDueDate
+    }));
+    console.log("Formed updates payload", { updates });
+
+    const isConfirmed = await confirmAction(
+      "Rescale Timeline Dates",
+      `Are you sure you want to rescale the timeline? This will shift the due dates of ${updates.length} tasks for "${selectedEvent.name}" to fit the new planning window starting on ${formatHumanDate(planningStartDate)}.`
+    );
+    console.log("Confirmation dialog response received", { isConfirmed });
+
+    if (!isConfirmed) {
+      console.log("Rescale timeline action rejected by user");
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      console.log("Dispatching onRescaleTimeline with parameters", { id: selectedEvent.id, updates });
+      await onRescaleTimeline(selectedEvent.id, updates);
+      console.log("onRescaleTimeline execution succeeded!");
+      setShowRescaleModal(false);
+    } catch (err) {
+      console.error("Failed to rescale timeline", err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -542,6 +692,21 @@ export default function ReverseTimeline({
                       >
                         Edit Event
                       </button>
+                      {onRescaleTimeline && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const d = new Date();
+                            setPlanningStartDate(d.toISOString().split('T')[0]);
+                            setShowRescaleModal(true);
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 border border-[#e2dcd0] bg-[#faf8f4] text-slate-700 text-[11px] font-bold uppercase tracking-wider rounded hover:bg-[#f5ebd6]/50 transition cursor-pointer"
+                          title="Rescale Timeline"
+                        >
+                          <Scale size={13} />
+                          Rescale Timeline
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => setShowBriefingModal(true)}
@@ -1267,6 +1432,180 @@ export default function ReverseTimeline({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Rescale Timeline Modal */}
+      {showRescaleModal && selectedEvent && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
+          <div 
+            ref={rescaleModalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="rescale-modal-title"
+            className="bg-[#faf8f4] w-full max-w-2xl rounded-xl border border-[#efe0c2] shadow-2xl flex flex-col max-h-[90vh] text-slate-800 animate-fadeIn"
+          >
+            <div className="bg-[#f5ebd6] border-b border-[#efe0c2] px-6 py-4 flex items-center justify-between rounded-t-xl">
+              <div className="flex items-center gap-2">
+                <Scale className="text-[#856637]" size={18} aria-hidden="true" />
+                <h3 id="rescale-modal-title" className="font-serif font-black text-slate-800 text-sm uppercase tracking-wider">
+                  Rescale Timeline Dates
+                </h3>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setShowRescaleModal(false)}
+                className="text-slate-500 hover:text-slate-800 text-xs font-bold uppercase cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1 space-y-6">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Compress or expand task due dates proportionally to fit a new planning window. Clamps results between your planning start date and the event date, preserving task order and milestones.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+                    Read-Only Event Date
+                  </label>
+                  <div className="px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-xs font-semibold text-slate-500">
+                    {formatHumanDate(selectedEvent.date)} ({selectedEvent.date})
+                  </div>
+                </div>
+
+                <div>
+                  <label htmlFor="planning-start-date" className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                    Planning Start Date
+                  </label>
+                  <input
+                    id="planning-start-date"
+                    type="date"
+                    value={planningStartDate}
+                    max={selectedEvent.date}
+                    onChange={(e) => setPlanningStartDate(e.target.value)}
+                    className="w-full px-3 py-1.5 text-xs bg-white border border-[#e2dcd0] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#856637] focus:border-[#856637] font-semibold text-slate-800 cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                  Live Preview of Shifts (Grouped by Milestone)
+                </h4>
+                
+                <div className="border border-[#efe0c2] rounded-xl overflow-hidden bg-white max-h-[250px] overflow-y-auto shadow-inner">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-[#fcfaf7] border-b border-[#efe0c2] text-[10px] font-bold text-slate-400 uppercase">
+                        <th className="py-2.5 px-4">Task Details</th>
+                        <th className="py-2.5 px-4 text-center w-28">Original</th>
+                        <th className="py-2.5 px-4 text-center w-8"></th>
+                        <th className="py-2.5 px-4 text-center w-28">New Due Date</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-xs">
+                      {(() => {
+                        const previewTasks = getRescaledTasks();
+                        if (previewTasks.length === 0) {
+                          return (
+                            <tr>
+                              <td colSpan={4} className="py-8 text-center text-slate-400 italic">
+                                No tasks found for this event.
+                              </td>
+                            </tr>
+                          );
+                        }
+
+                        const milestoneOrder: Record<string, number> = {
+                          '12_weeks_out': 1,
+                          '10_weeks_out': 2,
+                          '8_weeks_out': 3,
+                          '4_weeks_out': 4,
+                          '2_weeks_out': 5
+                        };
+
+                        const sorted = [...previewTasks].sort((a, b) => {
+                          const orderA = milestoneOrder[a.milestoneKey] || 99;
+                          const orderB = milestoneOrder[b.milestoneKey] || 99;
+                          if (orderA !== orderB) return orderA - orderB;
+                          return a.currentDueDate.localeCompare(b.currentDueDate);
+                        });
+
+                        let lastMilestone = '';
+                        return sorted.map((task) => {
+                          const showHeader = task.milestoneTitle !== lastMilestone;
+                          if (showHeader) {
+                            lastMilestone = task.milestoneTitle;
+                          }
+
+                          const hasChanged = task.currentDueDate !== task.newDueDate;
+
+                          return (
+                            <React.Fragment key={task.taskId}>
+                              {showHeader && (
+                                <tr className="bg-slate-50/70">
+                                  <td colSpan={4} className="py-1 px-4 font-serif font-black text-[#856637] text-[10px] uppercase tracking-wider">
+                                    {task.milestoneTitle || 'Milestone Tasks'}
+                                  </td>
+                                </tr>
+                              )}
+                              <tr className="hover:bg-slate-50/50">
+                                <td className="py-2 px-4 font-medium text-slate-700 truncate max-w-[200px]" title={task.title}>
+                                  {task.title}
+                                </td>
+                                <td className="py-2 px-4 text-center text-slate-400 line-through">
+                                  {formatHumanDate(task.currentDueDate)}
+                                </td>
+                                <td className="py-2 px-1 text-center text-[#856637] font-bold">
+                                  →
+                                </td>
+                                <td className={`py-2 px-4 text-center font-semibold ${hasChanged ? 'text-indigo-600 bg-indigo-50/30' : 'text-slate-600'}`}>
+                                  {formatHumanDate(task.newDueDate)}
+                                </td>
+                              </tr>
+                            </React.Fragment>
+                          );
+                        });
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-[#fcfaf7] border-t border-[#efe0c2] px-6 py-4 flex items-center justify-end gap-3 rounded-b-xl">
+              <button
+                type="button"
+                onClick={() => setShowRescaleModal(false)}
+                disabled={submitting}
+                className="px-4 py-2 border border-[#e2dcd0] bg-white text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-50 transition cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleApplyRescale}
+                disabled={submitting || (selectedEvent.tasks || []).length === 0}
+                className="px-4 py-2 bg-[#856637] hover:bg-[#6b522b] text-white text-xs font-bold rounded-lg transition shadow-sm cursor-pointer disabled:opacity-50"
+              >
+                {submitting ? 'Applying...' : 'Apply New Dates'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Dialog */}
+      {confirmState && (
+        <ConfirmDialog
+          isOpen={confirmState.isOpen}
+          title={confirmState.title}
+          message={confirmState.message}
+          onConfirm={() => confirmState.resolve(true)}
+          onCancel={() => confirmState.resolve(false)}
+        />
       )}
     </div>
   );

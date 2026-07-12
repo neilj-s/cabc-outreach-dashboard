@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { AlertTriangle, X } from 'lucide-react';
 import { useFocusTrap } from '../lib/useFocusTrap';
@@ -26,8 +27,8 @@ export default function ConfirmDialog({
 
   return (
     <AnimatePresence>
-      {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {isOpen && createPortal(
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
           {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
@@ -94,7 +95,8 @@ export default function ConfirmDialog({
               </button>
             </div>
           </motion.div>
-        </div>
+        </div>,
+        document.body
       )}
     </AnimatePresence>
   );

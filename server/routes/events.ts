@@ -1,5 +1,5 @@
 import express from 'express';
-import { getDb, saveDb, logActivity, generateTasksForEvent, DEFAULT_DOCS, MILESTONE_TEMPLATES, broadcast } from '../storage';
+import { getDb, saveDb, logActivity, generateTasksForEvent, DEFAULT_DOCS, MILESTONE_TEMPLATES, broadcast, requireAuth } from '../storage';
 import { MinistryEvent, Task, AssetReservation } from '../../src/types';
 
 const router = express.Router();
@@ -196,7 +196,57 @@ router.put('/:id/budget', (req, res) => {
   res.json({ success: true, event: db.events[eventIndex] });
 });
 
+router.patch('/:eventId/tasks/bulk-due-dates', (req, res) => {
+  console.log('HIT bulk-due-dates endpoint!', { eventId: req.params.eventId, body: req.body });
+  const db = getDb();
+  const { eventId } = req.params;
+  const updates = Array.isArray(req.body) ? req.body : req.body?.updates;
+
+  if (!Array.isArray(updates)) {
+    return res.status(400).json({ error: 'Updates must be an array of { taskId, dueDate } objects.' });
+  }
+
+  const event = db.events.find((evt: MinistryEvent) => evt.id === eventId);
+  if (!event) {
+    return res.status(404).json({ error: 'Event not found' });
+  }
+
+  if (!Array.isArray(event.tasks)) {
+    event.tasks = [];
+  }
+
+  let updatedCount = 0;
+  updates.forEach((item: any) => {
+    if (item && typeof item === 'object') {
+      const { taskId, dueDate } = item;
+      const task = event.tasks.find((t: Task) => t.id === taskId);
+      if (task && dueDate !== undefined) {
+        task.dueDate = dueDate;
+        updatedCount++;
+      }
+    }
+  });
+
+  if (updatedCount > 0) {
+    logActivity(
+      db,
+      'event_updated',
+      'Timeline Rescaled',
+      `Rescaled ${updatedCount} task due dates for event "${event.name}".`,
+      { eventId: event.id, eventName: event.name }
+    );
+  }
+
+  saveDb(db);
+  broadcast({
+    type: 'EVENTS_CHANGE',
+    payload: { events: db.events }
+  });
+  res.json({ success: true, event });
+});
+
 router.patch('/:eventId/tasks/:taskId', (req, res) => {
+  console.log('HIT individual task patch endpoint!', { eventId: req.params.eventId, taskId: req.params.taskId, body: req.body });
   const db = getDb();
   const { eventId, taskId } = req.params;
   const { completed, lane, assignedTo, title, description, dueDate, priority } = req.body;

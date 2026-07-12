@@ -155,14 +155,41 @@ function MainApp() {
   const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (usr) => {
-      setAuthUser(usr);
-      setAuthChecking(false);
-      if (usr) {
-        setAuthError(null);
+    let timer: any = null;
+    let fired = false;
+
+    // Fallback timeout after 8 seconds
+    timer = setTimeout(() => {
+      if (!fired) {
+        setAuthChecking(false);
+        setAuthError("Verification timed out. Please try signing in or reloading the page.");
       }
-    });
-    return () => unsubscribe();
+    }, 8000);
+
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      (usr) => {
+        fired = true;
+        if (timer) clearTimeout(timer);
+        setAuthUser(usr);
+        setAuthChecking(false);
+        if (usr) {
+          setAuthError(null);
+        }
+      },
+      (error) => {
+        fired = true;
+        if (timer) clearTimeout(timer);
+        console.error("Firebase Auth onAuthStateChanged error:", error);
+        setAuthChecking(false);
+        setAuthError("Sign-in is currently unavailable. Please refresh or contact support.");
+      }
+    );
+
+    return () => {
+      if (timer) clearTimeout(timer);
+      unsubscribe();
+    };
   }, []);
 
   const [activeTab, setActiveTab] = useState<string>('dashboard');
@@ -817,6 +844,46 @@ function MainApp() {
     }
   }, [showNotification]);
 
+  const handleRescaleTimeline = useCallback(async (eventId: string, updates: { taskId: string; dueDate: string }[]) => {
+    console.log("handleRescaleTimeline callback triggered in App.tsx", { eventId, updates });
+    try {
+      const payloadString = JSON.stringify(updates);
+      console.log("Sending PATCH request to /api/events/:eventId/tasks/bulk-due-dates", {
+        url: `/api/events/${eventId}/tasks/bulk-due-dates`,
+        payloadString
+      });
+      const res = await apiFetch(`/api/events/${eventId}/tasks/bulk-due-dates`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: payloadString
+      });
+      console.log("Received response from server for bulk-due-dates", {
+        status: res.status,
+        ok: res.ok,
+        statusText: res.statusText
+      });
+      if (!res.ok) {
+        const errJson = await res.json();
+        console.error("Server returned non-ok response status", { errJson });
+        throw new Error(errJson.error || 'Failed to rescale timeline');
+      }
+      const data = await res.json();
+      console.log("Successfully parsed JSON response from server for bulk-due-dates", { data });
+      const updatedEvent = data.event || data;
+      console.log("Updating events in state with updatedEvent", { updatedEvent });
+      setEvents(prev => {
+        const newEvents = prev.map(evt => evt.id === eventId ? updatedEvent : evt);
+        console.log("New events array calculated", { newEvents });
+        return newEvents;
+      });
+      showNotification("Timeline rescaled successfully!", 'success');
+    } catch (err: any) {
+      console.error("Error inside handleRescaleTimeline callback:", err);
+      showNotification(err.message || "Error rescaling timeline", 'error');
+      throw err;
+    }
+  }, [showNotification]);
+
   const handleUpdateTask = useCallback(async (eventId: string, taskId: string, updates: Partial<Task>) => {
     try {
       const res = await apiFetch(`/api/events/${eventId}/tasks/${taskId}`, {
@@ -1268,6 +1335,7 @@ function MainApp() {
             onUpdateEventDocs={handleUpdateEventDocs}
             onUpdateEvent={handleUpdateEvent}
             onUpdateTaskDueDate={handleUpdateTaskDueDate}
+            onRescaleTimeline={handleRescaleTimeline}
             onUpdateTask={handleUpdateTask}
             onDeleteTask={handleDeleteTask}
             lanes={lanes}
