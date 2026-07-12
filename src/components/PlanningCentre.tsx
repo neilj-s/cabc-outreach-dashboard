@@ -183,6 +183,7 @@ function PlanningCentre({
 
   const [ideas, setIdeas] = useState<any[]>([]);
   const [savingScratchpad, setSavingScratchpad] = useState<boolean>(false);
+  const [isScratchpadFocused, setIsScratchpadFocused] = useState<boolean>(false);
   const [scratchpadSavedTime, setScratchpadSavedTime] = useState<string | null>(null);
   const saveTimeoutRef = useRef<any>(null);
   const [timeTick, setTimeTick] = useState<number>(0);
@@ -1857,26 +1858,84 @@ function PlanningCentre({
                       )}
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {categories.map(cat => {
-                          const docsInCat = eventDocs.filter(d => d.category === cat.name);
-
-                          return (
-                            <div key={cat.name} className="bg-white border border-[#e2dcd0] rounded-2xl p-5 shadow-xs space-y-4 flex flex-col justify-between">
+                        {loading ? (
+                          <>
+                            {/* Skeleton loader for spreadsheets */}
+                            <div className="bg-white border border-[#e2dcd0] rounded-2xl p-5 shadow-xs space-y-4 flex flex-col justify-between animate-pulse">
                               <div className="space-y-3">
                                 <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
-                                  {cat.icon}
-                                  <h5 className="text-xs font-serif font-black text-slate-800">{cat.title}</h5>
-                                  <span className="ml-auto text-[10px] font-mono bg-slate-100 border border-slate-200 text-slate-500 px-2 py-0.5 rounded-full font-bold">
-                                    {docsInCat.length}
-                                  </span>
+                                  <div className="w-4 h-4 bg-slate-200 rounded-full" />
+                                  <div className="h-3 w-20 bg-slate-200 rounded" />
+                                  <div className="ml-auto w-6 h-4 bg-slate-200 rounded-full" />
                                 </div>
-
-                                <div className="space-y-2.5">
-                                  {docsInCat.length === 0 ? (
-                                    <div className="text-center py-8 text-slate-400 border border-dashed border-slate-200 rounded-xl text-[11px]">
-                                      No documents attached. Create or link one below.
+                                <div className="space-y-3">
+                                  {[1, 2].map((i) => (
+                                    <div key={i} className="flex gap-3 p-3 bg-[#faf8f4]/40 border border-[#e2dcd0]/30 rounded-xl">
+                                      <div className="w-8 h-8 bg-slate-200 rounded shrink-0" />
+                                      <div className="flex-1 space-y-2 text-left py-1">
+                                        <div className="h-3 bg-slate-200 rounded w-3/4" />
+                                        <div className="h-2 bg-slate-150 rounded w-1/2" />
+                                      </div>
                                     </div>
-                                  ) : (
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                            {/* Skeleton loader for documents */}
+                            <div className="bg-white border border-[#e2dcd0] rounded-2xl p-5 shadow-xs space-y-4 flex flex-col justify-between animate-pulse">
+                              <div className="space-y-3">
+                                <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
+                                  <div className="w-4 h-4 bg-slate-200 rounded-full" />
+                                  <div className="h-3 w-20 bg-slate-200 rounded" />
+                                  <div className="ml-auto w-6 h-4 bg-slate-200 rounded-full" />
+                                </div>
+                                <div className="space-y-3">
+                                  {[1, 2].map((i) => (
+                                    <div key={i} className="flex gap-3 p-3 bg-[#faf8f4]/40 border border-[#e2dcd0]/30 rounded-xl">
+                                      <div className="w-8 h-8 bg-slate-200 rounded shrink-0" />
+                                      <div className="flex-1 space-y-2 text-left py-1">
+                                        <div className="h-3 bg-slate-200 rounded w-2/3" />
+                                        <div className="h-2 bg-slate-150 rounded w-1/3" />
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          </>
+                        ) : eventDocs.length === 0 ? (
+                          <div className="col-span-2 bg-white border border-[#e2dcd0] border-dashed rounded-2xl p-10 flex flex-col items-center justify-center text-center space-y-3">
+                            <div className="w-12 h-12 rounded-full bg-[#fcfaf7] border border-[#efe0c2] text-[#856637] flex items-center justify-center shadow-xs">
+                              <FolderOpen size={20} />
+                            </div>
+                            <div className="space-y-1">
+                              <h4 className="text-sm font-serif font-black text-slate-800 font-bold">No files yet</h4>
+                              <p className="text-xs text-slate-400 max-w-sm leading-relaxed">
+                                Use the <strong className="font-bold text-[#856637]">Add document</strong> button above to create dynamic Google Docs/Sheets or link existing local planning files.
+                              </p>
+                            </div>
+                          </div>
+                        ) : (
+                          categories.map(cat => {
+                            const docsInCat = eventDocs.filter(d => d.category === cat.name);
+
+                            return (
+                              <div key={cat.name} className="bg-white border border-[#e2dcd0] rounded-2xl p-5 shadow-xs space-y-4 flex flex-col justify-between">
+                                <div className="space-y-3">
+                                  <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
+                                    {cat.icon}
+                                    <h5 className="text-xs font-serif font-black text-slate-800">{cat.title}</h5>
+                                    <span className="ml-auto text-[10px] font-mono bg-slate-100 border border-slate-200 text-slate-500 px-2 py-0.5 rounded-full font-bold">
+                                      {docsInCat.length}
+                                    </span>
+                                  </div>
+
+                                  <div className="space-y-2.5">
+                                    {docsInCat.length === 0 ? (
+                                      <div className="text-center py-8 text-slate-400 border border-dashed border-slate-200 rounded-xl text-[11px]">
+                                        No documents attached. Create or link one above.
+                                      </div>
+                                    ) : (
                                     docsInCat.map(doc => (
                                       <div key={doc.id} className="flex flex-col gap-2 p-3 bg-[#faf8f4] border border-[#e2dcd0]/50 rounded-xl hover:bg-[#faf8f4]/90 transition text-left">
                                         <div className="flex items-center justify-between gap-3">
@@ -2057,7 +2116,8 @@ function PlanningCentre({
                               </div>
                             </div>
                           );
-                        })}
+                        })
+                      )}
                       </div>
                     </div>
 
@@ -2256,7 +2316,7 @@ function PlanningCentre({
           </div>
 
           <div className="p-4 space-y-3">
-            <div className="border border-[#e2dcd0] rounded-xl overflow-hidden focus-within:border-[#c2aa80] focus-within:ring-1 focus-within:ring-[#c2aa80] bg-white transition duration-200">
+            <div className="border border-[#e2dcd0] rounded-xl overflow-hidden focus-within:border-[#c2aa80] focus-within:ring-1 focus-within:ring-[#c2aa80] bg-white transition duration-200 relative">
               {/* Markdown Toolbar */}
               <div className="flex items-center gap-1 bg-slate-50 border-b border-[#e2dcd0] px-3 py-2">
                 <button
@@ -2308,9 +2368,25 @@ function PlanningCentre({
                 value={scratchpadText || ''}
                 onChange={(e) => handleScratchpadChange(e.target.value)}
                 onSelect={handleTextareaSelectionChange}
+                onFocus={() => setIsScratchpadFocused(true)}
+                onBlur={() => setIsScratchpadFocused(false)}
                 placeholder="Start typing your shared notes, action items, or meeting agendas here... All updates are instantly synchronized and saved."
                 className="w-full h-44 p-4 text-xs font-sans leading-relaxed text-slate-700 placeholder-slate-400 bg-white focus:outline-none resize-y"
               />
+
+              {/* Friendly Empty State Overlay */}
+              {!scratchpadText && !isScratchpadFocused && (
+                <div 
+                  onClick={() => document.getElementById('scratchpad-textarea')?.focus()}
+                  className="absolute inset-x-0 bottom-0 top-[37px] bg-white flex flex-col items-center justify-center text-center p-4 cursor-text select-none group"
+                >
+                  <FileText className="w-8 h-8 text-[#856637]/60 mb-1.5 group-hover:scale-105 transition-transform" />
+                  <p className="text-xs font-serif font-black text-slate-700">No shared notes yet</p>
+                  <p className="text-[10px] text-slate-400 max-w-xs mt-1 px-4 leading-normal">
+                    Start co-authoring action items, meeting agendas, and general notes with your team in real time. Click anywhere to start typing.
+                  </p>
+                </div>
+              )}
             </div>
             <p className="text-[10px] text-slate-400">
               Markdown formatting is fully supported. Text edits synchronize instantly with all connected users in real time.
@@ -2485,13 +2561,29 @@ function PlanningCentre({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#e2dcd0]/50">
-                    {!collabTable || !collabTable.rows || collabTable.rows.length === 0 ? (
+                    {loading ? (
+                      [1, 2, 3].map((i) => (
+                        <tr key={i} className="animate-pulse bg-white/50">
+                          {Array(5).fill(0).map((_, idx) => (
+                            <td key={idx} className="p-3 border-r border-[#efe0c2]/30 last:border-r-0">
+                              <div className="h-4 bg-slate-100 rounded w-5/6" />
+                            </td>
+                          ))}
+                          <td className="px-2 py-3 text-center">
+                            <div className="w-4 h-4 bg-slate-200 rounded mx-auto" />
+                          </td>
+                        </tr>
+                      ))
+                    ) : (!collabTable || !collabTable.rows || collabTable.rows.length === 0) ? (
                       <tr>
-                        <td colSpan={(collabTable?.headers?.length || 5) + 1} className="px-4 py-12 text-center text-slate-400 italic bg-slate-50/20">
-                          <div className="max-w-md mx-auto space-y-2">
-                            <p className="text-xs font-semibold text-slate-500">No timing rows in run-of-show.</p>
-                            <p className="text-[11px] text-slate-400">
-                              Upload a minute-by-minute scheduling spreadsheet (.xlsx, .xls, .csv) or click "Add Row" above to co-author with your team in real time.
+                        <td colSpan={(collabTable?.headers?.length || 5) + 1} className="px-4 py-12 text-center text-slate-400 bg-white">
+                          <div className="max-w-md mx-auto space-y-2 flex flex-col items-center py-4">
+                            <div className="w-10 h-10 rounded-full bg-[#fcfaf7] border border-[#efe0c2] text-[#856637] flex items-center justify-center mb-1">
+                              <FileSpreadsheet size={18} />
+                            </div>
+                            <h4 className="text-xs font-serif font-black text-slate-800">No agenda items yet</h4>
+                            <p className="text-[10px] text-slate-400 max-w-xs leading-relaxed">
+                              Add rows to build an event day timeline, or import an Excel/CSV spreadsheet to co-author with co-planners in real time.
                             </p>
                           </div>
                         </td>

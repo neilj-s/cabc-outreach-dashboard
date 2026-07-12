@@ -290,10 +290,7 @@ function MainApp() {
               }
               case 'PRESENCE_CHANGE': {
                 const otherUsers = msg.payload.users.filter((u: any) => u.id !== userId);
-                setConnectedUsers(prev => {
-                  const simUsers = prev.filter(u => u.id.startsWith('sim_'));
-                  return [...otherUsers, ...simUsers];
-                });
+                setConnectedUsers(otherUsers);
                 break;
               }
               case 'CURSOR_MOVE': {
@@ -320,27 +317,6 @@ function MainApp() {
               case 'WEBHOOK_NOTIFICATION': {
                 const { docName, status, details, timestamp } = msg.payload;
                 showNotification(`[Push Webhook] "${docName}" permission updated at ${timestamp}: ${details}`, status === 'ok' ? 'success' : 'error');
-                break;
-              }
-              case 'SIM_PRESENCE': {
-                const { user } = msg.payload;
-                setConnectedUsers(prev => {
-                  const filtered = prev.filter(u => u.id !== user.id);
-                  if (user.active) {
-                    return [...filtered, user];
-                  }
-                  return filtered;
-                });
-                break;
-              }
-              case 'SIM_CURSOR': {
-                const { id, cursor, cellFocus } = msg.payload;
-                setConnectedUsers(prev => prev.map(u => {
-                  if (u.id === id) {
-                    return { ...u, cursor, cellFocus };
-                  }
-                  return u;
-                }));
                 break;
               }
               case 'VOLUNTEERS_CHANGE': {
