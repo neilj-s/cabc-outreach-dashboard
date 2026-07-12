@@ -198,6 +198,7 @@ function MainApp() {
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [volunteers, setVolunteers] = useState<Volunteer[]>([]);
   const [debriefs, setDebriefs] = useState<Debrief[]>([]);
+  const [prefilledDebrief, setPrefilledDebrief] = useState<{ name: string; date: string } | null>(null);
   const [verses, setVerses] = useState<{ text: string; reference: string; theme: string }[]>([]);
   const [currentVerseIndex, setCurrentVerseIndex] = useState<number>(0);
   const [lanes, setLanes] = useState<LaneDetail[]>([]);
@@ -1227,22 +1228,7 @@ function MainApp() {
     }
   };
 
-  const handleResetDatabase = async () => {
-    const isConfirmed = await confirmAction(
-      "Reset Database",
-      "Reset database to starter template? This will restore original events, asset status and logs."
-    );
-    if (isConfirmed) {
-      try {
-        const res = await apiFetch('/api/reset', { method: 'POST' });
-        if (!res.ok) throw new Error();
-        await fetchAllData();
-        showNotification("Database successfully reset!", 'success');
-      } catch (err) {
-        showNotification("Error resetting database", 'error');
-      }
-    }
-  };
+
 
   const handleNavigate = useCallback((tab: string) => {
     setActiveTab(tab);
@@ -1284,6 +1270,11 @@ function MainApp() {
             onCreateVolunteer={handleCreateVolunteer}
             onUploadCompleted={triggerFreshSync}
             loading={loading}
+            debriefs={debriefs}
+            onPrefillDebrief={(data) => {
+              setPrefilledDebrief(data);
+              handleNavigate('debriefs');
+            }}
           />
         );
       case 'timeline':
@@ -1376,6 +1367,8 @@ function MainApp() {
             onUpdateDebrief={handleUpdateDebrief}
             onDeleteDebrief={handleDeleteDebrief}
             loading={loading}
+            prefilledDebrief={prefilledDebrief}
+            onClearPrefilledDebrief={() => setPrefilledDebrief(null)}
           />
         );
       default:
@@ -1595,22 +1588,7 @@ function MainApp() {
                       </button>
                     </div>
 
-                    {/* Reset Section */}
-                    <div className="space-y-2 pt-2 border-t border-slate-100">
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block">
-                        Danger Zone
-                      </span>
-                      <button
-                        onClick={async () => {
-                          setShowSettings(false);
-                          await handleResetDatabase();
-                        }}
-                        className="w-full flex items-center justify-center gap-2 px-3 py-2 border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 text-xs font-semibold rounded-lg transition cursor-pointer"
-                      >
-                        <RotateCcw size={12} />
-                        Reset to Starter Data
-                      </button>
-                    </div>
+
 
                     {/* Account Section */}
                     <div className="space-y-2 pt-2 border-t border-slate-100">

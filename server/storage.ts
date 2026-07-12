@@ -16,7 +16,6 @@ import {
   Debrief,
   EventDoc,
   LaneDetail,
-  Idea,
   RecentActivity,
   Expense,
   InventoryItem,
@@ -30,7 +29,6 @@ export interface DatabaseShape {
   assets: Asset[];
   volunteers: Volunteer[];
   auditLogs: AuditLog[];
-  ideas: Idea[];
   scratchpad: string;
   collabTable: CollabTable;
   attachedDocs: AttachedDoc[];
@@ -388,10 +386,6 @@ export const SEED_DATA = {
     }
   ],
   auditLogs: [] as AuditLog[],
-  ideas: [
-    { id: 'idea_1', text: 'Launch a winter toy drive for families in transition.', votes: 8, comments: [] },
-    { id: 'idea_2', text: 'Set up a continuous live audio feed for our main courtyard.', votes: 3, comments: [] }
-  ],
   scratchpad: '### Action Items & Deliverables\n\n1. Ensure local police clearance is filed for all volunteers working the Kids + Toys zone.\n2. Confirm propane tank count (need at least 4 filled tanks for the BBQ stations).\n3. Keep track of all high-value assets (e.g. Sony DSLR and Pro Motorola Walkie-Talkies).\n\n#### Quick Notes:\n- Jane suggested we add a "Check-in Gate Host" role for Alice.\n- Need to check if the municipal barbecue permit is filed for Free Car Wash event.',
   collabTable: {
     headers: ['Time', 'Session / Item', 'Lane', 'Lead Officer', 'Required Prep / Notes'],
@@ -655,9 +649,6 @@ export function normalizeDb(db: any): DatabaseShape {
     }
   });
 
-  if (!db.ideas) {
-    db.ideas = JSON.parse(JSON.stringify(SEED_DATA.ideas));
-  }
   if (db.scratchpad === undefined) {
     db.scratchpad = SEED_DATA.scratchpad;
   }

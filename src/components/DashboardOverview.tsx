@@ -29,9 +29,10 @@ import {
   List,
   Upload, Copy,
   Coins,
-  TrendingUp
+  TrendingUp,
+  BookOpen
 } from 'lucide-react';
-import { LaneDetail, MinistryEvent, RecentActivity, Volunteer, MilestoneKey, MinistryLane, Expense } from '../types';
+import { LaneDetail, MinistryEvent, RecentActivity, Volunteer, MilestoneKey, MinistryLane, Expense, Debrief } from '../types';
 import ConfirmDialog from './ConfirmDialog';
 import { apiFetch } from '../lib/api';
 import {
@@ -77,6 +78,8 @@ interface DashboardOverviewProps {
   onCreateVolunteer?: (volunteerData: Omit<Volunteer, 'id'>) => Promise<void>;
   onUploadCompleted?: () => Promise<void>;
   loading?: boolean;
+  debriefs?: Debrief[];
+  onPrefillDebrief?: (data: { name: string; date: string }) => void;
 }
 
 const CITIES = [
@@ -108,7 +111,9 @@ function DashboardOverview({
   onAddTask,
   onCreateVolunteer,
   onUploadCompleted,
-  loading = false
+  loading = false,
+  debriefs = [],
+  onPrefillDebrief
  }: DashboardOverviewProps) {
   const [selectedCity, setSelectedCity] = React.useState(CITIES[0]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -160,10 +165,6 @@ function DashboardOverview({
       });
     });
   };
-  const [viewMode, setViewMode] = React.useState<'grid' | 'calendar'>('grid');
-  const [calendarMonth, setCalendarMonth] = React.useState<number>(new Date('2026-07-08').getMonth()); // July is index 6
-  const [calendarYear, setCalendarYear] = React.useState<number>(new Date('2026-07-08').getFullYear()); // 2026
-  const [selectedCalendarDay, setSelectedCalendarDay] = React.useState<string | null>(null); // YYYY-MM-DD
   const [weatherData, setWeatherData] = React.useState<any>(null);
   const [weatherLoading, setWeatherLoading] = React.useState(false);
   const [weatherError, setWeatherError] = React.useState<string | null>(null);
@@ -456,6 +457,90 @@ function DashboardOverview({
     ? Math.round((summary.completedTasks / summary.totalTasks) * 100) 
     : 0;
 
+  // Computed values for KPI and Needs Attention sections
+  const volunteersMissingChecksCount = volunteers.filter(v => !v.hasVulnerableSectorCheck).length;
+  
+  const overdueTasksCount = events.reduce((count, event) => {
+    if (!event.tasks) return count;
+    const overdueInEvent = event.tasks.filter(task => !task.completed && task.dueDate && task.dueDate < '2026-07-08');
+    return count + overdueInEvent.length;
+  }, 0);
+
+  const overallocatedLeadsCount = overallocatedLeads.length;
+  const missingHighValueCount = summary.missingHighValueCount || 0;
+
+  // Compute past events awaiting a debrief
+  const todayStr = new Date().toLocaleDateString('en-CA');
+  const pastEventsAwaitingDebrief = (events || []).filter(evt => {
+    const isPast = evt.date < todayStr;
+    const hasDebrief = (debriefs || []).some(d => d.name.toLowerCase().trim() === evt.name.toLowerCase().trim());
+    return isPast && !hasDebrief;
+  });
+
+  const totalAttentionCount = volunteersMissingChecksCount + overallocatedLeadsCount + overdueTasksCount + missingHighValueCount + pastEventsAwaitingDebrief.length;
+
+  const attentionItems = [];
+
+  if (volunteersMissingChecksCount > 0) {
+    attentionItems.push({
+      id: 'volunteers-check',
+      icon: <Users className="text-amber-600 shrink-0" size={16} />,
+      message: `${volunteersMissingChecksCount} ${volunteersMissingChecksCount === 1 ? 'volunteer' : 'volunteers'} missing background checks`,
+      actionText: 'View volunteers',
+      onClick: () => onNavigate('volunteers')
+    });
+  }
+
+  if (overallocatedLeadsCount > 0) {
+    const message = overallocatedLeads.length === 1 
+      ? `${overallocatedLeads[0].leadName} is over capacity` 
+      : `${overallocatedLeads.length} leads over capacity`;
+    attentionItems.push({
+      id: 'leads-capacity',
+      icon: <Activity className="text-rose-500 shrink-0" size={16} />,
+      message,
+      actionText: 'View workload',
+      onClick: () => onNavigate('timeline')
+    });
+  }
+
+  if (overdueTasksCount > 0) {
+    attentionItems.push({
+      id: 'tasks-overdue',
+      icon: <Calendar className="text-amber-600 shrink-0" size={16} />,
+      message: `${overdueTasksCount} ${overdueTasksCount === 1 ? 'task' : 'tasks'} overdue`,
+      actionText: 'View timeline',
+      onClick: () => onNavigate('timeline')
+    });
+  }
+
+  if (missingHighValueCount > 0) {
+    attentionItems.push({
+      id: 'assets-missing',
+      icon: <AlertTriangle className="text-rose-500 shrink-0" size={16} />,
+      message: `${missingHighValueCount} high-value ${missingHighValueCount === 1 ? 'asset' : 'assets'} unaccounted for`,
+      actionText: 'View logistics',
+      onClick: () => onNavigate('logistics')
+    });
+  }
+
+  // Add past events awaiting debrief to attention list
+  pastEventsAwaitingDebrief.forEach(evt => {
+    attentionItems.push({
+      id: `debrief-awaiting-${evt.id}`,
+      icon: <BookOpen className="text-amber-600 shrink-0" size={16} />,
+      message: `File a debrief for ${evt.name} (${evt.date})`,
+      actionText: 'File debrief',
+      onClick: () => {
+        if (onPrefillDebrief) {
+          onPrefillDebrief({ name: evt.name, date: evt.date });
+        } else {
+          onNavigate('debriefs');
+        }
+      }
+    });
+  });
+
   const formatRelativeTime = (isoStr: string) => {
     try {
       const date = new Date(isoStr);
@@ -508,46 +593,6 @@ function DashboardOverview({
     if (key.includes('media') || key.includes('tech') || key.includes('photo') || key.includes('video')) return 'bg-purple-100 text-purple-700';
     if (key.includes('logistics') || key.includes('operations') || key.includes('setup')) return 'bg-sky-100 text-sky-700';
     return 'bg-amber-100 text-amber-700';
-  };
-
-  const monthNames = [
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December"
-  ];
-
-  // Helper to get number of days in the month
-  const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
-  // Helper to get first day of the week index (0 = Sunday, 6 = Saturday)
-  const firstDayOfWeek = new Date(calendarYear, calendarMonth, 1).getDay();
-
-  // Generate calendar cells (padding + actual days)
-  const calendarDays: { day: number | null; dateString: string | null }[] = [];
-  for (let i = 0; i < firstDayOfWeek; i++) {
-    calendarDays.push({ day: null, dateString: null });
-  }
-  for (let d = 1; d <= daysInMonth; d++) {
-    const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    calendarDays.push({ day: d, dateString: dateStr });
-  }
-
-  const prevMonth = () => {
-    if (calendarMonth === 0) {
-      setCalendarMonth(11);
-      setCalendarYear(y => y - 1);
-    } else {
-      setCalendarMonth(m => m - 1);
-    }
-    setSelectedCalendarDay(null);
-  };
-
-  const nextMonth = () => {
-    if (calendarMonth === 11) {
-      setCalendarMonth(0);
-      setCalendarYear(y => y + 1);
-    } else {
-      setCalendarMonth(m => m + 1);
-    }
-    setSelectedCalendarDay(null);
   };
 
   const handleExportCSV = () => {
@@ -618,8 +663,8 @@ function DashboardOverview({
       <div className="space-y-4 animate-fadeIn">
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center pb-4 border-b border-[#e2dcd0] gap-4">
           <div>
-            <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#856637] font-sans">
-              Module I • Command & Control Center
+            <span className="text-xs font-semibold text-[#856637] font-sans">
+              Module I • Overview
             </span>
             <h2 className="text-2xl font-serif font-black tracking-tight text-[#1e293b] mt-1">
               Ministry Events at a Glance
@@ -632,30 +677,6 @@ function DashboardOverview({
             >
               <Upload size={14} /> Export to CSV
             </button>
-            {/* View Mode Toggle Switch */}
-            <div className="flex items-center gap-1 bg-[#f5ebd6]/30 border border-[#e2dcd0] p-1 rounded-xl">
-              <button
-                onClick={() => setViewMode('grid')}
-                className={`px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition flex items-center gap-1.5 cursor-pointer ${
-                  viewMode === 'grid'
-                    ? 'bg-[#1e293b] text-[#faf8f4] shadow-sm'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <LayoutGrid size={13} /> Grid
-              </button>
-              <button
-                onClick={() => setViewMode('calendar')}
-                className={`px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition flex items-center gap-1.5 cursor-pointer ${
-                  viewMode === 'calendar'
-                    ? 'bg-[#1e293b] text-[#faf8f4] shadow-sm'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <Calendar size={13} /> Calendar Mode
-              </button>
-            </div>
-
             <button
               onClick={() => onNavigate('timeline')}
               className="px-3.5 py-2 bg-[#1e293b] hover:bg-[#0f172a] text-[#faf8f4] text-xs font-semibold rounded-lg transition shadow-sm flex items-center gap-1.5 cursor-pointer"
@@ -943,7 +964,7 @@ function DashboardOverview({
                     )}
 
                     <div className="flex justify-between items-center text-[11px] font-medium text-slate-600 pt-2 border-t border-slate-50">
-                      <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Total Rostered</span>
+                      <span className="text-xs text-slate-400 font-semibold">Total volunteers</span>
                       <span className="text-slate-800 font-mono font-bold">
                         {volunteers.filter(v => v.eventAssignments?.[tickerEvent.id]).length} volunteers
                       </span>
@@ -954,10 +975,10 @@ function DashboardOverview({
                   <div className="bg-white border border-[#e2dcd0]/80 rounded-xl p-4 flex flex-col justify-between space-y-3">
                     <div className="flex justify-between items-start">
                       <div>
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-[#856637] font-sans flex items-center gap-1">
-                          <Check size={14} /> Milestones Tracker
+                        <h4 className="text-xs font-bold text-[#856637] font-sans flex items-center gap-1">
+                          <Check size={14} /> Milestones tracker
                         </h4>
-                        <p className="text-[10px] text-slate-400 mt-0.5">Tasks progress by deadline key</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">Tasks progress by milestone phase</p>
                       </div>
                     </div>
 
@@ -996,7 +1017,7 @@ function DashboardOverview({
                     )}
 
                     <div className="flex justify-between items-center text-[11px] font-medium text-slate-600 pt-2 border-t border-slate-50">
-                      <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Overall Progress</span>
+                      <span className="text-xs text-slate-400 font-semibold">Overall progress</span>
                       <span className="text-slate-800 font-mono font-bold">
                         {tickerEvent.tasks?.filter(t => t.completed).length || 0} / {totalTasksCount} completed
                       </span>
@@ -1008,56 +1029,129 @@ function DashboardOverview({
           );
         })()}
 
-        {viewMode === 'grid' && (
-          <div className="bg-[#fcfaf7] border border-[#e2dcd0] rounded-xl p-4 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition duration-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="relative flex-1 max-w-md">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 pointer-events-none">
-                <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-              </span>
-              <input
-                type="text"
-                placeholder="Search events by name..."
-                value={eventSearchTerm}
-                onChange={(e) => setEventSearchTerm(e.target.value)}
-                className="w-full text-xs pl-8 pr-7 py-2 rounded-lg border border-[#e2dcd0] bg-white focus:outline-none focus:ring-1 focus:ring-[#856637] text-slate-800 placeholder-slate-400 shadow-sm"
-              />
-              {eventSearchTerm && (
-                <button
-                  type="button"
-                  onClick={() => setEventSearchTerm('')}
-                  className="absolute inset-y-0 right-0 flex items-center pr-2.5 text-slate-400 hover:text-slate-600 transition cursor-pointer"
-                >
-                  <X size={12} />
-                </button>
-              )}
-            </div>
+        {/* Section A: At-a-glance KPI row */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Card 1: Events this year */}
+          <div className="bg-white border border-[#e2dcd0] rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+            <span className="text-xs text-slate-400 font-medium">Events this year</span>
+            <span className="text-2xl font-serif font-black text-slate-800 mt-1">{events.length}</span>
+          </div>
 
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-serif font-bold text-slate-500">Status:</span>
-              <div className="flex items-center gap-1 bg-[#f5ebd6]/30 border border-[#e2dcd0] p-1 rounded-xl shadow-xs">
-                {(['all', 'upcoming', 'finished'] as const).map((statusOpt) => (
-                  <button
-                    key={statusOpt}
-                    type="button"
-                    onClick={() => setEventStatusFilter(statusOpt)}
-                    className={`px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition cursor-pointer ${
-                      eventStatusFilter === statusOpt
-                        ? 'bg-[#1e293b] text-[#faf8f4] shadow-sm'
-                        : 'text-slate-500 hover:text-slate-800'
-                    }`}
-                  >
-                    {statusOpt === 'all' ? 'All Statuses' : statusOpt}
-                  </button>
-                ))}
+          {/* Card 2: Volunteers */}
+          <div className="bg-white border border-[#e2dcd0] rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+            <span className="text-xs text-slate-400 font-medium">Volunteers</span>
+            <span className="text-2xl font-serif font-black text-slate-800 mt-1">{summary.totalVolunteers}</span>
+          </div>
+
+          {/* Card 3: Task progress */}
+          <div className="bg-white border border-[#e2dcd0] rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+            <span className="text-xs text-slate-400 font-medium">Task progress</span>
+            <div className="mt-1">
+              <span className="text-2xl font-serif font-black text-slate-800">{taskCompletionRate}%</span>
+              <div className="w-full bg-slate-100 h-1 rounded-full mt-2 overflow-hidden">
+                <div 
+                  className="bg-[#856637] h-full rounded-full transition-all duration-300" 
+                  style={{ width: `${taskCompletionRate}%` }}
+                ></div>
               </div>
             </div>
           </div>
-        )}
 
-        {viewMode === 'grid' ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Card 4: Needs attention */}
+          <div className={`border rounded-2xl p-5 shadow-xs flex flex-col justify-between transition duration-200 ${
+            totalAttentionCount > 0 
+              ? 'bg-amber-50/50 border-amber-200 text-amber-800' 
+              : 'bg-white border-[#e2dcd0] text-slate-800'
+          }`}>
+            <span className={`text-xs font-medium ${totalAttentionCount > 0 ? 'text-amber-700/80' : 'text-slate-400'}`}>
+              Needs attention
+            </span>
+            <span className={`text-2xl font-serif font-black mt-1 ${totalAttentionCount > 0 ? 'text-amber-800' : 'text-slate-800'}`}>
+              {totalAttentionCount}
+            </span>
+          </div>
+        </div>
+
+        {/* Section B: Needs attention panel */}
+        <div className="bg-white border border-[#e2dcd0] rounded-2xl p-5 shadow-xs space-y-3.5">
+          <div className="flex items-center gap-2 border-b border-slate-100 pb-2.5">
+            <AlertTriangle size={16} className="text-[#856637]" />
+            <h3 className="text-sm font-serif font-black text-slate-800">Needs attention</h3>
+          </div>
+
+          {attentionItems.length === 0 ? (
+            <div className="text-center py-4 text-slate-500 text-xs flex items-center justify-center gap-2">
+              <Check size={16} className="text-emerald-600" />
+              <span>All clear — nothing needs attention right now.</span>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {attentionItems.map((item) => (
+                <div key={item.id} className="flex items-center justify-between py-3 first:pt-0 last:pb-0 gap-4">
+                  <div className="flex items-center gap-3">
+                    {item.icon}
+                    <span className="text-xs text-slate-700 font-medium">{item.message}</span>
+                  </div>
+                  <button
+                    onClick={item.onClick}
+                    className="text-[11px] font-bold text-[#856637] hover:text-[#5c4422] transition flex items-center gap-1 shrink-0 cursor-pointer"
+                  >
+                    <span>{item.actionText}</span>
+                    <ChevronRight size={12} className="stroke-[2.5]" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="bg-[#fcfaf7] border border-[#e2dcd0] rounded-xl p-4 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition duration-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="relative flex-1 max-w-md">
+            <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 pointer-events-none">
+              <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </span>
+            <input
+              type="text"
+              placeholder="Search events by name..."
+              value={eventSearchTerm}
+              onChange={(e) => setEventSearchTerm(e.target.value)}
+              className="w-full text-xs pl-8 pr-7 py-2 rounded-lg border border-[#e2dcd0] bg-white focus:outline-none focus:ring-1 focus:ring-[#856637] text-slate-800 placeholder-slate-400 shadow-sm"
+            />
+            {eventSearchTerm && (
+              <button
+                type="button"
+                onClick={() => setEventSearchTerm('')}
+                className="absolute inset-y-0 right-0 flex items-center pr-2.5 text-slate-400 hover:text-slate-600 transition cursor-pointer"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-serif font-bold text-slate-500">Status:</span>
+            <div className="flex items-center gap-1 bg-[#f5ebd6]/30 border border-[#e2dcd0] p-1 rounded-xl shadow-xs">
+              {(['all', 'upcoming', 'finished'] as const).map((statusOpt) => (
+                <button
+                  key={statusOpt}
+                  type="button"
+                  onClick={() => setEventStatusFilter(statusOpt)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    eventStatusFilter === statusOpt
+                      ? 'bg-[#1e293b] text-[#faf8f4] shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  {statusOpt === 'all' ? 'All statuses' : statusOpt === 'upcoming' ? 'Upcoming' : 'Finished'}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {loading ? (
               Array.from({ length: 3 }).map((_, idx) => (
                 <div 
@@ -1128,8 +1222,8 @@ function DashboardOverview({
                           <div className="text-3xl font-serif font-bold text-slate-400 leading-none">
                             Done
                           </div>
-                          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">
-                            FINISHED
+                          <div className="text-xs font-semibold text-slate-400 mt-1">
+                            Finished
                           </div>
                         </>
                       ) : (
@@ -1137,8 +1231,8 @@ function DashboardOverview({
                           <div className="text-4xl font-serif font-bold text-[#1e293b] leading-none">
                             {daysOut}
                           </div>
-                          <div className="text-[9px] font-bold text-slate-450 uppercase tracking-widest mt-1">
-                            DAYS OUT
+                          <div className="text-xs font-semibold text-slate-450 mt-1">
+                            Days out
                           </div>
                         </>
                       )}
@@ -1184,234 +1278,6 @@ function DashboardOverview({
               </div>
             )}
           </div>
-        ) : loading ? (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 bg-[#fcfaf7] border border-[#e2dcd0] rounded-2xl p-6 shadow-sm animate-pulse">
-            {/* Left Column: Grid Skeleton */}
-            <div className="lg:col-span-2 space-y-4">
-              <div className="h-12 bg-[#efe9dc]/50 rounded-xl"></div>
-              <div className="grid grid-cols-7 gap-1.5 text-center">
-                {Array.from({ length: 7 }).map((_, i) => (
-                  <div key={i} className="h-4 bg-[#efe9dc]/30 rounded"></div>
-                ))}
-              </div>
-              <div className="grid grid-cols-7 gap-1.5">
-                {Array.from({ length: 28 }).map((_, i) => (
-                  <div key={i} className="aspect-square bg-[#efe9dc]/40 rounded-xl border border-[#efe9dc]/20"></div>
-                ))}
-              </div>
-            </div>
-            {/* Right Column: Agenda Detail Skeleton */}
-            <div className="bg-[#faf8f4] border border-[#e2dcd0] rounded-xl p-5 flex flex-col justify-between h-[360px]">
-              <div className="space-y-3">
-                <div className="h-4 bg-[#efe9dc]/60 rounded w-1/3"></div>
-                <div className="h-6 bg-[#efe9dc]/60 rounded w-1/2"></div>
-                <div className="h-2 bg-[#efe9dc]/30 rounded w-1/4 mt-1"></div>
-              </div>
-              <div className="h-[180px] bg-[#efe9dc]/30 rounded-lg border border-dashed border-[#efe9dc]/55"></div>
-              <div className="h-3 bg-[#efe9dc]/55 rounded w-full"></div>
-            </div>
-          </div>
-        ) : (
-          /* OPTION 1: Monthly Master Calendar Grid View */
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 bg-[#fcfaf7] border border-[#e2dcd0] rounded-2xl p-6 shadow-sm animate-fadeIn">
-            {/* Left Column: Grid */}
-            <div className="lg:col-span-2 space-y-4">
-              <div className="flex justify-between items-center bg-[#faf8f4] border border-[#e2dcd0] rounded-xl p-3">
-                <h3 className="text-sm font-serif font-bold text-slate-800">
-                  {monthNames[calendarMonth]} {calendarYear}
-                </h3>
-                <div className="flex gap-1">
-                  <button
-                    onClick={prevMonth}
-                    className="p-1.5 hover:bg-[#f5ebd6]/50 rounded-lg border border-[#e2dcd0] transition text-slate-600 cursor-pointer"
-                  >
-                    <ChevronLeft size={16} />
-                  </button>
-                  <button
-                    onClick={() => {
-                      setCalendarMonth(new Date('2026-07-08').getMonth());
-                      setCalendarYear(new Date('2026-07-08').getFullYear());
-                    }}
-                    className="px-2.5 py-1 text-[10px] uppercase font-bold hover:bg-[#f5ebd6]/50 rounded-lg border border-[#e2dcd0] transition text-slate-600 cursor-pointer"
-                  >
-                    Today
-                  </button>
-                  <button
-                    onClick={nextMonth}
-                    className="p-1.5 hover:bg-[#f5ebd6]/50 rounded-lg border border-[#e2dcd0] transition text-slate-600 cursor-pointer"
-                  >
-                    <ChevronRight size={16} />
-                  </button>
-                </div>
-              </div>
-
-              {/* Weekdays */}
-              <div className="grid grid-cols-7 gap-1.5 text-center">
-                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
-                  <div key={d} className="text-[10px] font-bold uppercase tracking-wider text-slate-400 py-1">
-                    {d}
-                  </div>
-                ))}
-              </div>
-
-              {/* Days Grid */}
-              <div className="grid grid-cols-7 gap-1.5">
-                {calendarDays.map((cell, idx) => {
-                  if (!cell.day || !cell.dateString) {
-                    return <div key={`empty-${idx}`} className="aspect-square bg-slate-50/20 rounded-xl border border-dashed border-[#e2dcd0]/30" />;
-                  }
-
-                  const isToday = cell.dateString === '2026-07-08';
-                  const isSelected = selectedCalendarDay === cell.dateString;
-                  
-                  const dayEvents = events.filter(e => e.date === cell.dateString);
-                  const dayTasks = events.flatMap(evt => 
-                    (evt.tasks || []).map(t => ({ ...t, eventName: evt.name, eventId: evt.id }))
-                  ).filter(t => t.dueDate === cell.dateString);
-
-                  const hasHighPriority = dayTasks.some(t => t.priority === 'High');
-                  const hasEvents = dayEvents.length > 0;
-
-                  return (
-                    <button
-                      key={`day-${cell.day}`}
-                      onClick={() => setSelectedCalendarDay(cell.dateString)}
-                      className={`aspect-square p-2 rounded-xl border flex flex-col justify-between transition-all cursor-pointer relative ${
-                        isSelected
-                          ? 'bg-[#efe9dc] border-[#c2aa80] ring-1 ring-[#c2aa80]'
-                          : isToday
-                          ? 'bg-amber-50/80 border-amber-300 ring-1 ring-amber-300'
-                          : 'bg-white border-[#e2dcd0] hover:border-[#c2aa80] hover:bg-[#fcfaf7]'
-                      }`}
-                    >
-                      {/* Day Number */}
-                      <span className={`text-xs font-bold font-mono ${
-                        isToday ? 'text-amber-700' : isSelected ? 'text-slate-900' : 'text-slate-600'
-                      }`}>
-                        {cell.day}
-                      </span>
-
-                      {/* Daily Indicators */}
-                      <div className="flex flex-wrap gap-1 mt-auto w-full justify-start items-center">
-                        {hasEvents && (
-                          <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 border border-white shadow-sm" title={`${dayEvents.length} Event Launch(es)`} />
-                        )}
-                        {dayTasks.length > 0 && (
-                          <span className={`w-2.5 h-2.5 rounded-full border border-white shadow-sm ${
-                            hasHighPriority ? 'bg-rose-500 animate-pulse' : 'bg-amber-500'
-                          }`} title={`${dayTasks.length} Task(s) Due`} />
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Right Column: Day Details & Planning Agenda */}
-            <div className="bg-[#faf8f4] border border-[#e2dcd0] rounded-xl p-5 flex flex-col justify-between space-y-4">
-              <div>
-                <div className="pb-3 border-b border-[#e2dcd0]">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
-                    AGENDA DETAIL
-                  </span>
-                  <h4 className="text-lg font-serif font-bold text-slate-800">
-                    {selectedCalendarDay ? formatHumanDate(selectedCalendarDay) : 'Select a Day'}
-                  </h4>
-                  <p className="text-[10px] font-mono font-medium text-slate-400 mt-1">
-                    {selectedCalendarDay === '2026-07-08' ? '● System Today' : ''}
-                  </p>
-                </div>
-
-                {/* Selected Day Content */}
-                <div className="mt-4 space-y-4 overflow-y-auto max-h-[320px] pr-1">
-                  {(() => {
-                    const dayStr = selectedCalendarDay || '2026-07-08';
-                    const dayEvents = events.filter(e => e.date === dayStr);
-                    const dayTasks = events.flatMap(evt => 
-                      (evt.tasks || []).map(t => ({ ...t, eventName: evt.name, eventId: evt.id }))
-                    ).filter(t => t.dueDate === dayStr);
-
-                    if (dayEvents.length === 0 && dayTasks.length === 0) {
-                      return (
-                        <div className="text-center py-8 text-slate-400 text-xs flex flex-col items-center justify-center space-y-1">
-                          <Calendar size={20} className="text-slate-350" />
-                          <span>No launches or deadlines on this date.</span>
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <>
-                        {/* Event Launches */}
-                        {dayEvents.length > 0 && (
-                          <div className="space-y-2">
-                            <h5 className="text-[10px] font-bold uppercase tracking-widest text-indigo-700 font-sans">
-                              🚀 Event Launches
-                            </h5>
-                            {dayEvents.map(evt => (
-                              <div 
-                                key={evt.id}
-                                onClick={() => onNavigate('timeline')}
-                                className="p-3 rounded-lg bg-indigo-50 border border-indigo-150 shadow-sm hover:border-indigo-300 transition cursor-pointer"
-                              >
-                                <h6 className="text-xs font-bold text-indigo-950 font-serif">{evt.name}</h6>
-                                <p className="text-[10px] text-indigo-700/80 mt-1 truncate">{evt.description}</p>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Tasks Due */}
-                        {dayTasks.length > 0 && (
-                          <div className="space-y-2">
-                            <h5 className="text-[10px] font-bold uppercase tracking-widest text-amber-700 font-sans">
-                              📋 Tasks & Deadlines ({dayTasks.length})
-                            </h5>
-                            <div className="space-y-2">
-                              {dayTasks.map(task => (
-                                <div 
-                                  key={task.id}
-                                  className="p-3 rounded-lg bg-white border border-[#e2dcd0] space-y-2 shadow-sm"
-                                >
-                                  <div className="flex justify-between items-start gap-2">
-                                    <h6 className="text-xs font-bold text-slate-800 line-clamp-2">{task.title}</h6>
-                                    <span className={`inline-flex items-center text-[8px] font-black px-1.5 py-0.5 rounded-full border shrink-0 ${
-                                      task.priority === 'High' 
-                                        ? 'bg-rose-50 text-rose-700 border-rose-200' 
-                                        : task.priority === 'Medium'
-                                        ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                        : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                    }`}>
-                                      {task.priority || 'Medium'}
-                                    </span>
-                                  </div>
-                                  <p className="text-[10px] text-slate-500 line-clamp-2">{task.description}</p>
-                                  
-                                  <div className="flex flex-wrap gap-1 items-center justify-between pt-1 border-t border-[#f2ece2] text-[9px] font-medium text-slate-400">
-                                    <span>For: <strong className="text-slate-600 font-serif">{task.eventName}</strong></span>
-                                    <span className="bg-[#f5ebd6] px-1.5 py-0.5 rounded text-slate-700 font-mono text-[8px]">
-                                      {task.lane} Lane
-                                    </span>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    );
-                  })()}
-                </div>
-              </div>
-
-              {/* Quick Tip / Action Footer */}
-              <div className="pt-3 border-t border-[#e2dcd0] text-[10px] text-slate-400 font-medium">
-                <span className="text-amber-600">Pro-Tip:</span> Click on different calendar cells to see dynamic planning details, due milestones, and priority indicators.
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
 
@@ -1459,7 +1325,7 @@ function DashboardOverview({
               >
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">BURNOUT WARNINGS</p>
+                    <p className="text-xs font-semibold text-slate-500">Volunteers over capacity</p>
                     <h3 className="text-2xl font-bold text-slate-800 mt-1">{overallocatedLeads.length}</h3>
                   </div>
                   <div className={`p-3 rounded-lg transition ${
@@ -1483,8 +1349,8 @@ function DashboardOverview({
                 {/* Inline Hover Popover */}
                 {hoveredBurnout && (
                   <div className="absolute left-0 right-0 top-full mt-2 bg-white border border-[#efe0c2] p-4 rounded-xl shadow-xl z-50 animate-fadeIn space-y-2 pointer-events-none">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-[#856637] border-b border-[#efe0c2] pb-1">
-                      Coordinators Allocation Status
+                    <p className="text-xs font-semibold text-[#856637] border-b border-[#efe0c2] pb-1">
+                      Coordinator allocation status
                     </p>
                     {leadStatsList.length === 0 ? (
                       <p className="text-[10px] text-slate-400 italic">No coordinators assigned to any lanes.</p>
@@ -1514,7 +1380,7 @@ function DashboardOverview({
               >
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider font-sans">Total Volunteers</p>
+                    <p className="text-xs font-semibold text-slate-500 font-sans">Total volunteers</p>
                     <h3 className="text-2xl font-bold text-slate-800 mt-1">{summary.totalVolunteers}</h3>
                   </div>
                   <div className="p-3 bg-[#faf8f4] text-slate-600 border border-[#e2dcd0] group-hover:bg-[#f5ebd6] group-hover:text-[#856637] rounded-lg transition">
@@ -1522,7 +1388,7 @@ function DashboardOverview({
                   </div>
                 </div>
                 <p className="text-xs text-slate-500 mt-4 leading-normal">
-                  Total registered volunteers across all active ministry rosters.
+                  Total registered volunteers across all active ministries.
                 </p>
                 <p className="text-[10px] text-[#856637] font-extrabold mt-1.5 underline">
                   Click to open Volunteer Registry
@@ -1565,7 +1431,7 @@ function DashboardOverview({
               
               {/* City Selection Dropdown */}
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1 shrink-0">
+                <span className="text-xs font-semibold text-slate-400 flex items-center gap-1 shrink-0">
                   <MapPin size={12} /> City:
                 </span>
                 <select
@@ -1600,8 +1466,8 @@ function DashboardOverview({
                 {nextEvent ? (
                   <div className="p-4 rounded-xl border border-[#efe0c2] bg-white flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div className="space-y-1">
-                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-[#faf5ec] text-[#856637] border border-[#efe0c2]">
-                        Next Major Event
+                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-semibold bg-[#faf5ec] text-[#856637] border border-[#efe0c2]">
+                        Next major event
                       </span>
                       <h4 className="font-serif font-black text-slate-800 text-sm">
                         {nextEvent.name}
@@ -1655,66 +1521,6 @@ function DashboardOverview({
                   </div>
                 )}
 
-                {/* 7-Day Forecast Row */}
-                <div className="space-y-2">
-                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    Upcoming 7-Day Outlook ({selectedCity.name})
-                  </h4>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
-                    {weatherData.time.slice(0, 7).map((timeStr: string, idx: number) => {
-                      const dateObj = new Date(timeStr + 'T00:00:00');
-                      const isEventDay = timeStr === nextEventDateStr;
-                      const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
-                      const formattedDate = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                      
-                      const code = weatherData.weathercode[idx];
-                      const maxTemp = weatherData.temperature_2m_max[idx];
-                      const minTemp = weatherData.temperature_2m_min[idx];
-                      const rainProb = weatherData.precipitation_probability_max[idx];
-                      const details = getWeatherDetails(code);
-
-                      return (
-                        <div 
-                          key={timeStr} 
-                          className={`p-3 rounded-lg border text-center transition-all flex flex-col justify-between space-y-2 ${
-                            isEventDay 
-                              ? 'bg-[#faf5ec] border-[#c2aa80] shadow-sm ring-1 ring-[#c2aa80]/30' 
-                              : 'bg-white border-[#e2dcd0] hover:border-slate-350'
-                          }`}
-                        >
-                          <div>
-                            <div className="flex items-center justify-between gap-1">
-                              <span className="text-[10px] font-bold text-slate-500">{dayName}</span>
-                              {isEventDay && (
-                                <span className="text-[8px] font-black uppercase tracking-wider bg-[#856637] text-white px-1 py-0.2 rounded shrink-0">
-                                  Event
-                                </span>
-                              )}
-                            </div>
-                            <span className="text-[9px] text-slate-400 font-medium block">{formattedDate}</span>
-                          </div>
-
-                          <div className="flex justify-center py-1">
-                            {details.icon}
-                          </div>
-
-                          <div>
-                            <p className="text-[10px] font-bold font-serif text-slate-850 leading-tight truncate" title={details.label}>
-                              {details.label}
-                            </p>
-                            <div className="flex justify-center items-baseline gap-1 mt-1 text-slate-700">
-                              <span className="text-xs font-black font-mono">{Math.round(maxTemp)}°</span>
-                              <span className="text-[9px] text-slate-400 font-mono">/{Math.round(minTemp)}°</span>
-                            </div>
-                            <span className="text-[9px] text-blue-600 font-semibold mt-0.5 block">
-                              💧 {rainProb}%
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
               </div>
             ) : (
               <div className="text-center text-xs text-slate-400 italic py-6">
@@ -1723,6 +1529,96 @@ function DashboardOverview({
             )}
           </div>
           )}
+
+          {/* Upcoming Events Card */}
+          <div className="bg-[#fcfaf7] rounded-xl border border-[#e2dcd0] p-6 shadow-sm hover:shadow-md hover:-translate-y-1 transition duration-200 space-y-4">
+            <div>
+              <h3 className="text-lg font-serif font-bold text-[#1e293b] flex items-center gap-2">
+                <Calendar className="text-[#856637]" size={20} />
+                Upcoming Events
+              </h3>
+              <p className="text-xs text-slate-500">
+                The next several scheduled ministry milestones and events.
+              </p>
+            </div>
+
+            {(() => {
+              const upcomingEventsList = [...events]
+                .filter(evt => {
+                  const [y, m, d] = evt.date.split('-');
+                  const eventDate = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
+                  const today = new Date(2026, 6, 6); // July 6, 2026 for consistency
+                  const d1 = Date.UTC(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate());
+                  const d2 = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+                  const diffDays = Math.ceil((d1 - d2) / (1000 * 60 * 60 * 24));
+                  return diffDays >= 0;
+                })
+                .sort((a, b) => a.date.localeCompare(b.date))
+                .slice(0, 5);
+
+              const getEventDaysOut = (dateStr: string) => {
+                const [y, m, d] = dateStr.split('-');
+                const eventDate = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
+                const today = new Date(2026, 6, 6);
+                const d1 = Date.UTC(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate());
+                const d2 = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+                return Math.ceil((d1 - d2) / (1000 * 60 * 60 * 24));
+              };
+
+              const getEventDistanceLabel = (days: number) => {
+                if (days === 0) return 'today';
+                if (days === 1) return 'tomorrow';
+                if (days < 7) return `in ${days} days`;
+                const weeks = Math.round(days / 7);
+                if (days < 30) {
+                  return `in ${weeks} ${weeks === 1 ? 'week' : 'weeks'}`;
+                }
+                const months = Math.round(days / 30);
+                return `in ${months} ${months === 1 ? 'month' : 'months'}`;
+              };
+
+              if (upcomingEventsList.length === 0) {
+                return (
+                  <p className="text-xs text-slate-400 italic py-2">
+                    No upcoming events scheduled right now.
+                  </p>
+                );
+              }
+
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {upcomingEventsList.map(evt => {
+                    const daysOut = getEventDaysOut(evt.date);
+                    const distanceLabel = getEventDistanceLabel(daysOut);
+                    return (
+                      <div
+                        key={evt.id}
+                        onClick={() => {
+                          onSelectEvent?.(evt.id);
+                          onNavigate('timeline');
+                        }}
+                        className="flex items-center justify-between p-4 rounded-xl border border-[#efe0c2] bg-white hover:bg-[#f5ebd6]/20 hover:border-[#c2aa80] transition duration-200 cursor-pointer shadow-xs group"
+                      >
+                        <div className="space-y-1 min-w-0 flex-1 pr-3">
+                          <h4 className="text-sm font-serif font-bold text-[#1e293b] group-hover:text-black transition truncate">
+                            {evt.name}
+                          </h4>
+                          <p className="text-xs text-slate-500 font-medium">
+                            {formatHumanDate(evt.date)}
+                          </p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-[#f5ebd6]/60 text-[#856637] border border-[#efe0c2] shadow-xs">
+                            {distanceLabel}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
 
           {/* Quick Lane Reference Card */}
           <div className="bg-[#fcfaf7] rounded-xl border border-[#e2dcd0] p-6 shadow-sm hover:shadow-md hover:-translate-y-1 transition duration-200 space-y-4">
@@ -1765,9 +1661,9 @@ function DashboardOverview({
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
-                      <tr className="border-b border-[#e2dcd0] text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                        <th className="py-2 px-3">Lane Name</th>
-                        <th className="py-2 px-3">Lead Coordinator</th>
+                      <tr className="border-b border-[#e2dcd0] text-xs font-semibold text-slate-500">
+                        <th className="py-2 px-3">Lane name</th>
+                        <th className="py-2 px-3">Lead coordinator</th>
                         <th className="py-2 px-3 text-right">Actions</th>
                       </tr>
                     </thead>
@@ -1940,8 +1836,8 @@ function DashboardOverview({
               <div className="flex items-center gap-2">
                 <AlertTriangle className="text-rose-650" size={20} aria-hidden="true" />
                 <div>
-                  <h3 id="burnout-modal-title" className="font-serif font-black text-slate-800 text-sm leading-tight">Ministry Lead Workload Auditor</h3>
-                  <p className="text-[10px] text-slate-400 font-medium">Workload safety thresholds: Max 15 active tasks OR 20 weekly hours</p>
+                  <h3 id="burnout-modal-title" className="font-serif font-black text-slate-800 text-sm leading-tight">Workload check</h3>
+                  <p className="text-[10px] text-slate-400 font-medium">Workload safety thresholds: max 15 active tasks or 20 weekly hours</p>
                 </div>
               </div>
               <button 
@@ -1975,12 +1871,12 @@ function DashboardOverview({
                             <p className="font-serif font-bold text-xs flex items-center gap-1.5">
                               {lead.leadName}
                               {isOver ? (
-                                <span className="inline-flex text-[8px] font-extrabold uppercase bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded border border-rose-200">
-                                  Over-allocated
+                                <span className="inline-flex text-[10px] font-semibold bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded border border-rose-200">
+                                  Over capacity
                                 </span>
                               ) : (
-                                <span className="inline-flex text-[8px] font-bold uppercase bg-[#f5ebd6] text-[#856637] px-1.5 py-0.5 rounded border border-[#efe0c2]">
-                                  Safe Load
+                                <span className="inline-flex text-[10px] font-semibold bg-[#f5ebd6] text-[#856637] px-1.5 py-0.5 rounded border border-[#efe0c2]">
+                                  Safe workload
                                 </span>
                               )}
                             </p>
@@ -1999,9 +1895,9 @@ function DashboardOverview({
                         </div>
 
                         {/* Visual alerts bar */}
-                        <div className="mt-3 grid grid-cols-2 gap-3 text-[9px] font-bold uppercase text-slate-450 border-t border-slate-100 pt-2">
+                        <div className="mt-3 grid grid-cols-2 gap-3 text-[10px] font-semibold text-slate-500 border-t border-slate-100 pt-2">
                           <div>
-                            <span className="block text-[8px]">Task Limit (15)</span>
+                            <span className="block text-[9px]">Task limit (15)</span>
                             <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-0.5">
                               <div 
                                 className={`h-full rounded-full ${lead.activeTasksCount > 15 ? 'bg-rose-500' : 'bg-[#c2aa80]'}`}
@@ -2010,7 +1906,7 @@ function DashboardOverview({
                             </div>
                           </div>
                           <div>
-                            <span className="block text-[8px]">Hours Limit (20h)</span>
+                            <span className="block text-[9px]">Hours limit (20h)</span>
                             <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-0.5">
                               <div 
                                 className={`h-full rounded-full ${lead.weeklyHours > 20 ? 'bg-rose-500' : 'bg-[#c2aa80]'}`}
@@ -2225,11 +2121,11 @@ function DashboardOverview({
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Description *</label>
+                      <label className="block text-xs font-semibold text-slate-500 mb-1">Description *</label>
                       <textarea
                         required
                         rows={2}
-                        placeholder="Detailed deliverables for this task..."
+                        placeholder="Detailed requirements for this task..."
                         value={quickTaskDesc}
                         onChange={(e) => setQuickTaskDesc(e.target.value)}
                         className="w-full p-2 border border-[#efe0c2] rounded focus:outline-none focus:ring-1 focus:ring-[#c2aa80] bg-[#faf8f4] text-xs text-slate-700"
@@ -2463,11 +2359,11 @@ function DashboardOverview({
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Strategic Description *</label>
+                      <label className="block text-xs font-semibold text-slate-500 mb-1">Strategic description *</label>
                       <textarea
                         required
                         rows={3}
-                        placeholder="The core spiritual mission and physical deliverables of this timeline..."
+                        placeholder="The core spiritual mission and physical outcomes of this timeline..."
                         value={quickEventDesc}
                         onChange={(e) => setQuickEventDesc(e.target.value)}
                         className="w-full p-2 border border-[#efe0c2] rounded focus:outline-none focus:ring-1 focus:ring-[#c2aa80] bg-[#faf8f4] text-xs text-slate-700"

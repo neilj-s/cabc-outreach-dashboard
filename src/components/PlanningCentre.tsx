@@ -54,7 +54,7 @@ import {
   Lock,
   Unlock
 } from 'lucide-react';
-import { MinistryEvent, LaneDetail, MilestoneKey, MinistryLane, EventDoc, Idea, AttachedDoc, CollabTable, RecentActivity } from '../types';
+import { MinistryEvent, LaneDetail, MilestoneKey, MinistryLane, EventDoc, AttachedDoc, CollabTable, RecentActivity } from '../types';
 import ConfirmDialog from './ConfirmDialog';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
@@ -181,7 +181,6 @@ function PlanningCentre({
 
   const [isDriveExpanded, setIsDriveExpanded] = useState<boolean>(false);
 
-  const [ideas, setIdeas] = useState<any[]>([]);
   const [savingScratchpad, setSavingScratchpad] = useState<boolean>(false);
   const [isScratchpadFocused, setIsScratchpadFocused] = useState<boolean>(false);
   const [scratchpadSavedTime, setScratchpadSavedTime] = useState<string | null>(null);
@@ -200,13 +199,6 @@ function PlanningCentre({
     };
   }, []);
 
-  const [selectedIdeaForConversion, setSelectedIdeaForConversion] = useState<any | null>(null);
-  const [convEventName, setConvEventName] = useState<string>('');
-  const [convEventDesc, setConvEventDesc] = useState<string>('');
-  const [convEventDate, setConvEventDate] = useState<string>('');
-  const [convDocName, setConvDocName] = useState<string>('');
-  const [categoryFilter, setCategoryFilter] = useState<string>('All');
-  
   const handleSaveScratchpad = (text?: string) => {
     setSavingScratchpad(true);
     if (saveTimeoutRef.current) {
@@ -284,7 +276,6 @@ function PlanningCentre({
   const [expandedHistoryDocId, setExpandedHistoryDocId] = useState<string | null>(null);
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const [registeringWatchId, setRegisteringWatchId] = useState<string | null>(null);
-  const [triggeringWebhookId, setTriggeringWebhookId] = useState<string | null>(null);
 
   const allEventDocs = selectedEventId ? attachedDocs.filter(d => d.eventId === selectedEventId) : [];
   const filteredEventDocs = unifiedSearch 
@@ -685,20 +676,6 @@ function PlanningCentre({
     showNotification('Cleared all rows in the run-of-show.', 'info');
   };
 
-  // Filter state
-  
-  const [statusFilter, setStatusFilter] = useState<string>('Active'); // Active, Converted, All
-
-  // Form states for adding new idea
-  const [showAddForm, setShowAddForm] = useState<boolean>(false);
-  const [newTitle, setNewTitle] = useState<string>('');
-  const [newContent, setNewContent] = useState<string>('');
-  const [newCategory, setNewCategory] = useState<string>('Outreach');
-
-  // Conversion wizard state
-  
-  const [conversionType, setConversionType] = useState<'event' | 'task' | 'doc' | null>(null);
-
   // Form states for conversion types
   // 1. Brand New Event
   
@@ -753,43 +730,6 @@ function PlanningCentre({
     }
   }, [events]);
 
-  // Upvote Idea
-  const handleUpvoteIdea = async (ideaId: string, currentVotes: number) => {
-    try {
-      const res = await apiFetch(`/api/planning/ideas/${ideaId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ votes: currentVotes + 1 })
-      });
-      if (!res.ok) throw new Error();
-      const updatedIdea = await res.json();
-      setIdeas(ideas.map(i => i.id === ideaId ? updatedIdea : i));
-      showNotification("Upvoted successfully!", 'success');
-    } catch (err) {
-      showNotification("Could not cast vote.", 'error');
-    }
-  };
-
-  // Create Idea
-  
-  // Delete Idea
-  const handleDeleteIdea = async (ideaId: string) => {
-    const isConfirmed = await confirmAction(
-      "Discard Brainstorm",
-      "Are you sure you want to discard this brainstorm?"
-    );
-    if (!isConfirmed) return;
-    
-    try {
-      const res = await apiFetch(`/api/planning/ideas/${ideaId}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error();
-      setIdeas(ideas.filter(i => i.id !== ideaId));
-      showNotification("Brainstorm discarded.", 'success');
-    } catch (err) {
-      showNotification("Failed to discard brainstorm.", 'error');
-    }
-  };
-
   // Save Scratchpad
   
   // Append markdown helper characters to scratchpad text
@@ -830,149 +770,6 @@ function PlanningCentre({
       textarea.setSelectionRange(start + replacement.length, start + replacement.length);
     }, 50);
   };
-
-  // Convert brainstorm to brand-new Event timeline
-  const handleConvertToEvent = async () => {
-    if (!convEventName.trim() || !convEventDate) {
-      showNotification("Please provide a name and set an Event date.", 'error');
-      return;
-    }
-    if (!selectedIdeaForConversion) return;
-
-    try {
-      // 1. Create Event via Prop
-      await onCreateEvent(convEventName, convEventDate, convEventDesc);
-      
-      // Fetch latest events to grab the newly created event's ID or just trigger sync
-      await triggerFreshSync();
-
-      // 2. Mark Idea as Converted
-      const res = await apiFetch(`/api/planning/ideas/${selectedIdeaForConversion.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          convertedTo: 'event',
-          convertedToName: convEventName
-        })
-      });
-      if (!res.ok) throw new Error();
-      const updatedIdea = await res.json();
-      setIdeas(ideas.map(i => i.id === selectedIdeaForConversion.id ? updatedIdea : i));
-
-      // Reset conversion state
-      setSelectedIdeaForConversion(null);
-      setConversionType(null);
-      showNotification(`Brainstorm successfully compiled into an active Event Timeline!`, 'success');
-    } catch (err) {
-      showNotification("Failed to generate event timeline.", 'error');
-    }
-  };
-
-  // Convert brainstorm to custom event task
-  const handleConvertToTask = async () => {
-    if (!convTaskEventId || !convTaskDueDate) {
-      showNotification("Please select a target Event and set a due date.", 'error');
-      return;
-    }
-    if (!selectedIdeaForConversion) return;
-
-    try {
-      const selectedEvent = events.find(e => e.id === convTaskEventId);
-      const targetEventName = selectedEvent ? selectedEvent.name : 'Selected Event';
-
-      // 1. Add Task via Prop
-      await onAddTask(convTaskEventId, {
-        title: selectedIdeaForConversion.title,
-        description: selectedIdeaForConversion.content,
-        milestoneKey: convTaskMilestone,
-        lane: convTaskLane,
-        dueDate: convTaskDueDate
-      });
-
-      // 2. Mark Idea as Converted
-      const res = await apiFetch(`/api/planning/ideas/${selectedIdeaForConversion.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          convertedTo: 'task',
-          convertedToId: convTaskEventId,
-          convertedToName: `${targetEventName} - ${selectedIdeaForConversion.title}`
-        })
-      });
-      if (!res.ok) throw new Error();
-      const updatedIdea = await res.json();
-      setIdeas(ideas.map(i => i.id === selectedIdeaForConversion.id ? updatedIdea : i));
-
-      // Reset conversion state
-      setSelectedIdeaForConversion(null);
-      setConversionType(null);
-      showNotification(`Actionable task successfully injected into "${targetEventName}" timeline!`, 'success');
-      await triggerFreshSync();
-    } catch (err) {
-      showNotification("Failed to inject task into event.", 'error');
-    }
-  };
-
-  // Convert brainstorm to Event Document requirement checklist
-  const handleConvertToDoc = async () => {
-    if (!convDocEventId || !convDocName.trim()) {
-      showNotification("Please select an Event and name the document checklist requirement.", 'error');
-      return;
-    }
-    if (!selectedIdeaForConversion) return;
-
-    try {
-      const selectedEvent = events.find(e => e.id === convDocEventId);
-      if (!selectedEvent) throw new Error("Event not found");
-
-      // Appending to documents array
-      const currentDocs = selectedEvent.docs || [];
-      const updatedDocs = [
-        ...currentDocs,
-        { name: convDocName.trim(), done: false, required: true }
-      ];
-
-      // Update via Prop
-      await onUpdateEventDocs(convDocEventId, updatedDocs);
-
-      // Mark Idea as Converted
-      const res = await apiFetch(`/api/planning/ideas/${selectedIdeaForConversion.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          convertedTo: 'doc',
-          convertedToId: convDocEventId,
-          convertedToName: `${selectedEvent.name} - ${convDocName.trim()}`
-        })
-      });
-      if (!res.ok) throw new Error();
-      const updatedIdea = await res.json();
-      setIdeas(ideas.map(i => i.id === selectedIdeaForConversion.id ? updatedIdea : i));
-
-      // Reset conversion state
-      setSelectedIdeaForConversion(null);
-      setConversionType(null);
-      showNotification(`Custom Event Document requirements checklist updated!`, 'success');
-      await triggerFreshSync();
-    } catch (err) {
-      showNotification("Failed to inject document checklist requirement.", 'error');
-    }
-  };
-
-
-  // Filter logic
-  const filteredIdeas = ideas.filter(idea => {
-    const categoryMatch = categoryFilter === 'All' || idea.category.toLowerCase() === categoryFilter.toLowerCase();
-    
-    let statusMatch = true;
-    if (statusFilter === 'Active') {
-      statusMatch = !idea.convertedTo;
-    } else if (statusFilter === 'Converted') {
-      statusMatch = !!idea.convertedTo;
-    }
-
-    return categoryMatch && statusMatch;
-  });
 
   const createAttachedDoc = async (docData: {
     name: string;
@@ -1276,43 +1073,6 @@ function PlanningCentre({
       showNotification(`Failed to configure webhook watch: ${err.message}`, 'error');
     } finally {
       setRegisteringWatchId(null);
-    }
-  };
-
-  // Dispatch mock external Google Drive update event to trigger push webhook
-  const handleTriggerWebhook = async (doc: AttachedDoc) => {
-    if (!doc.watchResourceId) {
-      showNotification('Webhook watcher is not configured on this asset.', 'error');
-      return;
-    }
-
-    setTriggeringWebhookId(doc.id);
-    showNotification(`Dispatching simulated Google Drive change event for "${doc.name}"...`, 'success');
-
-    try {
-      const res = await apiFetch('/api/drive/webhook', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'X-Goog-Channel-Token': doc.watchChannelToken || ''
-        },
-        body: JSON.stringify({
-          channelId: doc.watchChannelId,
-          resourceId: doc.watchResourceId,
-          resourceState: 'update'
-        })
-      });
-
-      if (res.ok) {
-        console.log('Simulated webhook event dispatched successfully.');
-      } else {
-        showNotification('Failed to trigger mock webhook event.', 'error');
-      }
-    } catch (err: any) {
-      console.error('Trigger webhook error:', err);
-      showNotification(`Simulation error: ${err.message}`, 'error');
-    } finally {
-      setTriggeringWebhookId(null);
     }
   };
 
@@ -2024,17 +1784,7 @@ function PlanningCentre({
                                               </span>
                                               <div className="flex items-center gap-1.5">
                                                 {doc.watchStatus === 'active' ? (
-                                                  <>
-                                                    <span className="text-[9px] text-emerald-700 font-semibold bg-emerald-50 px-1 rounded-sm">Active</span>
-                                                    <button
-                                                      type="button"
-                                                      onClick={(e) => { e.stopPropagation(); handleTriggerWebhook(doc); }}
-                                                      disabled={triggeringWebhookId === doc.id}
-                                                      className="text-[9px] text-[#856637] hover:text-[#5c4422] font-bold underline disabled:opacity-50 cursor-pointer"
-                                                    >
-                                                      {triggeringWebhookId === doc.id ? 'Simulating...' : 'Simulate Change'}
-                                                    </button>
-                                                  </>
+                                                  <span className="text-[9px] text-emerald-700 font-semibold bg-emerald-50 px-1 rounded-sm">Active</span>
                                                 ) : (
                                                   <button
                                                     type="button"

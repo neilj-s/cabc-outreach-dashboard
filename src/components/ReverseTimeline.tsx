@@ -73,6 +73,7 @@ export default function ReverseTimeline({
   const [newEventDesc, setNewEventDesc] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [isTeamSectionExpanded, setIsTeamSectionExpanded] = useState(false);
 
   // Event editing form state
   const [isEditingEvent, setIsEditingEvent] = useState(false);
@@ -789,6 +790,186 @@ export default function ReverseTimeline({
                   </select>
                 </div>
               </div>
+            </div>
+
+            {/* Team & Assignments Section */}
+            <div className="bg-[#fcfaf7] border border-[#e2dcd0] rounded-xl p-4 shadow-sm space-y-3">
+              <button 
+                type="button"
+                onClick={() => setIsTeamSectionExpanded(!isTeamSectionExpanded)}
+                className="w-full flex items-center justify-between text-left focus:outline-none cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <Users size={16} className="text-[#856637]" />
+                  <span className="font-serif font-bold text-slate-800 text-sm">Team & Assignments</span>
+                  <span className="text-[10px] bg-amber-100 text-[#856637] border border-[#efe0c2] px-2 py-0.5 rounded-full font-sans font-bold">
+                    {getAssignedVolunteers().length} Members
+                  </span>
+                </div>
+                {isTeamSectionExpanded ? (
+                  <ChevronUp size={16} className="text-slate-500" />
+                ) : (
+                  <ChevronDown size={16} className="text-slate-500" />
+                )}
+              </button>
+
+              {isTeamSectionExpanded && (
+                <div className="border-t border-[#e2dcd0] pt-4 space-y-4 animate-fadeIn">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Volunteers list column */}
+                    <div className="space-y-3">
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <Users size={12} /> Team Members & Their Tasks
+                      </h4>
+                      {getAssignedVolunteers().length === 0 ? (
+                        <p className="text-xs text-slate-400 italic bg-white p-4 rounded-xl border border-[#efe0c2]/50">
+                          No team members assigned or registered for this event.
+                        </p>
+                      ) : (
+                        <div className="space-y-2.5">
+                          {getAssignedVolunteers().map(vol => {
+                            const volTasks = selectedEvent.tasks.filter(t => t.assignedTo === vol.name);
+                            return (
+                              <div key={vol.id} className="bg-white border border-[#e2dcd0] rounded-xl p-3.5 space-y-2 shadow-xs">
+                                <div className="flex items-center justify-between border-b border-dashed border-slate-100 pb-1.5">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-5 h-5 rounded-full bg-[#f5ebd6] text-[#856637] text-[10px] font-bold flex items-center justify-center uppercase">
+                                      {vol.name.slice(0, 2)}
+                                    </div>
+                                    <span className="text-xs font-bold text-slate-800">{vol.name}</span>
+                                  </div>
+                                  <span className="text-[10px] font-medium text-slate-500">
+                                    {volTasks.length} task{volTasks.length !== 1 ? 's' : ''}
+                                  </span>
+                                </div>
+
+                                {volTasks.length === 0 ? (
+                                  <p className="text-[11px] text-slate-400 italic px-1 py-1">
+                                    Registered for support (No tasks currently assigned).
+                                  </p>
+                                ) : (
+                                  <div className="space-y-2 pt-0.5">
+                                    {volTasks.map(task => {
+                                      const { badge } = getLaneColor(task.lane);
+                                      return (
+                                        <div key={task.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2 rounded-lg bg-slate-50 border border-slate-100">
+                                          <div className="min-w-0 flex-1">
+                                            <p className="text-xs font-bold text-slate-750 truncate" title={task.title}>
+                                              {task.title}
+                                            </p>
+                                            <span className={`inline-block text-[9px] px-1.5 py-0.2 rounded-full border ${badge} mt-1 font-semibold`}>
+                                              {task.lane}
+                                            </span>
+                                          </div>
+                                          <div className="flex items-center gap-1.5 shrink-0">
+                                            <span className="text-[10px] text-slate-400">Reassign:</span>
+                                            <select
+                                              value={task.assignedTo || ''}
+                                              onChange={async (e) => {
+                                                try {
+                                                  await onUpdateTaskAssignment(selectedEvent.id, task.id, e.target.value);
+                                                  showNotification(`Reassigned "${task.title}" to ${e.target.value || 'Unassigned'}`, 'success');
+                                                } catch (err) {
+                                                  showNotification('Failed to update assignment', 'error');
+                                                }
+                                              }}
+                                              className="text-[10px] border border-[#e2dcd0] bg-white rounded px-1.5 py-0.5 text-slate-700 cursor-pointer focus:ring-1 focus:ring-[#c2aa80] focus:outline-none font-semibold"
+                                            >
+                                              <option value="">Unassigned</option>
+                                              {volunteers.map(v => (
+                                                <option key={v.id} value={v.name}>{v.name}</option>
+                                              ))}
+                                              {!volunteers.some(v => v.name === 'Joy') && <option value="Joy">Joy</option>}
+                                              {!volunteers.some(v => v.name === 'Bea') && <option value="Bea">Bea</option>}
+                                              {!volunteers.some(v => v.name === 'Iya') && <option value="Iya">Iya</option>}
+                                              {!volunteers.some(v => v.name === 'Neil') && <option value="Neil">Neil</option>}
+                                              {!volunteers.some(v => v.name === 'Sofiya') && <option value="Sofiya">Sofiya</option>}
+                                            </select>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Unassigned tasks column */}
+                    <div className="space-y-3">
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <CheckSquare size={12} className="text-amber-500" /> Unassigned Tasks (Gaps)
+                      </h4>
+                      {(() => {
+                        const unassignedTasks = selectedEvent.tasks.filter(t => !t.assignedTo || t.assignedTo.trim() === '');
+                        if (unassignedTasks.length === 0) {
+                          return (
+                            <div className="bg-emerald-50/50 border border-emerald-200 text-emerald-850 p-4 rounded-xl flex items-center gap-2 text-xs">
+                              <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                              <span className="font-medium">All tasks are assigned! Excellent coverage. 🎉</span>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div className="space-y-2">
+                            {unassignedTasks.map(task => {
+                              const { badge } = getLaneColor(task.lane);
+                              return (
+                                <div key={task.id} className="bg-white border border-amber-200 rounded-xl p-3.5 space-y-2 shadow-xs hover:border-amber-450 transition-colors">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-bold text-slate-800 leading-snug">{task.title}</p>
+                                      <span className={`inline-block text-[9px] px-1.5 py-0.2 rounded-full border ${badge} mt-1 font-semibold`}>
+                                        {task.lane}
+                                      </span>
+                                    </div>
+                                    <span className="text-[9px] bg-amber-50 border border-amber-200 text-[#856637] font-bold px-1.5 py-0.5 rounded uppercase shrink-0">
+                                      No Lead
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center justify-between border-t border-dashed border-slate-100 pt-2 text-[10px]">
+                                    <span className="text-slate-400 font-mono">Due: {formatHumanDate(task.dueDate)}</span>
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      <span className="text-slate-500 font-bold">Assign to:</span>
+                                      <select
+                                        value={task.assignedTo || ''}
+                                        onChange={async (e) => {
+                                          try {
+                                            await onUpdateTaskAssignment(selectedEvent.id, task.id, e.target.value);
+                                            showNotification(`Assigned "${task.title}" to ${e.target.value}`, 'success');
+                                          } catch (err) {
+                                            showNotification('Failed to update assignment', 'error');
+                                          }
+                                        }}
+                                        className="text-[10px] border border-[#e2dcd0] bg-white rounded px-1.5 py-0.5 text-[#856637] cursor-pointer focus:ring-1 focus:ring-[#c2aa80] focus:outline-none font-semibold"
+                                      >
+                                        <option value="">Unassigned</option>
+                                        {volunteers.map(v => (
+                                          <option key={v.id} value={v.name}>{v.name}</option>
+                                        ))}
+                                        {!volunteers.some(v => v.name === 'Joy') && <option value="Joy">Joy</option>}
+                                        {!volunteers.some(v => v.name === 'Bea') && <option value="Bea">Bea</option>}
+                                        {!volunteers.some(v => v.name === 'Iya') && <option value="Iya">Iya</option>}
+                                        {!volunteers.some(v => v.name === 'Neil') && <option value="Neil">Neil</option>}
+                                        {!volunteers.some(v => v.name === 'Sofiya') && <option value="Sofiya">Sofiya</option>}
+                                      </select>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Timelines container */}

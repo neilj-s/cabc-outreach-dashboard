@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Plus, 
   Trash2, 
@@ -24,6 +24,8 @@ interface DebriefArchiveProps {
   onUpdateDebrief: (id: string, data: Partial<Debrief>) => Promise<void>;
   onDeleteDebrief: (id: string) => Promise<void>;
   loading?: boolean;
+  prefilledDebrief?: { name: string; date: string } | null;
+  onClearPrefilledDebrief?: () => void;
 }
 
 export default function DebriefArchive({
@@ -31,7 +33,9 @@ export default function DebriefArchive({
   onCreateDebrief,
   onUpdateDebrief,
   onDeleteDebrief,
-  loading = false
+  loading = false,
+  prefilledDebrief,
+  onClearPrefilledDebrief
 }: DebriefArchiveProps) {
   const [showForm, setShowForm] = useState(false);
 
@@ -86,6 +90,25 @@ export default function DebriefArchive({
   const [wentWell, setWentWell] = useState('');
   const [change, setChange] = useState('');
   const [filedBy, setFiledBy] = useState('');
+
+  useEffect(() => {
+    if (prefilledDebrief) {
+      setEditingDebrief(null);
+      setName(prefilledDebrief.name);
+      setDate(prefilledDebrief.date);
+      setAttendance('');
+      setVolunteers('');
+      setBudgetGiven('');
+      setBudgetActual('');
+      setWentWell('');
+      setChange('');
+      setFiledBy('');
+      setShowForm(true);
+      if (onClearPrefilledDebrief) {
+        onClearPrefilledDebrief();
+      }
+    }
+  }, [prefilledDebrief, onClearPrefilledDebrief]);
 
   const handleOpenCreate = () => {
     setEditingDebrief(null);

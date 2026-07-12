@@ -206,16 +206,7 @@ async function startServer() {
     }
   });
 
-  // --- API ROUTE: Database Reset ---
-  app.post('/api/reset', (req, res) => {
-    const freshSeed = JSON.parse(JSON.stringify(SEED_DATA));
-    freshSeed.events[0].tasks = generateTasksForEvent(freshSeed.events[0].name, freshSeed.events[0].date);
-    freshSeed.events[1].tasks = generateTasksForEvent(freshSeed.events[1].name, freshSeed.events[1].date);
-    freshSeed.events[2].tasks = generateTasksForEvent(freshSeed.events[2].name, freshSeed.events[2].date);
-    
-    saveDb(freshSeed);
-    res.json({ success: true, message: 'Database reset to default template state.' });
-  });
+
 
   // --- Serve Frontend ---
   if (process.env.NODE_ENV !== 'production') {
