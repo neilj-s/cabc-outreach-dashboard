@@ -126,8 +126,10 @@ export interface Volunteer {
   roles: string[]; // List of currently assigned Roles/Stations
   skills?: string; // Foundational skills/interests
   notes?: string;
-  emails?: EmailCommunication[]; // Email communication tracker entries
+  emails?: EmailCommunication[]; // Email communication tracker entries (deprecated)
   eventAssignments?: Record<string, VolunteerEventAssignment>; // map of eventId -> assignment
+  lastContacted?: string; // YYYY-MM-DD
+  contactNotes?: string;
 }
 
 export interface AuditHistoryItem {

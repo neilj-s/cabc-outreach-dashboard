@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useFocusTrap } from '../lib/useFocusTrap';
+import { useNotification } from '../context/NotificationContext';
 import { 
   Users, 
   UserPlus, 
@@ -129,6 +130,7 @@ function VolunteerTable({
   onRemoveVolunteer,
   loading = false
 }: VolunteerTableProps) {
+  const { showNotification } = useNotification();
   // View mode state: roster mapping vs compact directory
   const [viewMode, setViewMode] = useState<'roster' | 'directory'>('roster');
 
@@ -174,14 +176,10 @@ function VolunteerTable({
   const [newStationName, setNewStationName] = useState('');
   const [newEventNotes, setNewEventNotes] = useState('');
 
-  // Email communication tracker state
+  // Contact Outreach Tracker state
   const [editingEmailsVolId, setEditingEmailsVolId] = useState<string | null>(null);
-  const [emailSubject, setEmailSubject] = useState('Ministry Outreach + Volunteer Recruitment');
-  const [customSubject, setCustomSubject] = useState('');
-  const [useCustomSubject, setUseCustomSubject] = useState(false);
-  const [emailSender, setEmailSender] = useState('Joy P.');
-  const [emailStatus, setEmailStatus] = useState<'Sent' | 'Delivered' | 'Opened' | 'Failed'>('Sent');
-  const [emailDateTime, setEmailDateTime] = useState('2026-07-07 19:32');
+  const [rowLastContacted, setRowLastContacted] = useState('');
+  const [rowContactNotes, setRowContactNotes] = useState('');
 
   const [modalGeneralNotes, setModalGeneralNotes] = useState('');
   const [modalEventNotes, setModalEventNotes] = useState('');
@@ -197,11 +195,13 @@ function VolunteerTable({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   const [showRoleDropdown, setShowRoleDropdown] = useState(false);
+  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
+  const [showSkillDropdown, setShowSkillDropdown] = useState(false);
 
   // --- REDESIGNED HIGH-DENSITY DIRECTORY STATE & HELPERS ---
   const [selectedLetter, setSelectedLetter] = useState<string | null>(null);
   const [selectedVolId, setSelectedVolId] = useState<string | null>(null);
-  const [sortField, setSortField] = useState<'name' | 'email' | 'role' | 'station' | 'contactStatus' | 'emailsCount'>('name');
+  const [sortField, setSortField] = useState<'name' | 'email' | 'role' | 'station' | 'contactStatus' | 'lastContacted'>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   
   // Profile Inline Editor State
@@ -221,13 +221,9 @@ function VolunteerTable({
   const [isEditingPrivateNotes, setIsEditingPrivateNotes] = useState<boolean>(false);
   const [detailPrivateNotes, setDetailPrivateNotes] = useState('');
 
-  // Email outbound logging form states (for Detail Panel)
-  const [detailEmailSubject, setDetailEmailSubject] = useState('Ministry Outreach + Volunteer Recruitment');
-  const [detailCustomSubject, setDetailCustomSubject] = useState('');
-  const [detailUseCustomSubject, setDetailUseCustomSubject] = useState(false);
-  const [detailEmailSender, setDetailEmailSender] = useState('Joy P.');
-  const [detailEmailStatus, setDetailEmailStatus] = useState<'Sent' | 'Delivered' | 'Opened' | 'Failed'>('Sent');
-  const [detailEmailDateTime, setDetailEmailDateTime] = useState('2026-07-08 10:00');
+  // Contact Outreach form states (for Detail Panel)
+  const [detailLastContacted, setDetailLastContacted] = useState('');
+  const [detailContactNotes, setDetailContactNotes] = useState('');
 
   const activeEventId = selectedEventId || (events[0]?.id || '');
 
@@ -313,24 +309,18 @@ function VolunteerTable({
     }
   };
 
-  const handleAddEmailDirect = async () => {
+  const handleSaveOutreach = async () => {
     if (!selectedVol) return;
-    const finalSubject = detailUseCustomSubject ? detailCustomSubject : detailEmailSubject;
-    if (!finalSubject) return;
-
-    const newEmail: EmailCommunication = {
-      id: `email_${Date.now()}`,
-      dateTime: detailEmailDateTime || '2026-07-08 10:00',
-      subject: finalSubject,
-      sender: detailEmailSender,
-      status: detailEmailStatus
-    };
-
-    const updatedEmails = [...(selectedVol.emails || []), newEmail];
-    await onUpdateVolunteer(selectedVol.id, { emails: updatedEmails });
-    
-    setDetailCustomSubject('');
-    setDetailUseCustomSubject(false);
+    try {
+      await onUpdateVolunteer(selectedVol.id, {
+        lastContacted: detailLastContacted,
+        contactNotes: detailContactNotes.trim()
+      });
+      showNotification("Outreach contact record saved successfully.", "success");
+    } catch (err) {
+      console.error('Failed to save outreach:', err);
+      showNotification("Could not save outreach details.", "error");
+    }
   };
 
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
@@ -355,7 +345,24 @@ function VolunteerTable({
 
   const hasUnassigned = volunteers.some(v => !v.eventAssignments?.[activeEventId]?.role);
 
-  // Apply search & multi-select role filters
+  // Derive distinct skills across all volunteers
+  const allUniqueSkills = React.useMemo(() => {
+    const skillsSet = new Set<string>();
+    volunteers.forEach(v => {
+      if (v.skills) {
+        v.skills.split(',').forEach(s => {
+          const trimmed = s.trim();
+          if (trimmed) {
+            const formatted = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+            skillsSet.add(formatted);
+          }
+        });
+      }
+    });
+    return Array.from(skillsSet).sort((a, b) => a.localeCompare(b));
+  }, [volunteers]);
+
+  // Apply search & multi-select role & skill filters
   const filteredVolunteers = React.useMemo(() => {
     return volunteers.filter(vol => {
       // 1. Search filter match
@@ -369,16 +376,29 @@ function VolunteerTable({
         (vol.eventAssignments?.[activeEventId]?.station && vol.eventAssignments[activeEventId].station.toLowerCase().includes(query)) ||
         (vol.eventAssignments?.[activeEventId]?.role && vol.eventAssignments[activeEventId].role.toLowerCase().includes(query));
 
+      if (!matchesSearch) return false;
+
       // 2. Role filter match
-      if (selectedRoles.length === 0) return matchesSearch;
-      
-      const role = vol.eventAssignments?.[activeEventId]?.role;
-      if (!role || role.trim() === '') {
-        return matchesSearch && selectedRoles.includes('Unassigned');
+      if (selectedRoles.length > 0) {
+        const role = vol.eventAssignments?.[activeEventId]?.role;
+        const mappedRole = (!role || role.trim() === '') ? 'Unassigned' : role;
+        if (!selectedRoles.includes(mappedRole)) return false;
       }
-      return matchesSearch && selectedRoles.includes(role);
+
+      // 3. Skill filter match
+      if (selectedSkills.length > 0) {
+        if (!vol.skills) return false;
+        const volSkillsList = vol.skills.split(',').map(s => {
+          const trimmed = s.trim();
+          return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+        });
+        const hasMatchingSkill = selectedSkills.some(skill => volSkillsList.includes(skill));
+        if (!hasMatchingSkill) return false;
+      }
+
+      return true;
     });
-  }, [volunteers, searchTerm, selectedRoles, activeEventId]);
+  }, [volunteers, searchTerm, selectedRoles, selectedSkills, activeEventId]);
 
   // Filter list by letter if selected
   const directoryVolunteers = React.useMemo(() => {
@@ -412,9 +432,9 @@ function VolunteerTable({
       } else if (sortField === 'contactStatus') {
         valA = (a.eventAssignments?.[activeEventId]?.contactStatus || 'Not Contacted').toLowerCase();
         valB = (b.eventAssignments?.[activeEventId]?.contactStatus || 'Not Contacted').toLowerCase();
-      } else if (sortField === 'emailsCount') {
-        valA = a.emails?.length || 0;
-        valB = b.emails?.length || 0;
+      } else if (sortField === 'lastContacted') {
+        valA = a.lastContacted || '';
+        valB = b.lastContacted || '';
       }
 
       if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
@@ -448,9 +468,9 @@ function VolunteerTable({
       } else if (sortField === 'contactStatus') {
         valA = (a.eventAssignments?.[activeEventId]?.contactStatus || 'Not Contacted').toLowerCase();
         valB = (b.eventAssignments?.[activeEventId]?.contactStatus || 'Not Contacted').toLowerCase();
-      } else if (sortField === 'emailsCount') {
-        valA = a.emails?.length || 0;
-        valB = b.emails?.length || 0;
+      } else if (sortField === 'lastContacted') {
+        valA = a.lastContacted || '';
+        valB = b.lastContacted || '';
       }
 
       if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
@@ -473,6 +493,8 @@ function VolunteerTable({
       setEditPhone(selectedVol.phone || '');
       setEditSkills(selectedVol.skills || '');
       setDetailPrivateNotes(selectedVol.notes || '');
+      setDetailLastContacted(selectedVol.lastContacted || '');
+      setDetailContactNotes(selectedVol.contactNotes || '');
       
       const assignment = selectedVol.eventAssignments?.[activeEventId];
       setDetailRole(assignment?.role || '');
@@ -484,6 +506,8 @@ function VolunteerTable({
       setEditPhone('');
       setEditSkills('');
       setDetailPrivateNotes('');
+      setDetailLastContacted('');
+      setDetailContactNotes('');
       setDetailRole('');
       setDetailStation('');
       setDetailNotes('');
@@ -493,7 +517,32 @@ function VolunteerTable({
     setIsEditingPrivateNotes(false);
   }, [activeDirectoryVolId, activeEventId]);
 
-  const renderSortHeader = (field: 'name' | 'email' | 'role' | 'station' | 'contactStatus' | 'emailsCount', label: string) => {
+  // Sync row-level edit state when editingEmailsVolId changes
+  React.useEffect(() => {
+    if (editingEmailsVolId) {
+      const vol = volunteers.find(v => v.id === editingEmailsVolId);
+      if (vol) {
+        setRowLastContacted(vol.lastContacted || '');
+        setRowContactNotes(vol.contactNotes || '');
+      }
+    }
+  }, [editingEmailsVolId, volunteers]);
+
+  const handleSaveRowOutreach = async (volId: string) => {
+    try {
+      await onUpdateVolunteer(volId, {
+        lastContacted: rowLastContacted,
+        contactNotes: rowContactNotes.trim()
+      });
+      showNotification("Outreach contact record saved successfully.", "success");
+      setEditingEmailsVolId(null);
+    } catch (err) {
+      console.error('Failed to save row outreach:', err);
+      showNotification("Could not save contact record.", "error");
+    }
+  };
+
+  const renderSortHeader = (field: 'name' | 'email' | 'role' | 'station' | 'contactStatus' | 'lastContacted', label: string) => {
     const isSorted = sortField === field;
     return (
       <button
@@ -579,7 +628,7 @@ function VolunteerTable({
   const handleBulkAssignRoleStation = async () => {
     if (selectedVolIds.length === 0 || !activeEventId) return;
     if (!bulkRole.trim() && !bulkStation.trim()) {
-      alert("Please specify a Role or a Station to assign.");
+      showNotification("Please specify a Role or a Station to assign.", "error");
       return;
     }
 
@@ -614,45 +663,7 @@ function VolunteerTable({
     }
   };
 
-  const handleAddEmail = async (volId: string) => {
-    const finalSubject = useCustomSubject ? customSubject : emailSubject;
-    if (!finalSubject) return;
 
-    const vol = volunteers.find(v => v.id === volId);
-    if (!vol) return;
-
-    const newEmail: EmailCommunication = {
-      id: `email_${Date.now()}`,
-      dateTime: emailDateTime || '2026-07-07 19:32',
-      subject: finalSubject,
-      sender: emailSender,
-      status: emailStatus
-    };
-
-    const updatedEmails = [...(vol.emails || []), newEmail];
-    await onUpdateVolunteer(volId, { emails: updatedEmails });
-    
-    setCustomSubject('');
-    setUseCustomSubject(false);
-  };
-
-  const handleRemoveEmail = async (volId: string, emailId: string) => {
-    const vol = volunteers.find(v => v.id === volId);
-    if (!vol) return;
-
-    const updatedEmails = (vol.emails || []).filter(e => e.id !== emailId);
-    await onUpdateVolunteer(volId, { emails: updatedEmails });
-  };
-
-  const getStatusBadgeColor = (status: 'Sent' | 'Delivered' | 'Opened' | 'Failed') => {
-    switch (status) {
-      case 'Sent': return 'bg-blue-50 text-blue-700 border-blue-200';
-      case 'Delivered': return 'bg-teal-50 text-teal-700 border-teal-200';
-      case 'Opened': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-      case 'Failed': return 'bg-rose-50 text-rose-700 border-rose-200';
-      default: return 'bg-slate-50 text-slate-700 border-slate-200';
-    }
-  };
 
   const handleOpenNotesModal = (vol: Volunteer) => {
     setNotesModalVolId(vol.id);
@@ -858,105 +869,177 @@ function VolunteerTable({
       {/* Search & Filter Utility Bar */}
       <div className="bg-[#fcfaf7] border border-[#e2dcd0] rounded-xl p-4 shadow-sm hover:shadow-md hover:-translate-y-1 transition duration-200 space-y-3">
         <div className="flex flex-col md:flex-row md:items-center justify-end gap-3">
-          {/* Right: Assigned Role multi-select filter */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-serif font-bold text-slate-500">Filter Roles:</span>
-            
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setShowRoleDropdown(!showRoleDropdown)}
-                className="flex items-center justify-between gap-2 px-3 py-2 bg-white border border-[#e2dcd0] rounded-lg text-xs font-semibold text-slate-700 hover:bg-[#faf8f4] transition cursor-pointer select-none min-w-[160px] shadow-sm"
-              >
-                <span className="truncate">
-                  {selectedRoles.length === 0 
-                    ? 'All Assigned Roles' 
-                    : `${selectedRoles.length} Role${selectedRoles.length > 1 ? 's' : ''} Active`}
-                </span>
-                <span className="text-[10px] text-slate-400">▼</span>
-              </button>
+          {/* Right: Assigned Role & Skills multi-select filters */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-serif font-bold text-slate-500">Filter Roles:</span>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowRoleDropdown(!showRoleDropdown)}
+                  className="flex items-center justify-between gap-2 px-3 py-2 bg-white border border-[#e2dcd0] rounded-lg text-xs font-semibold text-slate-700 hover:bg-[#faf8f4] transition cursor-pointer select-none min-w-[160px] shadow-sm"
+                >
+                  <span className="truncate">
+                    {selectedRoles.length === 0 
+                      ? 'All Assigned Roles' 
+                      : `${selectedRoles.length} Role${selectedRoles.length > 1 ? 's' : ''} Active`}
+                  </span>
+                  <span className="text-[10px] text-slate-400">▼</span>
+                </button>
 
-              {showRoleDropdown && (
-                <>
-                  <div 
-                    className="fixed inset-0 z-10" 
-                    onClick={() => setShowRoleDropdown(false)} 
-                  />
-                  <div className="absolute right-0 mt-1 w-64 bg-[#fcfaf7] border border-[#e2dcd0] rounded-xl shadow-lg z-20 p-3 space-y-2 animate-fadeIn max-h-72 overflow-y-auto">
-                    <div className="flex items-center justify-between pb-1.5 border-b border-[#efe0c2]">
-                      <span className="text-[10px] font-bold uppercase text-slate-400">Assigned Roles</span>
-                      <div className="flex gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedRoles([])}
-                          className="text-[9px] font-bold text-slate-500 hover:text-slate-800 hover:underline cursor-pointer"
-                        >
-                          Reset
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const allOpts = [...allUniqueRoles];
-                            if (hasUnassigned) allOpts.push('Unassigned');
-                            setSelectedRoles(allOpts);
-                          }}
-                          className="text-[9px] font-bold text-[#856637] hover:underline cursor-pointer"
-                        >
-                          Select All
-                        </button>
+                {showRoleDropdown && (
+                  <>
+                    <div 
+                      className="fixed inset-0 z-10" 
+                      onClick={() => setShowRoleDropdown(false)} 
+                    />
+                    <div className="absolute right-0 mt-1 w-64 bg-[#fcfaf7] border border-[#e2dcd0] rounded-xl shadow-lg z-20 p-3 space-y-2 animate-fadeIn max-h-72 overflow-y-auto">
+                      <div className="flex items-center justify-between pb-1.5 border-b border-[#efe0c2]">
+                        <span className="text-[10px] font-bold uppercase text-slate-400">Assigned Roles</span>
+                        <div className="flex gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedRoles([])}
+                            className="text-[9px] font-bold text-slate-500 hover:text-slate-800 hover:underline cursor-pointer"
+                          >
+                            Reset
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const allOpts = [...allUniqueRoles];
+                              if (hasUnassigned) allOpts.push('Unassigned');
+                              setSelectedRoles(allOpts);
+                            }}
+                            className="text-[9px] font-bold text-[#856637] hover:underline cursor-pointer"
+                          >
+                            Select All
+                          </button>
+                        </div>
+                      </div>
+                      <div className="space-y-1.5 pt-1">
+                        {hasUnassigned && (
+                          <label className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-[#faf8f4] cursor-pointer text-xs font-semibold text-slate-700 select-none">
+                            <input
+                              type="checkbox"
+                              checked={selectedRoles.includes('Unassigned')}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedRoles([...selectedRoles, 'Unassigned']);
+                                } else {
+                                  setSelectedRoles(selectedRoles.filter(r => r !== 'Unassigned'));
+                                }
+                              }}
+                              className="accent-[#856637] cursor-pointer"
+                            />
+                            <span className="italic text-slate-500">Unassigned Volunteers</span>
+                          </label>
+                        )}
+                        {allUniqueRoles.map(role => (
+                          <label key={role} className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-[#faf8f4] cursor-pointer text-xs font-semibold text-slate-700 select-none">
+                            <input
+                              type="checkbox"
+                              checked={selectedRoles.includes(role)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedRoles([...selectedRoles, role]);
+                                } else {
+                                  setSelectedRoles(selectedRoles.filter(r => r !== role));
+                                }
+                              }}
+                              className="accent-[#856637] cursor-pointer"
+                            />
+                            <span className="truncate">{role}</span>
+                          </label>
+                        ))}
+                        {allUniqueRoles.length === 0 && !hasUnassigned && (
+                          <p className="text-[10px] text-slate-400 italic text-center py-2">No roles assigned in active event.</p>
+                        )}
                       </div>
                     </div>
-                    <div className="space-y-1.5 pt-1">
-                      {hasUnassigned && (
-                        <label className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-[#faf8f4] cursor-pointer text-xs font-semibold text-slate-700 select-none">
-                          <input
-                            type="checkbox"
-                            checked={selectedRoles.includes('Unassigned')}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedRoles([...selectedRoles, 'Unassigned']);
-                              } else {
-                                setSelectedRoles(selectedRoles.filter(r => r !== 'Unassigned'));
-                              }
-                            }}
-                            className="accent-[#856637] cursor-pointer"
-                          />
-                          <span className="italic text-slate-500">Unassigned Volunteers</span>
-                        </label>
-                      )}
-                      {allUniqueRoles.map(role => (
-                        <label key={role} className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-[#faf8f4] cursor-pointer text-xs font-semibold text-slate-700 select-none">
-                          <input
-                            type="checkbox"
-                            checked={selectedRoles.includes(role)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedRoles([...selectedRoles, role]);
-                              } else {
-                                setSelectedRoles(selectedRoles.filter(r => r !== role));
-                              }
-                            }}
-                            className="accent-[#856637] cursor-pointer"
-                          />
-                          <span className="truncate">{role}</span>
-                        </label>
-                      ))}
-                      {allUniqueRoles.length === 0 && !hasUnassigned && (
-                        <p className="text-[10px] text-slate-400 italic text-center py-2">No roles assigned in active event.</p>
-                      )}
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-serif font-bold text-slate-500">Filter Skills:</span>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowSkillDropdown(!showSkillDropdown)}
+                  className="flex items-center justify-between gap-2 px-3 py-2 bg-white border border-[#e2dcd0] rounded-lg text-xs font-semibold text-slate-700 hover:bg-[#faf8f4] transition cursor-pointer select-none min-w-[160px] shadow-sm"
+                >
+                  <span className="truncate">
+                    {selectedSkills.length === 0 
+                      ? 'All Skills' 
+                      : `${selectedSkills.length} Skill${selectedSkills.length > 1 ? 's' : ''} Active`}
+                  </span>
+                  <span className="text-[10px] text-slate-400">▼</span>
+                </button>
+
+                {showSkillDropdown && (
+                  <>
+                    <div 
+                      className="fixed inset-0 z-10" 
+                      onClick={() => setShowSkillDropdown(false)} 
+                    />
+                    <div className="absolute right-0 mt-1 w-64 bg-[#fcfaf7] border border-[#e2dcd0] rounded-xl shadow-lg z-20 p-3 space-y-2 animate-fadeIn max-h-72 overflow-y-auto">
+                      <div className="flex items-center justify-between pb-1.5 border-b border-[#efe0c2]">
+                        <span className="text-[10px] font-bold uppercase text-slate-400">Volunteer Skills</span>
+                        <div className="flex gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedSkills([])}
+                            className="text-[9px] font-bold text-slate-500 hover:text-slate-800 hover:underline cursor-pointer"
+                          >
+                            Reset
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedSkills([...allUniqueSkills])}
+                            className="text-[9px] font-bold text-[#856637] hover:underline cursor-pointer"
+                          >
+                            Select All
+                          </button>
+                        </div>
+                      </div>
+                      <div className="space-y-1.5 pt-1">
+                        {allUniqueSkills.map(skill => (
+                          <label key={skill} className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-[#faf8f4] cursor-pointer text-xs font-semibold text-slate-700 select-none">
+                            <input
+                              type="checkbox"
+                              checked={selectedSkills.includes(skill)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedSkills([...selectedSkills, skill]);
+                                } else {
+                                  setSelectedSkills(selectedSkills.filter(s => s !== skill));
+                                }
+                              }}
+                              className="accent-[#856637] cursor-pointer"
+                            />
+                            <span className="truncate">{skill}</span>
+                          </label>
+                        ))}
+                        {allUniqueSkills.length === 0 && (
+                          <p className="text-[10px] text-slate-400 italic text-center py-2">No skills registered.</p>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </>
-              )}
+                  </>
+                )}
+              </div>
             </div>
 
             {/* Clear Filters Button */}
-            {(searchTerm || selectedRoles.length > 0) && (
+            {(searchTerm || selectedRoles.length > 0 || selectedSkills.length > 0) && (
               <button
                 type="button"
                 onClick={() => {
                   setSearchTerm('');
                   setSelectedRoles([]);
+                  setSelectedSkills([]);
                 }}
                 className="text-xs font-semibold text-rose-600 hover:text-rose-700 hover:underline px-2 py-1 cursor-pointer"
               >
@@ -966,15 +1049,53 @@ function VolunteerTable({
           </div>
         </div>
 
+        {/* Staffing Skills Filter Chips */}
+        {allUniqueSkills.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-[#efe0c2]/40">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-450 mr-1 flex items-center gap-1">
+              <Sparkles size={10} className="text-[#c2aa80]" /> Staffing Skills:
+            </span>
+            {allUniqueSkills.map(skill => {
+              const isSelected = selectedSkills.includes(skill);
+              return (
+                <button
+                  key={skill}
+                  type="button"
+                  onClick={() => {
+                    if (isSelected) {
+                      setSelectedSkills(selectedSkills.filter(s => s !== skill));
+                    } else {
+                      setSelectedSkills([...selectedSkills, skill]);
+                    }
+                  }}
+                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold border transition cursor-pointer ${
+                    isSelected
+                      ? 'bg-[#856637] text-white border-transparent shadow-xs'
+                      : 'bg-white text-slate-600 border-[#efe0c2] hover:bg-[#faf8f4]'
+                  }`}
+                >
+                  {skill}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* Info label about active filters */}
-        {(searchTerm || selectedRoles.length > 0) && (
+        {(searchTerm || selectedRoles.length > 0 || selectedSkills.length > 0) && (
           <div className="text-[11px] text-slate-500 flex items-center gap-1 bg-[#faf8f4] border border-[#efe0c2]/50 px-3 py-1.5 rounded-lg animate-fadeIn">
             <span className="font-semibold text-[#856637]">Active Filters:</span>
             {searchTerm && <span>Search for <strong className="text-slate-700">"{searchTerm}"</strong></span>}
-            {searchTerm && selectedRoles.length > 0 && <span className="mx-1">•</span>}
+            {searchTerm && (selectedRoles.length > 0 || selectedSkills.length > 0) && <span className="mx-1">•</span>}
             {selectedRoles.length > 0 && (
-              <span className="truncate">
+              <span className="truncate max-w-[200px]" title={selectedRoles.join(', ')}>
                 Roles: <strong className="text-slate-700">{selectedRoles.join(', ')}</strong>
+              </span>
+            )}
+            {selectedRoles.length > 0 && selectedSkills.length > 0 && <span className="mx-1">•</span>}
+            {selectedSkills.length > 0 && (
+              <span className="truncate max-w-[200px]" title={selectedSkills.join(', ')}>
+                Skills: <strong className="text-slate-700">{selectedSkills.join(', ')}</strong>
               </span>
             )}
             <span className="ml-auto text-slate-400 font-mono text-[10px] shrink-0">
@@ -1121,7 +1242,7 @@ function VolunteerTable({
                 <th className="p-4">{renderSortHeader('role', `Assigned Role (${activeEvent?.name || 'Selected Event'})`)}</th>
                 <th className="p-4">{renderSortHeader('station', `Assigned Station (${activeEvent?.name || 'Selected Event'})`)}</th>
                 <th className="p-4 text-center">Notes</th>
-                <th className="p-4">{renderSortHeader('emailsCount', 'Communications')}</th>
+                <th className="p-4">{renderSortHeader('lastContacted', 'Last Contacted')}</th>
                 <th className="p-4 text-right">Actions</th>
               </tr>
             </thead>
@@ -1177,6 +1298,7 @@ function VolunteerTable({
                   // Get active event assignment
                   const assignment = vol.eventAssignments?.[activeEventId];
                   const hasAssignment = !!assignment;
+                  const assignedEventsCount = vol.eventAssignments ? Object.keys(vol.eventAssignments).length : 0;
 
                   return (
                     <React.Fragment key={vol.id}>
@@ -1197,7 +1319,18 @@ function VolunteerTable({
                         </td>
                         {/* Identity & Skills */}
                         <td className="p-4 max-w-sm relative group cursor-default">
-                          <p className="font-serif text-sm font-bold text-[#1e293b]">{vol.name}</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-serif text-sm font-bold text-[#1e293b]">{vol.name}</p>
+                            {assignedEventsCount > 0 ? (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-[#efe5d3] text-[#5c4424] border border-[#d6c7ae]/30 shadow-xs shrink-0">
+                                Assigned to {assignedEventsCount} event{assignedEventsCount !== 1 ? 's' : ''}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-slate-100 text-slate-500 border border-slate-200/50 shadow-xs shrink-0">
+                                Unassigned
+                              </span>
+                            )}
+                          </div>
                           <p className="text-[10px] text-slate-450 font-mono mt-0.5">{vol.email} • {vol.phone || 'No phone'}</p>
                           {vol.skills && (
                             <div className="mt-1.5 flex flex-wrap gap-1">
@@ -1295,27 +1428,26 @@ function VolunteerTable({
                           </div>
                         </td>
 
-                        {/* Email Tracking Summary */}
+                        {/* Contact Outreach Summary */}
                         <td className="p-4">
-                          <div className="space-y-1">
+                          <div className="space-y-1 text-xs">
                             <p className="font-bold text-slate-700 flex items-center gap-1 text-[10px]">
                               <Mail size={11} className="text-slate-400" />
-                              {totalEmails} Logged {totalEmails === 1 ? 'Email' : 'Emails'}
+                              Last Contacted
                             </p>
-                            {lastEmail ? (
+                            {vol.lastContacted ? (
                               <div className="space-y-0.5">
-                                <p className="text-[9px] text-slate-500 font-medium truncate max-w-[150px]">
-                                  Last: <span className="text-slate-700 font-semibold">"{lastEmail.subject}"</span>
+                                <p className="text-[9px] font-mono text-slate-600 font-semibold">
+                                  {vol.lastContacted}
                                 </p>
-                                <div className="flex items-center gap-1.5">
-                                  <span className={`inline-block text-[8px] font-bold px-1.5 py-0.1 border rounded-full ${getStatusBadgeColor(lastEmail.status)}`}>
-                                    {lastEmail.status}
-                                  </span>
-                                  <span className="text-[8px] text-slate-400 font-mono">{lastEmail.dateTime}</span>
-                                </div>
+                                {vol.contactNotes && (
+                                  <p className="text-[9px] text-slate-500 italic truncate max-w-[150px]" title={vol.contactNotes}>
+                                    "{vol.contactNotes}"
+                                  </p>
+                                )}
                               </div>
                             ) : (
-                              <p className="text-[9px] text-slate-400 italic">No history</p>
+                              <p className="text-[9px] text-slate-400 italic">Never contacted</p>
                             )}
                           </div>
                         </td>
@@ -1323,6 +1455,17 @@ function VolunteerTable({
                         {/* Actions */}
                         <td className="p-4 text-right">
                           <div className="flex justify-end gap-1.5 items-center">
+                            {vol.email && (
+                              <a
+                                href={`mailto:${vol.email}?subject=${encodeURIComponent('Ministry Outreach + Volunteer Recruitment')}`}
+                                className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border bg-white hover:bg-[#faf8f4] text-slate-700 border-[#e2dcd0] shadow-sm cursor-pointer flex items-center gap-1 shrink-0"
+                                title={`Compose email to ${vol.name} using your local mail client`}
+                              >
+                                <Send size={12} className="text-slate-500" />
+                                <span>Email</span>
+                              </a>
+                            )}
+
                             <button
                               onClick={() => {
                                 setEditingEmailsVolId(editingEmailsVolId === vol.id ? null : vol.id);
@@ -1333,10 +1476,10 @@ function VolunteerTable({
                                   ? 'bg-amber-50 text-[#856637] border-[#efe0c2]' 
                                   : 'bg-[#1e293b] hover:bg-[#0f172a] text-[#faf8f4] border-transparent'
                               }`}
-                              title="Email Communications Tracker"
+                              title="Contact Outreach Logger"
                             >
                               <Mail size={12} />
-                              <span>Emails ({totalEmails})</span>
+                              <span>Outreach</span>
                             </button>
 
                             <button
@@ -1379,151 +1522,70 @@ function VolunteerTable({
                       </tr>
 
                       {/* Interactive Email Communication Tracker Sub-panel */}
+                      {/* Interactive Contact Outreach Record Sub-panel */}
                       {editingEmailsVolId === vol.id && (
-                        <tr className="bg-[#fcfbf9] border-y border-[#efe0c2]/60 shadow-inner">
+                        <tr className="bg-[#fcfbf9] border-y border-[#efe0c2]/60 shadow-inner animate-fadeIn">
                           <td colSpan={7} className="p-6">
-                            <div className="space-y-4">
+                            <div className="max-w-xl space-y-4">
                               <div className="flex items-center justify-between border-b border-[#efe0c2] pb-2">
                                 <div className="flex items-center gap-1.5 text-sm text-[#1e293b] font-bold font-serif">
                                   <Mail size={16} className="text-[#856637]" />
-                                  Email Communications Tracker for {vol.name}
+                                  Outreach Contact Record for {vol.name}
                                 </div>
-                                <span className="text-[10px] text-slate-400 font-mono">
-                                  Logged: {totalEmails} messages
-                                </span>
                               </div>
 
-                              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                                <div className="lg:col-span-7 space-y-3">
-                                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-450 flex items-center gap-1">
-                                    <Inbox size={12} /> Outgoing History &amp; Status Logs
-                                  </h4>
-                                  
-                                  {(!vol.emails || vol.emails.length === 0) ? (
-                                    <div className="bg-white border border-dashed border-[#e2dcd0] p-6 rounded-xl text-center text-slate-400 italic text-xs">
-                                      No email records logged. Fill out the tracker form to record a communication.
-                                    </div>
-                                  ) : (
-                                    <div className="bg-white rounded-xl border border-[#e2dcd0] overflow-hidden shadow-xs divide-y divide-slate-100">
-                                      {vol.emails.map((emailItem) => (
-                                        <div key={emailItem.id} className="p-3 hover:bg-slate-50 transition flex items-start justify-between gap-3 text-xs">
-                                          <div className="space-y-1 min-w-0">
-                                            <p className="font-bold text-slate-800 flex items-center gap-1">
-                                              <span className="text-[#856637]">✉</span> {emailItem.subject}
-                                            </p>
-                                            <p className="text-[10px] text-slate-500">
-                                              Sender: <span className="font-semibold text-slate-700">{emailItem.sender}</span> • Logged on <span className="font-mono text-slate-600">{emailItem.dateTime}</span>
-                                            </p>
-                                          </div>
-                                          <div className="flex items-center gap-2 shrink-0">
-                                            <span className={`text-[9px] font-extrabold px-2 py-0.5 border rounded-full ${getStatusBadgeColor(emailItem.status)}`}>
-                                              {emailItem.status}
-                                            </span>
-                                            <button
-                                              onClick={() => handleRemoveEmail(vol.id, emailItem.id)}
-                                              className="p-1 text-slate-355 hover:text-rose-600 transition cursor-pointer"
-                                              title="Delete Log Entry"
-                                            >
-                                              <X size={12} />
-                                            </button>
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
+                              <div className="space-y-3">
+                                <div>
+                                  <label className="block text-[10px] font-bold uppercase text-slate-450 mb-1">
+                                    Last Contacted Date
+                                  </label>
+                                  <input
+                                    type="date"
+                                    value={rowLastContacted}
+                                    onChange={e => setRowLastContacted(e.target.value)}
+                                    className="text-xs p-2 rounded-lg border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-semibold text-slate-800"
+                                  />
                                 </div>
 
-                                <div className="lg:col-span-5 bg-white p-4 rounded-xl border border-[#efe0c2] space-y-3">
-                                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-[#856637] flex items-center gap-1.5 border-b border-dashed border-[#efe0c2] pb-1.5">
-                                    <Send size={12} /> Track Outgoing Email
-                                  </h4>
+                                <div>
+                                  <label className="block text-[10px] font-bold uppercase text-slate-450 mb-1">
+                                    Contact Notes
+                                  </label>
+                                  <textarea
+                                    value={rowContactNotes}
+                                    rows={3}
+                                    onChange={e => setRowContactNotes(e.target.value)}
+                                    className="w-full text-xs p-2 rounded-lg border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80]"
+                                    placeholder="Summary of communications, emails sent, phone call response, or scheduling alignment..."
+                                  />
+                                </div>
 
-                                  <div className="space-y-2.5">
-                                    <div>
-                                      <div className="flex justify-between items-center mb-1">
-                                        <label className="block text-[9px] font-bold uppercase text-slate-450">Subject Line</label>
-                                        <button 
-                                          type="button"
-                                          onClick={() => setUseCustomSubject(!useCustomSubject)}
-                                          className="text-[9px] font-extrabold text-[#856637] hover:underline"
-                                        >
-                                          {useCustomSubject ? 'Use Preset List' : 'Write Custom Subject'}
-                                        </button>
-                                      </div>
-
-                                      {useCustomSubject ? (
-                                        <input
-                                          type="text"
-                                          placeholder="e.g. Action Required: Schedule Conflict Details"
-                                          value={customSubject}
-                                          onChange={e => setCustomSubject(e.target.value)}
-                                          className="w-full text-xs p-2 rounded-lg border border-[#efe0c2] bg-[#faf8f4] focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-semibold"
-                                        />
-                                      ) : (
-                                        <select
-                                          value={emailSubject}
-                                          onChange={e => setEmailSubject(e.target.value)}
-                                          className="w-full text-xs p-2 rounded-lg border border-[#efe0c2] bg-[#faf8f4] focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-semibold text-slate-800"
-                                        >
-                                          <option value="Ministry Outreach + Volunteer Recruitment">Ministry Outreach + Volunteer Recruitment</option>
-                                          <option value="Sorting Day Reminder -- Day 1">Sorting Day Reminder -- Day 1</option>
-                                          <option value="Volunteer Handbook + Welcome!">Volunteer Handbook + Welcome!</option>
-                                          <option value="Sorting Day Reminder -- Day 2">Sorting Day Reminder -- Day 2</option>
-                                          <option value="Volunteer Breakfast Confirmation">Volunteer Breakfast Confirmation</option>
-                                          <option value="Post-event Thank you to all Volunteers">Post-event Thank you to all Volunteers</option>
-                                        </select>
-                                      )}
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-3">
-                                      <div>
-                                        <label className="block text-[9px] font-bold uppercase text-slate-450 mb-1">Sender</label>
-                                        <select
-                                          value={emailSender}
-                                          onChange={e => setEmailSender(e.target.value)}
-                                          className="w-full text-xs p-2 rounded-lg border border-[#efe0c2] bg-[#faf8f4] focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-semibold text-slate-800"
-                                        >
-                                          <option value="Joy P.">Joy P.</option>
-                                          <option value="Iya G.">Iya G.</option>
-                                          <option value="Bea P.">Bea P.</option>
-                                          <option value="Neil S.">Neil S.</option>
-                                          <option value="System Auto">System Auto</option>
-                                        </select>
-                                      </div>
-                                      <div>
-                                        <label className="block text-[9px] font-bold uppercase text-slate-450 mb-1">Tracking Status</label>
-                                        <select
-                                          value={emailStatus}
-                                          onChange={e => setEmailStatus(e.target.value as any)}
-                                          className="w-full text-xs p-2 rounded-lg border border-[#efe0c2] bg-[#faf8f4] focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-semibold text-slate-800"
-                                        >
-                                          <option value="Sent">Sent</option>
-                                          <option value="Delivered">Delivered</option>
-                                          <option value="Opened">Opened</option>
-                                          <option value="Failed">Failed</option>
-                                        </select>
-                                      </div>
-                                    </div>
-
-                                    <div>
-                                      <label className="block text-[9px] font-bold uppercase text-slate-450 mb-1">Date &amp; Time Outbound</label>
-                                      <input
-                                        type="text"
-                                        placeholder="YYYY-MM-DD HH:mm (e.g. 2026-07-07 19:32)"
-                                        value={emailDateTime}
-                                        onChange={e => setEmailDateTime(e.target.value)}
-                                        className="w-full text-xs p-2 rounded-lg border border-[#efe0c2] bg-[#faf8f4] focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-mono font-bold"
-                                      />
-                                    </div>
-
-                                    <button
-                                      type="button"
-                                      onClick={() => handleAddEmail(vol.id)}
-                                      className="w-full py-2 bg-[#1e293b] hover:bg-[#0f172a] text-[#faf8f4] text-xs font-bold rounded-lg transition cursor-pointer flex items-center justify-center gap-1.5 shadow-sm mt-1"
+                                <div className="flex gap-2">
+                                  {vol.email && (
+                                    <a
+                                      href={`mailto:${vol.email}?subject=${encodeURIComponent('Ministry Outreach + Volunteer Recruitment')}`}
+                                      className="py-2 px-3 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-lg border border-[#e2dcd0] transition cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+                                      title="Open local email composer"
                                     >
-                                      <Send size={12} /> Record Outgoing Email
-                                    </button>
-                                  </div>
+                                      <Mail size={12} className="text-slate-500" />
+                                      <span>Open Composer</span>
+                                    </a>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveRowOutreach(vol.id)}
+                                    className="py-2 px-4 bg-[#1e293b] hover:bg-[#0f172a] text-[#faf8f4] text-xs font-bold rounded-lg transition cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+                                  >
+                                    <Check size={12} />
+                                    <span>Save Contact Record</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingEmailsVolId(null)}
+                                    className="py-2 px-3 bg-white hover:bg-slate-50 text-slate-550 text-xs font-bold rounded-lg border border-[#e2dcd0] transition cursor-pointer"
+                                  >
+                                    Cancel
+                                  </button>
                                 </div>
                               </div>
                             </div>
@@ -1760,7 +1822,7 @@ function VolunteerTable({
                       {renderSortHeader('contactStatus', 'Outreach / Contact Status')}
                     </th>
                     <th className="py-2.5 px-3 min-w-[120px]">
-                      {renderSortHeader('emailsCount', 'Outreach Logs')}
+                      {renderSortHeader('lastContacted', 'Last Contacted')}
                     </th>
                     <th className="py-2.5 px-3 w-28 text-right">Actions</th>
                   </tr>
@@ -1811,7 +1873,7 @@ function VolunteerTable({
                       const status = assignment?.contactStatus || 'Not Contacted';
                       const hasSkills = vol.skills && vol.skills.trim() !== '';
                       const hasNotes = vol.notes && vol.notes.trim() !== '';
-                      const emailsCount = vol.emails?.length || 0;
+                      const assignedEventsCount = vol.eventAssignments ? Object.keys(vol.eventAssignments).length : 0;
 
                       return (
                         <React.Fragment key={vol.id}>
@@ -1829,13 +1891,22 @@ function VolunteerTable({
                                   {getInitials(vol.name)}
                                 </div>
                                 <div className="min-w-0">
-                                  <div className="font-serif font-bold text-[#1e293b] leading-snug truncate flex items-center gap-1.5">
-                                    <span className="truncate">{vol.name}</span>
+                                  <div className="font-serif font-bold text-[#1e293b] leading-snug flex flex-wrap items-center gap-1.5">
+                                    <span className="truncate max-w-[120px]" title={vol.name}>{vol.name}</span>
                                     {hasSkills && (
                                       <Sparkles size={10} className="text-[#856637]" title={`Skills: ${vol.skills}`} />
                                     )}
                                     {hasNotes && (
                                       <StickyNote size={10} className="text-slate-400" title={`Notes: ${vol.notes}`} />
+                                    )}
+                                    {assignedEventsCount > 0 ? (
+                                      <span className="inline-flex items-center px-1.5 py-0.2 rounded-full text-[8px] font-bold bg-[#efe5d3] text-[#5c4424] border border-[#d6c7ae]/30 shadow-xs shrink-0" title={`Assigned to ${assignedEventsCount} events`}>
+                                        {assignedEventsCount} event{assignedEventsCount !== 1 ? 's' : ''}
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center px-1.5 py-0.2 rounded-full text-[8px] font-semibold bg-slate-100 text-slate-500 border border-slate-200/50 shadow-xs shrink-0">
+                                        Unassigned
+                                      </span>
                                     )}
                                   </div>
                                   <div className="text-[10px] text-slate-450 truncate flex items-center gap-1.5">
@@ -1918,22 +1989,38 @@ function VolunteerTable({
                               </select>
                             </td>
 
-                            {/* Communication Outreach Logs count & last action */}
+                            {/* Contact Outreach Last Date & Notes */}
                             <td className="py-2.5 px-3">
-                              <div className="flex items-center gap-1.5 text-slate-500">
-                                <Mail size={11} className="text-slate-400 shrink-0" />
-                                <span className="font-bold text-[10px] font-mono">{emailsCount} logs</span>
-                                {emailsCount > 0 && (
-                                  <span className="text-[9px] text-slate-400 truncate max-w-[100px]" title={`Last subject: ${vol.emails?.[emailsCount - 1]?.subject}`}>
-                                    ({vol.emails?.[emailsCount - 1]?.subject})
-                                  </span>
-                                )}
-                              </div>
+                              {vol.lastContacted ? (
+                                <div className="space-y-0.5">
+                                  <div className="flex items-center gap-1 font-bold text-[10px] font-mono text-slate-750">
+                                    <Mail size={11} className="text-slate-400 shrink-0" />
+                                    <span>{vol.lastContacted}</span>
+                                  </div>
+                                  {vol.contactNotes && (
+                                    <p className="text-[9px] text-slate-400 italic truncate max-w-[120px]" title={vol.contactNotes}>
+                                      "{vol.contactNotes}"
+                                    </p>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 italic">Never contacted</span>
+                              )}
                             </td>
 
                             {/* Actions column */}
                             <td className="py-2.5 px-3 text-right">
                               <div className="flex justify-end items-center gap-1.5">
+                                {vol.email && (
+                                  <a
+                                    href={`mailto:${vol.email}?subject=${encodeURIComponent('Ministry Outreach + Volunteer Recruitment')}`}
+                                    className="px-2 py-1 text-[10px] font-bold rounded border bg-white hover:bg-[#faf6ee]/30 border-slate-200 text-slate-700 cursor-pointer flex items-center gap-0.5 shrink-0"
+                                    title={`Compose email to ${vol.name} using your local mail client`}
+                                  >
+                                    <Send size={11} className="text-slate-500" />
+                                    <span>Email</span>
+                                  </a>
+                                )}
                                 <button
                                   onClick={() => setSelectedVolId(selectedVolId === vol.id ? null : vol.id)}
                                   className={`px-2 py-1 text-[10px] font-bold rounded border transition-all cursor-pointer flex items-center gap-0.5 ${
@@ -2263,131 +2350,58 @@ function VolunteerTable({
                                       )}
                                     </div>
 
-                                    {/* Sub-panel 4: Email outbound logs */}
+                                    {/* Sub-panel 4: Outreach Contact Record */}
                                     <div className="bg-white border border-[#e2dcd0] p-4 rounded-xl shadow-xs space-y-3">
-                                      <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-450 flex items-center gap-1.5 border-b border-dashed border-slate-200 pb-1.5">
-                                        <Mail size={12} /> Communication Outreach Tracker
-                                      </h4>
+                                      <div className="flex justify-between items-center border-b border-[#efe0c2]/60 pb-1.5">
+                                        <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-450 flex items-center gap-1.5">
+                                          <Mail size={12} /> Contact Outreach Details
+                                        </h4>
+                                      </div>
 
-                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        {/* Outbound Logs list */}
-                                        <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-1">
-                                          {(!vol.emails || vol.emails.length === 0) ? (
-                                            <div className="bg-slate-50 border border-dashed border-slate-200 p-4 rounded text-center text-slate-400 italic text-[11px]">
-                                              No outbound communication logged.
-                                            </div>
-                                          ) : (
-                                            <div className="border border-slate-100 rounded overflow-hidden divide-y divide-slate-50">
-                                              {vol.emails.map((emailItem) => (
-                                                <div key={emailItem.id} className="p-1.5 bg-slate-50/50 hover:bg-slate-50 transition flex items-start justify-between gap-1 text-[11px]">
-                                                  <div className="min-w-0">
-                                                    <p className="font-bold text-slate-800 truncate" title={emailItem.subject}>
-                                                      {emailItem.subject}
-                                                    </p>
-                                                    <p className="text-[9px] text-slate-455 mt-0.5">
-                                                      {emailItem.sender} • <span className="font-mono">{emailItem.dateTime}</span>
-                                                    </p>
-                                                  </div>
-                                                  <div className="flex items-center gap-1 shrink-0">
-                                                    <span className={`text-[8px] font-bold px-1.5 border rounded-full ${getStatusBadgeColor(emailItem.status)}`}>
-                                                      {emailItem.status}
-                                                    </span>
-                                                    <button
-                                                      onClick={() => handleRemoveEmail(vol.id, emailItem.id)}
-                                                      className="p-0.5 text-slate-300 hover:text-rose-600 transition cursor-pointer"
-                                                      title="Delete Log"
-                                                    >
-                                                      <X size={9} />
-                                                    </button>
-                                                  </div>
-                                                </div>
-                                              ))}
-                                            </div>
-                                          )}
+                                      <div className="space-y-3 text-xs">
+                                        <div>
+                                          <label className="block text-[9px] font-bold uppercase text-slate-400 mb-1">
+                                            Last Contacted Date
+                                          </label>
+                                          <input
+                                            type="date"
+                                            value={detailLastContacted}
+                                            onChange={e => setDetailLastContacted(e.target.value)}
+                                            className="w-full text-xs p-1.5 rounded border border-[#efe0c2] bg-white focus:outline-none"
+                                          />
                                         </div>
 
-                                        {/* Outbound logger form */}
-                                        <div className="bg-[#fcfaf7] p-2.5 rounded border border-[#efe0c2]/60 space-y-2">
-                                          <div className="flex justify-between items-center">
-                                            <span className="text-[8px] font-bold uppercase text-[#856637] flex items-center gap-1 font-bold">
-                                              <Send size={8} /> Log New Email Action
-                                            </span>
-                                            <button
-                                              onClick={() => setDetailUseCustomSubject(!detailUseCustomSubject)}
-                                              className="text-[8px] font-bold text-[#856637] hover:underline cursor-pointer bg-transparent border-0"
-                                            >
-                                              {detailUseCustomSubject ? 'Presets' : 'Custom'}
-                                            </button>
-                                          </div>
+                                        <div>
+                                          <label className="block text-[9px] font-bold uppercase text-slate-400 mb-1">
+                                            Contact Outreach Notes
+                                          </label>
+                                          <textarea
+                                            value={detailContactNotes}
+                                            rows={3.5}
+                                            onChange={e => setDetailContactNotes(e.target.value)}
+                                            className="w-full text-xs p-2 rounded border border-[#efe0c2] bg-white focus:outline-none"
+                                            placeholder="Write summary of email conversations, direct contact details, or notes..."
+                                          />
+                                        </div>
 
-                                          {detailUseCustomSubject ? (
-                                            <input
-                                              type="text"
-                                              placeholder="Custom subject line..."
-                                              value={detailCustomSubject}
-                                              onChange={e => setDetailCustomSubject(e.target.value)}
-                                              className="w-full text-[10px] p-1 rounded border border-[#efe0c2] bg-white focus:outline-none"
-                                            />
-                                          ) : (
-                                            <select
-                                              value={detailEmailSubject}
-                                              onChange={e => setDetailEmailSubject(e.target.value)}
-                                              className="w-full text-[10px] p-1 rounded border border-[#efe0c2] bg-white focus:outline-none font-semibold text-slate-800"
+                                        <div className="flex gap-2">
+                                          {vol.email && (
+                                            <a
+                                              href={`mailto:${vol.email}?subject=${encodeURIComponent('Ministry Outreach + Volunteer Recruitment')}`}
+                                              className="py-1.5 px-3 border border-[#efe0c2] bg-white hover:bg-slate-50 text-slate-705 text-[10px] font-bold rounded-lg cursor-pointer flex items-center justify-center gap-1 shrink-0"
+                                              title="Open email client"
                                             >
-                                              <option value="Ministry Outreach + Volunteer Recruitment">Ministry Outreach + Volunteer Recruitment</option>
-                                              <option value="Sorting Day Reminder -- Day 1">Sorting Day Reminder -- Day 1</option>
-                                              <option value="Volunteer Handbook + Welcome!">Volunteer Handbook + Welcome!</option>
-                                              <option value="Sorting Day Reminder -- Day 2">Sorting Day Reminder -- Day 2</option>
-                                              <option value="Volunteer Breakfast Confirmation">Volunteer Breakfast Confirmation</option>
-                                              <option value="Post-event Thank you to all Volunteers">Post-event Thank you to all Volunteers</option>
-                                            </select>
+                                              <Mail size={12} className="text-slate-500" />
+                                              <span>Compose</span>
+                                            </a>
                                           )}
-
-                                          <div className="grid grid-cols-2 gap-1.5 font-medium">
-                                            <div>
-                                              <label className="block text-[7px] font-bold uppercase text-slate-450 mb-0.5">Sender</label>
-                                              <select
-                                                value={detailEmailSender}
-                                                onChange={e => setDetailEmailSender(e.target.value)}
-                                                className="w-full text-[9px] p-1 rounded border border-[#efe0c2] bg-white focus:outline-none font-semibold text-[#1e293b]"
-                                              >
-                                                <option value="Joy P.">Joy P.</option>
-                                                <option value="Iya G.">Iya G.</option>
-                                                <option value="Bea P.">Bea P.</option>
-                                                <option value="Neil S.">Neil S.</option>
-                                                <option value="System Auto">System Auto</option>
-                                              </select>
-                                            </div>
-                                            <div>
-                                              <label className="block text-[7px] font-bold uppercase text-slate-450 mb-0.5">Status</label>
-                                              <select
-                                                value={detailEmailStatus}
-                                                onChange={e => setDetailEmailStatus(e.target.value as any)}
-                                                className="w-full text-[9px] p-1 rounded border border-[#efe0c2] bg-white focus:outline-none font-semibold text-[#1e293b]"
-                                              >
-                                                <option value="Sent">Sent</option>
-                                                <option value="Delivered">Delivered</option>
-                                                <option value="Opened">Opened</option>
-                                                <option value="Failed">Failed</option>
-                                              </select>
-                                            </div>
-                                          </div>
-
-                                          <div className="flex gap-1.5 items-center">
-                                            <input
-                                              type="text"
-                                              value={detailEmailDateTime}
-                                              onChange={e => setDetailEmailDateTime(e.target.value)}
-                                              className="flex-1 text-[8px] p-1 rounded border border-[#efe0c2] bg-white font-mono font-bold"
-                                              placeholder="YYYY-MM-DD HH:MM"
-                                            />
-                                            <button
-                                              onClick={handleAddEmailDirect}
-                                              className="py-1 px-2.5 bg-[#1e293b] text-[#faf8f4] text-[9px] font-bold rounded cursor-pointer"
-                                            >
-                                              Log Outbound
-                                            </button>
-                                          </div>
+                                          <button
+                                            onClick={handleSaveOutreach}
+                                            className="w-full py-1.5 bg-[#1e293b] text-[#faf8f4] text-[10px] font-bold rounded-lg cursor-pointer flex items-center justify-center gap-1 shadow-sm hover:bg-[#0f172a]"
+                                          >
+                                            <Check size={12} />
+                                            <span>Save Contact Record</span>
+                                          </button>
                                         </div>
                                       </div>
                                     </div>
