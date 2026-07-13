@@ -124,7 +124,6 @@ export interface Volunteer {
   roles: string[]; // List of currently assigned Roles/Stations
   skills?: string; // Foundational skills/interests
   notes?: string;
-  hasVulnerableSectorCheck?: boolean;
   emails?: EmailCommunication[]; // Email communication tracker entries
   eventAssignments?: Record<string, VolunteerEventAssignment>; // map of eventId -> assignment
 }

@@ -25,6 +25,7 @@ import {
   Zap,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   LayoutGrid,
   List,
   Upload, Copy,
@@ -56,7 +57,6 @@ interface SummaryData {
   completedTasks: number;
   missingHighValueCount: number;
   overburdenedVolunteersCount: number;
-  nonCompliantVolunteersCount: number;
 }
 
 interface DashboardOverviewProps {
@@ -176,10 +176,6 @@ function DashboardOverview({
 
   const [newLaneName, setNewLaneName] = React.useState('');
   const [newLaneLeadName, setNewLaneLeadName] = React.useState('');
-
-  const [showBurnoutModal, setShowBurnoutModal] = React.useState(false);
-  const [hoveredBurnout, setHoveredBurnout] = React.useState(false);
-
   // Quick Actions Menu State
   const [isQuickActionsOpen, setIsQuickActionsOpen] = React.useState(false);
   const [activeQuickAction, setActiveQuickAction] = React.useState<'task' | 'volunteer' | 'event' | null>(null);
@@ -212,7 +208,6 @@ function DashboardOverview({
   const [cloneEventNewDate, setCloneEventNewDate] = React.useState('');
   const [isCloning, setIsCloning] = React.useState(false);
 
-  const burnoutModalRef = useFocusTrap(showBurnoutModal, () => setShowBurnoutModal(false));
   const quickActionModalRef = useFocusTrap(!!activeQuickAction, () => setActiveQuickAction(null));
   const cloneEventModalRef = useFocusTrap(!!cloneEventTargetId, () => {
     setCloneEventTargetId(null);
@@ -220,13 +215,10 @@ function DashboardOverview({
   });
 
   // Search and Filter states for Events
-  const [eventSearchTerm, setEventSearchTerm] = React.useState('');
   const [eventStatusFilter, setEventStatusFilter] = React.useState<'all' | 'upcoming' | 'finished'>('all');
 
   const filteredEvents = React.useMemo(() => {
     return events.filter(event => {
-      const matchesSearch = event.name.toLowerCase().includes(eventSearchTerm.toLowerCase().trim());
-      
       const [y1, m1, dd1] = event.date.split('-');
       const eventDate = new Date(parseInt(y1, 10), parseInt(m1, 10) - 1, parseInt(dd1, 10));
       const today = new Date(2026, 6, 6); // July 6, 2026
@@ -236,13 +228,13 @@ function DashboardOverview({
       const daysOut = isNaN(diffDays) ? 0 : diffDays;
 
       if (eventStatusFilter === 'upcoming') {
-        return matchesSearch && daysOut >= 0;
+        return daysOut >= 0;
       } else if (eventStatusFilter === 'finished') {
-        return matchesSearch && daysOut < 0;
+        return daysOut < 0;
       }
-      return matchesSearch;
+      return true;
     });
-  }, [events, eventSearchTerm, eventStatusFilter]);
+  }, [events, eventStatusFilter]);
 
 
 
@@ -436,30 +428,27 @@ function DashboardOverview({
   });
 
   // 2. Map lanes to leads
-  const leadStatsMap: Record<string, { leadName: string; lanes: string[]; activeTasksCount: number; weeklyHours: number }> = {};
+  const LEAD_TASK_CAPACITY = 12;
+  const leadStatsMap: Record<string, { leadName: string; lanes: string[]; activeTasksCount: number }> = {};
   lanes.forEach((lane) => {
     const leadName = lane.leadName;
     if (!leadName) return;
     if (!leadStatsMap[leadName]) {
-      leadStatsMap[leadName] = { leadName, lanes: [], activeTasksCount: 0, weeklyHours: 0 };
+      leadStatsMap[leadName] = { leadName, lanes: [], activeTasksCount: 0 };
     }
     leadStatsMap[leadName].lanes.push(lane.name);
     const tasksInLane = activeTasksByLane[lane.name] || [];
     leadStatsMap[leadName].activeTasksCount += tasksInLane.length;
-    const hoursInLane = tasksInLane.reduce((sum, t) => sum + (t.estimatedHours || 2), 0);
-    leadStatsMap[leadName].weeklyHours += hoursInLane;
   });
 
   const leadStatsList = Object.values(leadStatsMap);
-  const overallocatedLeads = leadStatsList.filter(l => l.activeTasksCount > 15 || l.weeklyHours > 20);
+  const overallocatedLeads = leadStatsList.filter(l => l.activeTasksCount > LEAD_TASK_CAPACITY);
 
   const taskCompletionRate = summary.totalTasks > 0 
     ? Math.round((summary.completedTasks / summary.totalTasks) * 100) 
     : 0;
 
   // Computed values for KPI and Needs Attention sections
-  const volunteersMissingChecksCount = volunteers.filter(v => !v.hasVulnerableSectorCheck).length;
-  
   const overdueTasksCount = events.reduce((count, event) => {
     if (!event.tasks) return count;
     const overdueInEvent = event.tasks.filter(task => !task.completed && task.dueDate && task.dueDate < '2026-07-08');
@@ -477,19 +466,9 @@ function DashboardOverview({
     return isPast && !hasDebrief;
   });
 
-  const totalAttentionCount = volunteersMissingChecksCount + overallocatedLeadsCount + overdueTasksCount + missingHighValueCount + pastEventsAwaitingDebrief.length;
+  const totalAttentionCount = overallocatedLeadsCount + overdueTasksCount + missingHighValueCount + pastEventsAwaitingDebrief.length;
 
   const attentionItems = [];
-
-  if (volunteersMissingChecksCount > 0) {
-    attentionItems.push({
-      id: 'volunteers-check',
-      icon: <Users className="text-amber-600 shrink-0" size={16} />,
-      message: `${volunteersMissingChecksCount} ${volunteersMissingChecksCount === 1 ? 'volunteer' : 'volunteers'} missing background checks`,
-      actionText: 'View volunteers',
-      onClick: () => onNavigate('volunteers')
-    });
-  }
 
   if (overallocatedLeadsCount > 0) {
     const message = overallocatedLeads.length === 1 
@@ -500,7 +479,12 @@ function DashboardOverview({
       icon: <Activity className="text-rose-500 shrink-0" size={16} />,
       message,
       actionText: 'View workload',
-      onClick: () => onNavigate('timeline')
+      onClick: () => {
+        const el = document.getElementById('team-setup-header');
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth' });
+        }
+      }
     });
   }
 
@@ -600,7 +584,7 @@ function DashboardOverview({
     const rows = [];
     
     // Header section for Summary
-    rows.push(['--- Command Overview Summary ---']);
+    rows.push(['--- Overview Summary ---']);
     rows.push(['Metric', 'Value']);
     rows.push(['Total Events', summary.totalEvents]);
     rows.push(['Total Assets', summary.totalAssets]);
@@ -609,7 +593,6 @@ function DashboardOverview({
     rows.push(['Completed Tasks', summary.completedTasks]);
     rows.push(['Missing High Value Assets', summary.missingHighValueCount]);
     rows.push(['Overburdened Volunteers', summary.overburdenedVolunteersCount]);
-    rows.push(['Non-Compliant Volunteers', summary.nonCompliantVolunteersCount]);
     rows.push([]); // blank line
     
     // Header section for Events
@@ -638,7 +621,7 @@ function DashboardOverview({
     
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `command-overview-export-${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `overview-export-${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -686,118 +669,192 @@ function DashboardOverview({
           </div>
         </div>
 
+        {/* SECTION: Status Filter & Event Cards Grid */}
+        <div className="space-y-4">
+          <div className="bg-[#fcfaf7] border border-[#e2dcd0] rounded-xl p-4 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition duration-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-serif font-bold text-slate-500">Status:</span>
+              <div className="flex items-center gap-1 bg-[#f5ebd6]/30 border border-[#e2dcd0] p-1 rounded-xl shadow-xs">
+                {(['all', 'upcoming', 'finished'] as const).map((statusOpt) => (
+                  <button
+                    key={statusOpt}
+                    type="button"
+                    onClick={() => setEventStatusFilter(statusOpt)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                      eventStatusFilter === statusOpt
+                        ? 'bg-[#1e293b] text-[#faf8f4] shadow-sm'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    {statusOpt === 'all' ? 'All statuses' : statusOpt === 'upcoming' ? 'Upcoming' : 'Finished'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {loading ? (
+                Array.from({ length: 3 }).map((_, idx) => (
+                  <div 
+                    key={`skeleton-event-card-${idx}`}
+                    className="bg-[#fcfaf7] p-6 rounded-2xl border border-[#e2dcd0] shadow-sm animate-pulse flex flex-col justify-between h-56"
+                  >
+                    <div className="space-y-2">
+                      <div className="h-5 bg-[#efe9dc]/70 rounded w-3/4"></div>
+                      <div className="h-3.5 bg-[#efe9dc]/50 rounded w-1/4"></div>
+                    </div>
+                    <div className="h-8 bg-[#efe9dc]/60 rounded-xl w-1/2"></div>
+                    <div className="space-y-3 mt-4">
+                      <div className="h-2 bg-[#efe9dc]/50 rounded-full w-full"></div>
+                      <div className="flex justify-between">
+                        <div className="h-3 bg-[#efe9dc]/50 rounded w-1/4"></div>
+                        <div className="h-3 bg-[#efe9dc]/50 rounded w-1/8"></div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : filteredEvents.map((event) => {
+                // Calculate days out relative to target date (2026-07-06)
+                const [y1, m1, dd1] = event.date.split('-');
+                const eventDate = new Date(parseInt(y1, 10), parseInt(m1, 10) - 1, parseInt(dd1, 10));
+                const today = new Date(2026, 6, 6); // July 6, 2026
+                
+                const d1 = Date.UTC(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate());
+                const d2 = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+                const diffDays = Math.ceil((d1 - d2) / (1000 * 60 * 60 * 24));
+                const daysOut = isNaN(diffDays) ? 0 : diffDays;
+
+                // Active milestone step
+                const getActiveMilestone = (days: number) => {
+                  if (days <= 0) return 'Debrief & Review';
+                  if (days <= 14) return 'Final Push';
+                  if (days <= 28) return 'Final Push';
+                  if (days <= 56) return 'Confirmation';
+                  if (days <= 70) return 'Build';
+                  if (days <= 84) return 'Planning';
+                  return 'Vision & Scope';
+                };
+                const activeMilestone = getActiveMilestone(daysOut);
+
+                // Progress tracking
+                const totalTasks = event.tasks?.length || 0;
+                const completedTasks = event.tasks?.filter(t => t.completed).length || 0;
+                const progressPercent = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+                return (
+                  <div 
+                    key={event.id}
+                    onClick={() => onNavigate('timeline')}
+                    className="bg-[#fcfaf7] p-6 rounded-2xl border border-[#e2dcd0] shadow-sm hover:shadow-md hover:-translate-y-1 hover:border-[#c2aa80] transition-all cursor-pointer flex flex-col justify-between h-56 group relative overflow-hidden animate-fadeIn"
+                  >
+                    {/* Header Row */}
+                    <div className="flex justify-between items-start gap-4">
+                      <div className="space-y-1">
+                        <h3 className="text-xl font-serif font-bold text-[#1e293b] leading-snug tracking-tight group-hover:text-black transition">
+                          {event.name}
+                        </h3>
+                        <p className="text-xs text-slate-500 font-medium">
+                          {formatHumanDate(event.date)}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0 flex flex-col justify-end h-full">
+                        {daysOut < 0 ? (
+                          <>
+                            <div className="text-3xl font-serif font-bold text-slate-400 leading-none">
+                              Done
+                            </div>
+                            <div className="text-xs font-semibold text-slate-400 mt-1">
+                              Finished
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="text-4xl font-serif font-bold text-[#1e293b] leading-none">
+                              {daysOut}
+                            </div>
+                            <div className="text-xs font-semibold text-slate-450 mt-1">
+                              Days out
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Badge/Pill Row */}
+                    <div className="mt-2.5 flex justify-between items-center">
+                      <span className="inline-flex items-center px-4 py-1.5 rounded-full text-xs font-semibold bg-[#f5ebd6]/80 text-[#856637] border border-[#efe0c2] shadow-sm">
+                        Now: {activeMilestone}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setCloneEventTargetId(event.id); setCloneEventNewDate(''); }}
+                        className="p-1.5 text-slate-400 hover:text-[#856637] hover:bg-[#f5ebd6]/50 rounded-lg transition-colors "
+                        title="Clone to New Year"
+                      >
+                        <Copy size={16} />
+                      </button>
+                    </div>
+
+                    {/* Task Progress Footer Row */}
+                    <div className="mt-4 space-y-2">
+                      <div className="w-full bg-[#efe9dc] h-2 rounded-full overflow-hidden">
+                        <div 
+                          className="bg-[#c2aa80] h-full rounded-full transition-all duration-500" 
+                          style={{ width: `${progressPercent}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between items-center text-xs text-slate-500">
+                        <span>{completedTasks} of {totalTasks} tasks</span>
+                        <span className="font-semibold text-slate-700">{progressPercent}%</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              {!loading && filteredEvents.length === 0 && (
+                <div className="col-span-3 p-8 text-center border border-dashed border-[#e2dcd0] rounded-2xl bg-[#fcfaf7] text-slate-400 text-xs">
+                  {events.length === 0 
+                    ? "No events scheduled yet. Create an event in the reverse-timeline."
+                    : "No events match your search/filter criteria."}
+                </div>
+              )}
+            </div>
+        </div>
+
         {/* EVENT SCOPE GLANCEABLE VISUALIZATIONS */}
         {(() => {
-          const formatHumanDate = (dateStr: string) => {
-            if (!dateStr) return '';
-            const [y, m, d] = dateStr.split('-');
-            const dateObj = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
-            return dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-          };
-
-          const budgetCap = tickerEvent?.budgetCap || 0;
-          const eventExpenses = tickerEvent ? expenses.filter(exp => exp.eventId === tickerEvent.id) : [];
-          const totalSpent = eventExpenses.reduce((sum, exp) => sum + exp.cost, 0);
-          const remainingBudget = Math.max(0, budgetCap - totalSpent);
-          const overBudget = totalSpent > budgetCap;
-
-          const hasBudgetData = budgetCap > 0 || totalSpent > 0;
-
-          // 2. Volunteers count by role
-          const roleCounts: Record<string, number> = {};
-          if (tickerEvent) {
-            volunteers.forEach(vol => {
-              const assignment = vol.eventAssignments?.[tickerEvent.id];
-              if (assignment?.role) {
-                const role = assignment.role;
-                roleCounts[role] = (roleCounts[role] || 0) + 1;
-              }
-            });
-          }
-          const rolesData = Object.entries(roleCounts).map(([role, count]) => ({
-            role,
-            count
-          })).sort((a, b) => b.count - a.count);
-
-          const hasVolunteersData = rolesData.length > 0;
-
-          // 3. Task milestones
-          const milestoneOrder: MilestoneKey[] = [
-            '12_weeks_out',
-            '10_weeks_out',
-            '8_weeks_out',
-            '4_weeks_out',
-            '2_weeks_out'
-          ];
-          const milestoneLabels: Record<MilestoneKey, string> = {
-            '12_weeks_out': '12W',
-            '10_weeks_out': '10W',
-            '8_weeks_out': '8W',
-            '4_weeks_out': '4W',
-            '2_weeks_out': '2W'
-          };
-          const milestoneFullLabels: Record<MilestoneKey, string> = {
-            '12_weeks_out': '12 Weeks Out',
-            '10_weeks_out': '10 Weeks Out',
-            '8_weeks_out': '8 Weeks Out',
-            '4_weeks_out': '4 Weeks Out',
-            '2_weeks_out': '2 Weeks Out'
-          };
-          const milestoneTasksData = milestoneOrder.map(key => {
-            const milestoneTasks = tickerEvent ? (tickerEvent.tasks || []).filter(t => t.milestoneKey === key) : [];
-            const total = milestoneTasks.length;
-            const completed = milestoneTasks.filter(t => t.completed).length;
-            return {
-              key,
-              label: milestoneLabels[key],
-              fullName: milestoneFullLabels[key],
-              completed,
-              remaining: total - completed,
-              total
-            };
-          });
-
-          const totalTasksCount = tickerEvent?.tasks?.length || 0;
-          const hasTasksData = totalTasksCount > 0;
-
-          const spentData = [
-            { name: 'Spent', value: totalSpent, color: '#856637' },
-            { name: 'Remaining', value: overBudget ? 0 : remainingBudget, color: '#efe9dc' }
-          ];
+          const selectedEvent = events.find(e => e.id === selectedEventId);
 
           return (
-            <div className="bg-[#fcfaf7] border border-[#e2dcd0] rounded-2xl p-5 shadow-sm space-y-4 animate-fadeIn">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#efe0c2] pb-3 gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 bg-[#f5ebd6] text-[#856637] rounded-xl border border-[#efe0c2]">
-                    <TrendingUp size={20} />
+            <div className="bg-[#fcfaf7] border border-[#e2dcd0] rounded-2xl p-4 shadow-xs animate-fadeIn">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                {/* Title / Info */}
+                <div className="flex items-center gap-2.5">
+                  <div className="p-1.5 bg-[#f5ebd6] text-[#856637] rounded-lg border border-[#efe0c2]">
+                    <TrendingUp size={16} />
                   </div>
                   <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[9px] font-bold uppercase tracking-[0.15em] text-[#856637] bg-[#f5ebd6]/60 border border-[#efe0c2] px-2 py-0.5 rounded-full">
-                        Scope Dashboard
-                      </span>
-                      {tickerEvent && (
-                        <span className="text-[9px] font-mono font-bold uppercase text-slate-400">
-                          ID: {tickerEvent.id.substring(0, 8)}...
+                    <h3 className="text-sm font-serif font-black text-slate-800 flex items-center gap-2">
+                      <span>Event Scope Snapshot</span>
+                      {selectedEvent && (
+                        <span className="text-xs font-sans font-normal text-slate-500">
+                          — {selectedEvent.name}
                         </span>
                       )}
-                    </div>
-                    <h3 className="text-lg font-serif font-black text-slate-800 mt-1 flex items-center gap-1.5">
-                      {tickerEvent ? tickerEvent.name : 'No Event Scope Active'}
                     </h3>
                   </div>
                 </div>
 
                 {/* Scope selector */}
-                <div className="flex items-center gap-2 self-start sm:self-auto">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Scope:</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-slate-500">Scope:</span>
                   <select
                     value={selectedEventId || ''}
                     onChange={(e) => onSelectEvent?.(e.target.value)}
-                    className="text-xs font-bold border border-[#efe0c2] bg-[#fcfaf7] rounded-lg px-2.5 py-1.5 text-slate-700 cursor-pointer focus:ring-1 focus:ring-[#c2aa80] focus:outline-none"
+                    className="text-xs font-bold border border-[#efe0c2] bg-[#fcfaf7] rounded-lg px-2.5 py-1 text-slate-700 cursor-pointer focus:ring-1 focus:ring-[#c2aa80] focus:outline-none"
                   >
-                    <option value="">-- All Events Scope --</option>
+                    <option value="">-- Select Event Scope --</option>
                     {events.map(evt => (
                       <option key={evt.id} value={evt.id}>
                         {evt.name} ({evt.date})
@@ -808,223 +865,178 @@ function DashboardOverview({
               </div>
 
               {loading ? (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {/* CHART 1 SKELETON */}
-                  <div className="bg-white border border-[#e2dcd0]/80 rounded-xl p-4 flex flex-col justify-between h-[256px] space-y-3 animate-pulse">
-                    <div className="space-y-2">
-                      <div className="h-4 bg-[#efe9dc]/70 rounded w-1/2"></div>
-                      <div className="h-3 bg-[#efe9dc]/50 rounded w-1/3"></div>
-                    </div>
-                    <div className="h-[140px] bg-[#fcfaf7] border border-dashed border-[#e2dcd0] rounded-xl flex items-center justify-center">
-                      <div className="w-10 h-10 rounded-full border-4 border-[#efe9dc] border-t-transparent animate-spin"></div>
-                    </div>
-                    <div className="flex justify-between items-center pt-2 border-t border-slate-50">
-                      <div className="h-3.5 bg-[#efe9dc]/70 rounded w-1/4"></div>
-                      <div className="h-3.5 bg-[#efe9dc]/70 rounded w-1/4"></div>
-                    </div>
-                  </div>
-                  {/* CHART 2 SKELETON */}
-                  <div className="bg-white border border-[#e2dcd0]/80 rounded-xl p-4 flex flex-col justify-between h-[256px] space-y-3 animate-pulse">
-                    <div className="space-y-2">
-                      <div className="h-4 bg-[#efe9dc]/70 rounded w-1/2"></div>
-                      <div className="h-3 bg-[#efe9dc]/50 rounded w-1/3"></div>
-                    </div>
-                    <div className="h-[140px] bg-[#fcfaf7] border border-dashed border-[#e2dcd0] rounded-xl flex items-center justify-center">
-                      <div className="w-10 h-10 rounded-full border-4 border-[#efe9dc] border-t-transparent animate-spin"></div>
-                    </div>
-                    <div className="flex justify-between items-center pt-2 border-t border-slate-50">
-                      <div className="h-3.5 bg-[#efe9dc]/70 rounded w-1/4"></div>
-                      <div className="h-3.5 bg-[#efe9dc]/70 rounded w-1/4"></div>
-                    </div>
-                  </div>
-                  {/* CHART 3 SKELETON */}
-                  <div className="bg-white border border-[#e2dcd0]/80 rounded-xl p-4 flex flex-col justify-between h-[256px] space-y-3 animate-pulse">
-                    <div className="space-y-2">
-                      <div className="h-4 bg-[#efe9dc]/70 rounded w-1/2"></div>
-                      <div className="h-3 bg-[#efe9dc]/50 rounded w-1/3"></div>
-                    </div>
-                    <div className="h-[140px] bg-[#fcfaf7] border border-dashed border-[#e2dcd0] rounded-xl flex items-center justify-center">
-                      <div className="w-10 h-10 rounded-full border-4 border-[#efe9dc] border-t-transparent animate-spin"></div>
-                    </div>
-                    <div className="flex justify-between items-center pt-2 border-t border-slate-50">
-                      <div className="h-3.5 bg-[#efe9dc]/70 rounded w-1/4"></div>
-                      <div className="h-3.5 bg-[#efe9dc]/70 rounded w-1/4"></div>
-                    </div>
-                  </div>
+                <div className="mt-4 pt-3 border-t border-[#efe0c2]/50 grid grid-cols-1 md:grid-cols-3 gap-4 items-center animate-pulse">
+                  <div className="h-10 bg-[#efe9dc]/50 rounded-lg w-full"></div>
+                  <div className="h-10 bg-[#efe9dc]/50 rounded-lg w-full"></div>
+                  <div className="h-10 bg-[#efe9dc]/50 rounded-lg w-full"></div>
                 </div>
-              ) : !tickerEvent ? (
-                <div className="py-8 text-center border border-dashed border-[#e2dcd0] rounded-xl bg-white text-slate-405 text-xs">
-                  Please create or select an event scope to see visual analytics.
+              ) : !selectedEventId ? (
+                <div className="mt-3 py-4 text-center border border-dashed border-[#efe0c2]/60 rounded-xl bg-white text-slate-500 text-xs font-medium">
+                  Select an event scope above to see live budget, volunteer, and task progress stats.
                 </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {/* CHART 1: Budget Analysis */}
-                  <div className="bg-white border border-[#e2dcd0]/80 rounded-xl p-4 flex flex-col justify-between space-y-3">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-[#856637] font-sans flex items-center gap-1">
-                          <Coins size={14} /> Budget Ledger
+              ) : !selectedEvent ? (
+                <div className="mt-3 py-4 text-center border border-dashed border-[#efe0c2]/60 rounded-xl bg-white text-slate-500 text-xs font-medium">
+                  The selected event could not be found. Please select a valid event.
+                </div>
+              ) : (() => {
+                const budgetCap = selectedEvent.budgetCap || 0;
+                const eventExpenses = expenses.filter(exp => exp.eventId === selectedEvent.id);
+                const totalSpent = eventExpenses.reduce((sum, exp) => sum + exp.cost, 0);
+                const overBudget = totalSpent > budgetCap;
+                const assignedVolunteers = volunteers.filter(v => v.eventAssignments?.[selectedEvent.id]).length;
+                const totalTasksCount = selectedEvent.tasks?.length || 0;
+                const completedTasksCount = selectedEvent.tasks?.filter(t => t.completed).length || 0;
+                const taskPercent = totalTasksCount > 0 ? Math.round((completedTasksCount / totalTasksCount) * 100) : 0;
+
+                const [y1, m1, dd1] = selectedEvent.date.split('-');
+                const eventDate = new Date(parseInt(y1, 10), parseInt(m1, 10) - 1, parseInt(dd1, 10));
+                const today = new Date(2026, 6, 6); // July 6, 2026
+                
+                const d1 = Date.UTC(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate());
+                const d2 = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+                const diffDays = Math.ceil((d1 - d2) / (1000 * 60 * 60 * 24));
+                const daysOut = isNaN(diffDays) ? 0 : diffDays;
+
+                // Budget status details
+                let budgetStatusText = 'On track';
+                let budgetStatusColorClass = 'bg-emerald-50 text-emerald-700 border-emerald-100';
+                let budgetBarColorClass = 'bg-emerald-500';
+                if (budgetCap > 0) {
+                  if (overBudget) {
+                    budgetStatusText = 'Over budget';
+                    budgetStatusColorClass = 'bg-rose-50 text-rose-700 border-rose-100';
+                    budgetBarColorClass = 'bg-rose-500';
+                  } else if (totalSpent >= budgetCap * 0.85) {
+                    budgetStatusText = 'Near cap';
+                    budgetStatusColorClass = 'bg-amber-50 text-amber-700 border-amber-100';
+                    budgetBarColorClass = 'bg-amber-500';
+                  }
+                }
+
+                const formattedSpent = totalSpent.toFixed(2);
+                const formattedCap = budgetCap > 0 ? budgetCap.toFixed(2) : null;
+
+                return (
+                  <div className="mt-4 pt-4 border-t border-[#efe0c2]/50 space-y-4">
+                    {/* Compact Header */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-[#f5ebd6]/20 p-3 rounded-xl border border-[#efe0c2]/40">
+                      <div className="min-w-0">
+                        <h4 className="text-sm font-serif font-black text-slate-800 truncate">
+                          {selectedEvent.name}
                         </h4>
-                        <p className="text-[10px] text-slate-400 mt-0.5">Spent vs Remaining Cap</p>
+                        <p className="text-[11px] text-slate-500 font-medium font-sans">
+                          Scheduled: {formatHumanDate(selectedEvent.date)}
+                        </p>
                       </div>
-                      {budgetCap > 0 && (
-                        <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full ${overBudget ? 'bg-rose-100 text-rose-750 border border-rose-200' : 'bg-emerald-100 text-emerald-800 border border-emerald-200'}`}>
-                          {overBudget ? 'Over Budget' : 'On Track'}
-                        </span>
-                      )}
+                      <div className="shrink-0 flex items-center">
+                        {daysOut < 0 ? (
+                          <span className="inline-flex text-[10px] font-bold tracking-wide uppercase bg-slate-150 text-slate-600 px-2.5 py-1 rounded-lg border border-slate-200">
+                            Finished
+                          </span>
+                        ) : (
+                          <span className="inline-flex text-[10px] font-bold tracking-wide uppercase bg-[#f5ebd6] text-[#856637] px-2.5 py-1 rounded-lg border border-[#efe0c2]">
+                            {daysOut} days out
+                          </span>
+                        )}
+                      </div>
                     </div>
 
-                    {hasBudgetData ? (
-                      <div className="relative h-[140px] w-full flex items-center justify-center">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie
-                              data={spentData}
-                              cx="50%"
-                              cy="50%"
-                              innerRadius={45}
-                              outerRadius={60}
-                              paddingAngle={3}
-                              dataKey="value"
-                            >
-                              {spentData.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={entry.color} />
-                              ))}
-                            </Pie>
-                            <Tooltip formatter={(value) => `$${value}`} />
-                          </PieChart>
-                        </ResponsiveContainer>
-                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none mt-1">
-                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none">Spent</span>
-                          <span className="text-sm font-extrabold text-slate-800 font-mono mt-0.5 leading-none">
-                            {budgetCap > 0 ? `${Math.round((totalSpent / budgetCap) * 100)}%` : `$${totalSpent}`}
-                          </span>
+                    {/* Responsive Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {/* Tile 1: Budget */}
+                      <div className="bg-white border border-[#efe0c2]/60 rounded-xl p-4 flex flex-col justify-between transition-all hover:border-[#c2aa80] h-32">
+                        <div>
+                          <div className="flex items-center justify-between gap-2 mb-2">
+                            <div className="flex items-center gap-1.5">
+                              <div className="p-1 bg-[#f5ebd6]/60 text-[#856637] rounded border border-[#efe0c2]/40">
+                                <Coins size={14} />
+                              </div>
+                              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Budget</span>
+                            </div>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${budgetStatusColorClass}`}>
+                              {budgetStatusText}
+                            </span>
+                          </div>
+                          <div className="flex items-baseline gap-1 mt-1">
+                            <span className="text-lg font-mono font-bold text-slate-800">
+                              ${parseFloat(formattedSpent).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                            <span className="text-xs text-slate-400 font-medium">/</span>
+                            <span className="text-xs text-slate-500 font-mono">
+                              {formattedCap ? `$${parseFloat(formattedCap).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'No limit'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="w-full mt-2">
+                          <div className="w-full bg-[#efe9dc]/40 h-1.5 rounded-full overflow-hidden">
+                            <div 
+                              className={`h-full rounded-full transition-all duration-300 ${budgetBarColorClass}`}
+                              style={{ width: `${budgetCap > 0 ? Math.min((totalSpent / budgetCap) * 100, 100) : 0}%` }}
+                            />
+                          </div>
                         </div>
                       </div>
-                    ) : (
-                      <div className="h-[140px] flex flex-col items-center justify-center bg-[#fcfaf7] border border-dashed border-[#e2dcd0] rounded-xl p-4 text-center">
-                        <span className="text-xs text-slate-400 font-medium">No budget limit or expenses yet</span>
-                        <p className="text-[9px] text-slate-400 mt-0.5">Define a budgetCap or add expenses to populate.</p>
-                      </div>
-                    )}
 
-                    <div className="flex justify-between items-center text-[11px] font-medium text-slate-600 pt-2 border-t border-slate-50">
-                      <div className="flex flex-col">
-                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Budget Limit</span>
-                        <span className="text-slate-800 font-mono font-bold">${budgetCap.toLocaleString()}</span>
+                      {/* Tile 2: Volunteers Assigned */}
+                      <div className="bg-white border border-[#efe0c2]/60 rounded-xl p-4 flex flex-col justify-between transition-all hover:border-[#c2aa80] h-32">
+                        <div>
+                          <div className="flex items-center gap-1.5 mb-2">
+                            <div className="p-1 bg-[#f5ebd6]/60 text-[#856637] rounded border border-[#efe0c2]/40">
+                              <Users size={14} />
+                            </div>
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Volunteers</span>
+                          </div>
+                          <div className="text-2xl font-serif font-black text-slate-800 mt-1">
+                            {assignedVolunteers}
+                          </div>
+                        </div>
+
+                        <div className="mt-2">
+                          {assignedVolunteers === 0 ? (
+                            <p className="text-[10px] text-amber-600/80 font-semibold italic bg-amber-50/50 border border-amber-100/50 px-2 py-1 rounded">
+                              None yet
+                            </p>
+                          ) : (
+                            <p className="text-[10px] text-slate-500 font-medium truncate">
+                              {assignedVolunteers === 1 ? '1 coordinator / worker' : `${assignedVolunteers} coordinators & workers`}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex flex-col text-right">
-                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Spent</span>
-                        <span className={`${overBudget ? 'text-rose-650 font-bold' : 'text-[#856637]'} font-mono font-bold`}>
-                          ${totalSpent.toLocaleString()}
-                        </span>
+
+                      {/* Tile 3: Task Progress */}
+                      <div className="bg-white border border-[#efe0c2]/60 rounded-xl p-4 flex flex-col justify-between transition-all hover:border-[#c2aa80] h-32">
+                        <div>
+                          <div className="flex items-center gap-1.5 mb-2">
+                            <div className="p-1 bg-[#f5ebd6]/60 text-[#856637] rounded border border-[#efe0c2]/40">
+                              <Check size={14} />
+                            </div>
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Task Progress</span>
+                          </div>
+                          <div className="flex items-baseline gap-1.5 mt-1">
+                            <span className="text-xl font-mono font-bold text-slate-800">
+                              {taskPercent}%
+                            </span>
+                            <span className="text-xs text-slate-450 font-medium">
+                              ({completedTasksCount} / {totalTasksCount})
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="w-full mt-2">
+                          <div className="w-full bg-[#efe9dc]/40 h-1.5 rounded-full overflow-hidden">
+                            <div 
+                              className="bg-[#856637] h-full rounded-full transition-all duration-300"
+                              style={{ width: `${taskPercent}%` }}
+                            />
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
-
-                  {/* CHART 2: Volunteer Roles Counts */}
-                  <div className="bg-white border border-[#e2dcd0]/80 rounded-xl p-4 flex flex-col justify-between space-y-3">
-                    <div>
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-[#856637] font-sans flex items-center gap-1">
-                        <Users size={14} /> Volunteer Assignments
-                      </h4>
-                      <p className="text-[10px] text-slate-400 mt-0.5">Count of volunteers per role</p>
-                    </div>
-
-                    {hasVolunteersData ? (
-                      <div className="h-[140px] w-full relative">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart
-                            data={rolesData.slice(0, 5)}
-                            layout="vertical"
-                            margin={{ top: 5, right: 10, left: -25, bottom: 5 }}
-                          >
-                            <XAxis type="number" hide />
-                            <YAxis 
-                              type="category" 
-                              dataKey="role" 
-                              tick={{ fill: '#64748b', fontSize: 9, fontWeight: 550 }}
-                              axisLine={false}
-                              tickLine={false}
-                              width={70}
-                            />
-                            <Tooltip 
-                              cursor={{ fill: 'rgba(133, 102, 55, 0.04)' }}
-                              contentStyle={{ fontSize: 11, background: '#fff', border: '1px solid #e2dcd0', borderRadius: 8 }}
-                            />
-                            <Bar dataKey="count" fill="#856637" radius={[0, 4, 4, 0]} barSize={10} />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    ) : (
-                      <div className="h-[140px] flex flex-col items-center justify-center bg-[#fcfaf7] border border-dashed border-[#e2dcd0] rounded-xl p-4 text-center">
-                        <span className="text-xs text-slate-400 font-medium">No volunteers assigned</span>
-                        <p className="text-[9px] text-slate-400 mt-0.5">Assign roles to volunteers for this event.</p>
-                      </div>
-                    )}
-
-                    <div className="flex justify-between items-center text-[11px] font-medium text-slate-600 pt-2 border-t border-slate-50">
-                      <span className="text-xs text-slate-400 font-semibold">Total volunteers</span>
-                      <span className="text-slate-800 font-mono font-bold">
-                        {volunteers.filter(v => v.eventAssignments?.[tickerEvent.id]).length} volunteers
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* CHART 3: Task Completion by Milestones */}
-                  <div className="bg-white border border-[#e2dcd0]/80 rounded-xl p-4 flex flex-col justify-between space-y-3">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <h4 className="text-xs font-bold text-[#856637] font-sans flex items-center gap-1">
-                          <Check size={14} /> Milestones tracker
-                        </h4>
-                        <p className="text-[10px] text-slate-400 mt-0.5">Tasks progress by milestone phase</p>
-                      </div>
-                    </div>
-
-                    {hasTasksData ? (
-                      <div className="h-[140px] w-full relative">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart
-                            data={milestoneTasksData}
-                            margin={{ top: 10, right: 10, left: -25, bottom: 5 }}
-                          >
-                            <XAxis 
-                              dataKey="label" 
-                              tick={{ fill: '#64748b', fontSize: 9, fontWeight: 550 }}
-                              axisLine={false}
-                              tickLine={false}
-                            />
-                            <YAxis 
-                              tick={{ fill: '#64748b', fontSize: 9, fontWeight: 550 }}
-                              axisLine={false}
-                              tickLine={false}
-                              allowDecimals={false}
-                            />
-                            <Tooltip 
-                              contentStyle={{ fontSize: 11, background: '#fff', border: '1px solid #e2dcd0', borderRadius: 8 }}
-                            />
-                            <Bar dataKey="completed" name="Completed" stackId="a" fill="#1e293b" barSize={14} />
-                            <Bar dataKey="remaining" name="Remaining" stackId="a" fill="#efe9dc" radius={[3, 3, 0, 0]} barSize={14} />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    ) : (
-                      <div className="h-[140px] flex flex-col items-center justify-center bg-[#fcfaf7] border border-dashed border-[#e2dcd0] rounded-xl p-4 text-center">
-                        <span className="text-xs text-slate-400 font-medium">No tasks found for milestones</span>
-                        <p className="text-[9px] text-slate-400 mt-0.5">Tasks will show up once generated or added.</p>
-                      </div>
-                    )}
-
-                    <div className="flex justify-between items-center text-[11px] font-medium text-slate-600 pt-2 border-t border-slate-50">
-                      <span className="text-xs text-slate-400 font-semibold">Overall progress</span>
-                      <span className="text-slate-800 font-mono font-bold">
-                        {tickerEvent.tasks?.filter(t => t.completed).length || 0} / {totalTasksCount} completed
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
           );
         })()}
@@ -1104,380 +1116,61 @@ function DashboardOverview({
             </div>
           )}
         </div>
-
-        <div className="bg-[#fcfaf7] border border-[#e2dcd0] rounded-xl p-4 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition duration-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="relative flex-1 max-w-md">
-            <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 pointer-events-none">
-              <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-            </span>
-            <input
-              type="text"
-              placeholder="Search events by name..."
-              value={eventSearchTerm}
-              onChange={(e) => setEventSearchTerm(e.target.value)}
-              className="w-full text-xs pl-8 pr-7 py-2 rounded-lg border border-[#e2dcd0] bg-white focus:outline-none focus:ring-1 focus:ring-[#856637] text-slate-800 placeholder-slate-400 shadow-sm"
-            />
-            {eventSearchTerm && (
-              <button
-                type="button"
-                onClick={() => setEventSearchTerm('')}
-                className="absolute inset-y-0 right-0 flex items-center pr-2.5 text-slate-400 hover:text-slate-600 transition cursor-pointer"
-              >
-                <X size={12} />
-              </button>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-serif font-bold text-slate-500">Status:</span>
-            <div className="flex items-center gap-1 bg-[#f5ebd6]/30 border border-[#e2dcd0] p-1 rounded-xl shadow-xs">
-              {(['all', 'upcoming', 'finished'] as const).map((statusOpt) => (
-                <button
-                  key={statusOpt}
-                  type="button"
-                  onClick={() => setEventStatusFilter(statusOpt)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                    eventStatusFilter === statusOpt
-                      ? 'bg-[#1e293b] text-[#faf8f4] shadow-sm'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  {statusOpt === 'all' ? 'All statuses' : statusOpt === 'upcoming' ? 'Upcoming' : 'Finished'}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {loading ? (
-              Array.from({ length: 3 }).map((_, idx) => (
-                <div 
-                  key={`skeleton-event-card-${idx}`}
-                  className="bg-[#fcfaf7] p-6 rounded-2xl border border-[#e2dcd0] shadow-sm animate-pulse flex flex-col justify-between h-56"
-                >
-                  <div className="space-y-2">
-                    <div className="h-5 bg-[#efe9dc]/70 rounded w-3/4"></div>
-                    <div className="h-3.5 bg-[#efe9dc]/50 rounded w-1/4"></div>
-                  </div>
-                  <div className="h-8 bg-[#efe9dc]/60 rounded-xl w-1/2"></div>
-                  <div className="space-y-3 mt-4">
-                    <div className="h-2 bg-[#efe9dc]/50 rounded-full w-full"></div>
-                    <div className="flex justify-between">
-                      <div className="h-3 bg-[#efe9dc]/50 rounded w-1/4"></div>
-                      <div className="h-3 bg-[#efe9dc]/50 rounded w-1/8"></div>
-                    </div>
-                  </div>
-                </div>
-              ))
-            ) : filteredEvents.map((event) => {
-              // Calculate days out relative to target date (2026-07-06)
-              const [y1, m1, dd1] = event.date.split('-');
-              const eventDate = new Date(parseInt(y1, 10), parseInt(m1, 10) - 1, parseInt(dd1, 10));
-              const today = new Date(2026, 6, 6); // July 6, 2026
-              
-              const d1 = Date.UTC(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate());
-              const d2 = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
-              const diffDays = Math.ceil((d1 - d2) / (1000 * 60 * 60 * 24));
-              const daysOut = isNaN(diffDays) ? 0 : diffDays;
-
-              // Active milestone step
-              const getActiveMilestone = (days: number) => {
-                if (days <= 0) return 'Debrief & Review';
-                if (days <= 14) return 'Final Push';
-                if (days <= 28) return 'Final Push';
-                if (days <= 56) return 'Confirmation';
-                if (days <= 70) return 'Build';
-                if (days <= 84) return 'Planning';
-                return 'Vision & Scope';
-              };
-              const activeMilestone = getActiveMilestone(daysOut);
-
-              // Progress tracking
-              const totalTasks = event.tasks?.length || 0;
-              const completedTasks = event.tasks?.filter(t => t.completed).length || 0;
-              const progressPercent = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-
-              return (
-                <div 
-                  key={event.id}
-                  onClick={() => onNavigate('timeline')}
-                  className="bg-[#fcfaf7] p-6 rounded-2xl border border-[#e2dcd0] shadow-sm hover:shadow-md hover:-translate-y-1 hover:border-[#c2aa80] transition-all cursor-pointer flex flex-col justify-between h-56 group relative overflow-hidden animate-fadeIn"
-                >
-                  {/* Header Row */}
-                  <div className="flex justify-between items-start gap-4">
-                    <div className="space-y-1">
-                      <h3 className="text-xl font-serif font-bold text-[#1e293b] leading-snug tracking-tight group-hover:text-black transition">
-                        {event.name}
-                      </h3>
-                      <p className="text-xs text-slate-500 font-medium">
-                        {formatHumanDate(event.date)}
-                      </p>
-                    </div>
-                    <div className="text-right shrink-0 flex flex-col justify-end h-full">
-                      {daysOut < 0 ? (
-                        <>
-                          <div className="text-3xl font-serif font-bold text-slate-400 leading-none">
-                            Done
-                          </div>
-                          <div className="text-xs font-semibold text-slate-400 mt-1">
-                            Finished
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <div className="text-4xl font-serif font-bold text-[#1e293b] leading-none">
-                            {daysOut}
-                          </div>
-                          <div className="text-xs font-semibold text-slate-450 mt-1">
-                            Days out
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Badge/Pill Row */}
-                  <div className="mt-2.5 flex justify-between items-center">
-                    <span className="inline-flex items-center px-4 py-1.5 rounded-full text-xs font-semibold bg-[#f5ebd6]/80 text-[#856637] border border-[#efe0c2] shadow-sm">
-                      Now: {activeMilestone}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); setCloneEventTargetId(event.id); setCloneEventNewDate(''); }}
-                      className="p-1.5 text-slate-400 hover:text-[#856637] hover:bg-[#f5ebd6]/50 rounded-lg transition-colors "
-                      title="Clone to New Year"
-                    >
-                      <Copy size={16} />
-                    </button>
-                  </div>
-
-                  {/* Task Progress Footer Row */}
-                  <div className="mt-4 space-y-2">
-                    <div className="w-full bg-[#efe9dc] h-2 rounded-full overflow-hidden">
-                      <div 
-                        className="bg-[#c2aa80] h-full rounded-full transition-all duration-500" 
-                        style={{ width: `${progressPercent}%` }}
-                      />
-                    </div>
-                    <div className="flex justify-between items-center text-xs text-slate-500">
-                      <span>{completedTasks} of {totalTasks} tasks</span>
-                      <span className="font-semibold text-slate-700">{progressPercent}%</span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-            {!loading && filteredEvents.length === 0 && (
-              <div className="col-span-3 p-8 text-center border border-dashed border-[#e2dcd0] rounded-2xl bg-[#fcfaf7] text-slate-400 text-xs">
-                {events.length === 0 
-                  ? "No events scheduled yet. Create an event in the reverse-timeline."
-                  : "No events match your search/filter criteria."}
-              </div>
-            )}
-          </div>
       </div>
-
-
 
       {/* Main Content Area for Analytics, Burnout, and Lanes */}
       <div className="space-y-6">
-          
-          {/* Metric Cards Grid (Operational Warnings) */}
-          {loading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Burnout Tracker Skeleton */}
-              <div className="bg-[#fcfaf7] p-5 rounded-xl border border-[#e2dcd0] shadow-sm animate-pulse space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-2 flex-1">
-                    <div className="h-3 bg-[#efe9dc]/70 rounded w-1/2"></div>
-                    <div className="h-8 bg-[#efe9dc]/70 rounded w-1/4"></div>
-                  </div>
-                  <div className="w-12 h-12 bg-[#efe9dc]/50 rounded-lg"></div>
-                </div>
-                <div className="h-3 bg-[#efe9dc]/50 rounded w-3/4"></div>
-                <div className="h-2.5 bg-[#efe9dc]/50 rounded w-1/3"></div>
-              </div>
-
-              {/* Total Volunteers Skeleton */}
-              <div className="bg-[#fcfaf7] p-5 rounded-xl border border-[#e2dcd0] shadow-sm animate-pulse space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-2 flex-1">
-                    <div className="h-3 bg-[#efe9dc]/70 rounded w-1/2"></div>
-                    <div className="h-8 bg-[#efe9dc]/70 rounded w-1/4"></div>
-                  </div>
-                  <div className="w-12 h-12 bg-[#efe9dc]/50 rounded-lg"></div>
-                </div>
-                <div className="h-3 bg-[#efe9dc]/50 rounded w-3/4"></div>
-                <div className="h-2.5 bg-[#efe9dc]/50 rounded w-1/3"></div>
-              </div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Burnout Tracker */}
-              <div 
-                onClick={() => setShowBurnoutModal(true)}
-                onMouseEnter={() => setHoveredBurnout(true)}
-                onMouseLeave={() => setHoveredBurnout(false)}
-                className="bg-[#fcfaf7] p-5 rounded-xl border border-[#e2dcd0] shadow-sm hover:shadow-md hover:-translate-y-1 hover:border-[#c2aa80] transition duration-200 cursor-pointer group relative"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs font-semibold text-slate-500">Volunteers over capacity</p>
-                    <h3 className="text-2xl font-bold text-slate-800 mt-1">{overallocatedLeads.length}</h3>
-                  </div>
-                  <div className={`p-3 rounded-lg transition ${
-                    overallocatedLeads.length > 0 
-                      ? 'bg-rose-50 text-rose-650 group-hover:bg-rose-600 group-hover:text-[#faf8f4]' 
-                      : 'bg-[#faf8f4] text-slate-600 border border-[#e2dcd0] group-hover:bg-[#f5ebd6] group-hover:text-[#856637]'
-                  }`}>
-                    <AlertTriangle size={20} />
-                  </div>
-                </div>
-                <p className="text-xs text-slate-500 mt-4 leading-normal">
-                  {overallocatedLeads.length > 0 
-                    ? `${overallocatedLeads.length} Ministry Leads allocated beyond weekly capacity/task targets.`
-                    : 'All Ministry Leads are operating within safe workloads.'
-                  }
-                </p>
-                <p className="text-[10px] text-amber-800 font-extrabold mt-1.5 underline">
-                  Click card to view Leads details &amp; active counts
-                </p>
-
-                {/* Inline Hover Popover */}
-                {hoveredBurnout && (
-                  <div className="absolute left-0 right-0 top-full mt-2 bg-white border border-[#efe0c2] p-4 rounded-xl shadow-xl z-50 animate-fadeIn space-y-2 pointer-events-none">
-                    <p className="text-xs font-semibold text-[#856637] border-b border-[#efe0c2] pb-1">
-                      Coordinator allocation status
-                    </p>
-                    {leadStatsList.length === 0 ? (
-                      <p className="text-[10px] text-slate-400 italic">No coordinators assigned to any lanes.</p>
-                    ) : (
-                      <div className="space-y-1.5">
-                        {leadStatsList.map((lead, idx) => {
-                          const isOver = lead.activeTasksCount > 15 || lead.weeklyHours > 20;
-                          return (
-                            <div key={idx} className="flex justify-between items-center text-[10px] font-medium">
-                              <span className="text-slate-700">{lead.leadName}</span>
-                              <span className={isOver ? 'text-rose-650 font-bold' : 'text-slate-500'}>
-                                {lead.activeTasksCount} Tasks ({lead.weeklyHours}h) {isOver ? '🚨' : '✓'}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Simplified Ministry Total Volunteers */}
-              <div 
-                onClick={() => onNavigate('volunteers')}
-                className="bg-[#fcfaf7] p-5 rounded-xl border border-[#e2dcd0] shadow-sm hover:shadow-md hover:-translate-y-1 hover:border-[#c2aa80] transition duration-200 cursor-pointer group"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs font-semibold text-slate-500 font-sans">Total volunteers</p>
-                    <h3 className="text-2xl font-bold text-slate-800 mt-1">{summary.totalVolunteers}</h3>
-                  </div>
-                  <div className="p-3 bg-[#faf8f4] text-slate-600 border border-[#e2dcd0] group-hover:bg-[#f5ebd6] group-hover:text-[#856637] rounded-lg transition">
-                    <Users size={20} />
-                  </div>
-                </div>
-                <p className="text-xs text-slate-500 mt-4 leading-normal">
-                  Total registered volunteers across all active ministries.
-                </p>
-                <p className="text-[10px] text-[#856637] font-extrabold mt-1.5 underline">
-                  Click to open Volunteer Registry
-                </p>
-              </div>
-            </div>
-          )}
 
           {/* Weather summary widget */}
           {loading ? (
-            <div className="bg-[#fcfaf7] rounded-xl border border-[#e2dcd0] p-6 shadow-sm animate-pulse space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#efe0c2]/60 pb-3">
-                <div className="space-y-2 flex-1">
-                  <div className="h-5 bg-[#efe9dc]/70 rounded w-1/3"></div>
-                  <div className="h-3 bg-[#efe9dc]/50 rounded w-1/2"></div>
-                </div>
-                <div className="h-8 bg-[#efe9dc]/50 rounded w-24"></div>
-              </div>
-              <div className="p-4 rounded-xl border border-[#efe0c2] bg-white flex flex-col md:flex-row justify-between gap-4">
-                <div className="space-y-2 flex-1">
-                  <div className="h-4 bg-[#efe9dc]/60 rounded w-1/4"></div>
-                  <div className="h-5 bg-[#efe9dc]/60 rounded w-1/2"></div>
-                  <div className="h-3 bg-[#efe9dc]/50 rounded w-1/3"></div>
-                </div>
-                <div className="h-16 bg-[#efe9dc]/40 rounded-lg w-full md:w-48"></div>
-              </div>
+            <div className="bg-[#fcfaf7] rounded-xl border border-[#e2dcd0] p-4 shadow-xs animate-pulse flex items-center justify-between">
+              <div className="h-4 bg-[#efe9dc]/70 rounded w-1/4"></div>
+              <div className="h-4 bg-[#efe9dc]/70 rounded w-12"></div>
             </div>
           ) : (
-            <div className="bg-[#fcfaf7] rounded-xl border border-[#e2dcd0] p-6 shadow-sm hover:shadow-md hover:-translate-y-1 transition duration-200 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#efe0c2]/60 pb-3">
-              <div>
-                <h3 className="text-lg font-serif font-bold text-[#1e293b] flex items-center gap-2">
-                  <Sun className="text-amber-500 animate-pulse animate-spin-slow" size={20} />
-                  Weather &amp; Event Planning Forecast
-                </h3>
-                <p className="text-xs text-slate-500">
-                  Monitor meteorological conditions for safe setup and execution.
-                </p>
+            <div className="bg-[#fcfaf7] rounded-xl border border-[#e2dcd0] p-4 shadow-xs space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-[#efe0c2]/60 pb-2">
+                <div className="flex items-center gap-2">
+                  <Sun className="text-amber-500 animate-pulse shrink-0" size={16} />
+                  <h3 className="text-sm font-serif font-black text-slate-800">Weather Forecast</h3>
+                </div>
+                
+                {/* City Selection Dropdown */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-semibold text-slate-400 flex items-center gap-1 shrink-0">
+                    <MapPin size={12} /> City:
+                  </span>
+                  <select
+                    value={selectedCity.name}
+                    onChange={(e) => {
+                      const city = CITIES.find(c => c.name === e.target.value);
+                      if (city) setSelectedCity(city);
+                    }}
+                    className="text-xs font-bold border border-[#efe0c2] bg-[#fcfaf7] rounded-md px-2 py-0.5 text-slate-700 cursor-pointer focus:ring-1 focus:ring-[#c2aa80] focus:outline-none"
+                  >
+                    {CITIES.map(c => (
+                      <option key={c.name} value={c.name}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              
-              {/* City Selection Dropdown */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-slate-400 flex items-center gap-1 shrink-0">
-                  <MapPin size={12} /> City:
-                </span>
-                <select
-                  value={selectedCity.name}
-                  onChange={(e) => {
-                    const city = CITIES.find(c => c.name === e.target.value);
-                    if (city) setSelectedCity(city);
-                  }}
-                  className="text-xs font-bold border border-[#efe0c2] bg-[#fcfaf7] rounded-lg px-2.5 py-1.5 text-slate-700 cursor-pointer focus:ring-1 focus:ring-[#c2aa80] focus:outline-none"
-                >
-                  {CITIES.map(c => (
-                    <option key={c.name} value={c.name}>{c.name}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
 
-            {/* Weather Widget Content */}
-            {weatherLoading ? (
-              <div className="flex flex-col items-center justify-center py-8 text-slate-400 gap-2">
-                <Loader2 className="animate-spin text-[#c2aa80]" size={24} />
-                <span className="text-xs font-medium">Fetching 7-day meteorological forecast...</span>
-              </div>
-            ) : weatherError ? (
-              <div className="bg-rose-50 border border-rose-100 rounded-lg p-4 text-center text-xs text-rose-700 flex items-center justify-center gap-2">
-                <AlertTriangle size={16} />
-                <span>Error fetching forecast: {weatherError}. Retrying soon.</span>
-              </div>
-            ) : weatherData ? (
-              <div className="space-y-4">
-                {/* Next Major Event Weather Alert / Highlight */}
-                {nextEvent ? (
-                  <div className="p-4 rounded-xl border border-[#efe0c2] bg-white flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div className="space-y-1">
-                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-semibold bg-[#faf5ec] text-[#856637] border border-[#efe0c2]">
-                        Next major event
-                      </span>
-                      <h4 className="font-serif font-black text-slate-800 text-sm">
-                        {nextEvent.name}
-                      </h4>
-                      <p className="text-xs text-slate-500 font-medium">
-                        Scheduled for <strong className="text-slate-700">{formatHumanDate(nextEvent.date)}</strong>
-                      </p>
-                    </div>
-
-                    {eventWeatherIndex !== -1 ? (
+              {/* Weather Widget Content */}
+              {weatherLoading ? (
+                <div className="flex items-center justify-center py-3 text-slate-400 gap-2">
+                  <Loader2 className="animate-spin text-[#c2aa80]" size={14} />
+                  <span className="text-xs font-medium">Fetching meteorological forecast...</span>
+                </div>
+              ) : weatherError ? (
+                <div className="bg-rose-50 border border-rose-100 rounded-lg py-2 px-3 text-center text-xs text-rose-700 flex items-center justify-center gap-2">
+                  <AlertTriangle size={14} />
+                  <span>Error: {weatherError}. Retrying soon.</span>
+                </div>
+              ) : weatherData ? (
+                <div className="space-y-2">
+                  {nextEvent ? (
+                    eventWeatherIndex !== -1 ? (
+                      /* Case 1: Event within 16-day range */
                       (() => {
                         const code = weatherData.weathercode[eventWeatherIndex];
                         const maxTemp = weatherData.temperature_2m_max[eventWeatherIndex];
@@ -1486,145 +1179,186 @@ function DashboardOverview({
                         const details = getWeatherDetails(code);
 
                         return (
-                          <div className={`p-3 rounded-lg border flex items-center gap-4 shrink-0 max-w-sm w-full md:w-auto ${details.bgColor}`}>
-                            <div className="p-2 bg-white/70 rounded-full border border-white/50 shrink-0">
-                              {details.icon}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <p className="text-xs font-bold leading-tight">{details.label} on Event Day</p>
-                              <div className="flex items-baseline gap-2 mt-0.5">
-                                <span className="text-sm font-extrabold font-mono">{Math.round(maxTemp)}°C</span>
-                                <span className="text-[10px] opacity-75 font-medium font-sans">Min: {Math.round(minTemp)}°C</span>
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-bold text-[#856637] bg-[#f5ebd6]/60 border border-[#efe0c2] px-1.5 py-0.5 rounded">
+                                  Event Day Weather
+                                </span>
+                                <strong className="text-slate-800 truncate">{nextEvent.name}</strong>
                               </div>
-                              <p className="text-[10px] font-semibold mt-1 opacity-80 flex items-center gap-1">
-                                💧 Precip Chance: {rainProb}%
-                                {rainProb > 40 && (
-                                  <span className="text-rose-750 font-bold bg-rose-100 border border-rose-200/50 px-1 rounded text-[8px]">
-                                    ⚠️ Plan Indoors/Tents
-                                  </span>
-                                )}
+                              <p className="text-[11px] text-slate-500 mt-0.5">
+                                Scheduled for {formatHumanDate(nextEvent.date)}
                               </p>
+                            </div>
+
+                            <div className={`flex items-center gap-3 px-3 py-1.5 rounded-lg border ${details.bgColor} max-w-xs w-full sm:w-auto shrink-0`}>
+                              <div className="shrink-0 scale-75 origin-left">
+                                {React.cloneElement(details.icon as React.ReactElement, { size: 16 })}
+                              </div>
+                              <div className="min-w-0 leading-tight">
+                                <span className="text-[10px] font-extrabold block uppercase tracking-wide opacity-75">{details.label}</span>
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  <span className="text-xs font-mono font-bold">{Math.round(maxTemp)}°C</span>
+                                  <span className="text-[10px] opacity-75">/ {Math.round(minTemp)}°C</span>
+                                  <span className="text-[10px] opacity-75 ml-1 flex items-center gap-0.5">
+                                    💧 {rainProb}%
+                                  </span>
+                                  {rainProb > 40 && (
+                                    <span className="text-rose-700 font-bold bg-rose-50 border border-rose-100 px-1 rounded text-[9px] whitespace-nowrap">
+                                      Plan Indoors
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
                             </div>
                           </div>
                         );
                       })()
                     ) : (
-                      <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-[11px] text-slate-500 font-medium flex items-center gap-2 max-w-sm">
-                        <Info size={14} className="text-slate-400 shrink-0" />
-                        <span>Event date is beyond the 16-day forecast range. Showing the upcoming week's forecast.</span>
+                      /* Case 2: Event outside range. Show nearest 5 days + small note */
+                      <div className="space-y-2">
+                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                Event Beyond 16-Day Range ({formatHumanDate(nextEvent.date)})
+                              </span>
+                              <span className="text-xs font-medium text-slate-800 truncate">{nextEvent.name}</span>
+                            </div>
+                            <p className="text-[10px] text-slate-400 mt-0.5">
+                              Nearest available outlook for {selectedCity.name}:
+                            </p>
+                          </div>
+                          {weatherData.precipitation_probability_max.slice(0, 5).some((prob: number) => prob > 40) && (
+                            <span className="text-rose-700 font-bold bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded text-[10px] whitespace-nowrap">
+                              ⚠️ Plan Indoors
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-stretch gap-2 overflow-x-auto pb-1 scrollbar-thin">
+                          {weatherData.time.slice(0, 5).map((dateStr: string, i: number) => {
+                            const code = weatherData.weathercode[i];
+                            const maxTemp = weatherData.temperature_2m_max[i];
+                            const minTemp = weatherData.temperature_2m_min[i];
+                            const rainProb = weatherData.precipitation_probability_max[i];
+                            const details = getWeatherDetails(code);
+
+                            const [y, m, d] = dateStr.split('-');
+                            const dateObj = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
+                            const weekday = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
+                            const dayMonth = dateObj.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
+
+                            return (
+                              <div 
+                                key={dateStr}
+                                className="flex-1 min-w-[76px] bg-white border border-[#efe0c2]/60 rounded-lg p-2 flex flex-col items-center justify-between text-center space-y-1 hover:border-[#c2aa80] transition"
+                              >
+                                <div className="leading-none">
+                                  <span className="text-[11px] font-bold text-slate-700 block">{weekday}</span>
+                                  <span className="text-[9px] text-slate-400 block mt-0.5">{dayMonth}</span>
+                                </div>
+                                <div className="scale-75 my-0.5">
+                                  {React.cloneElement(details.icon as React.ReactElement, { size: 16 })}
+                                </div>
+                                <div className="leading-tight">
+                                  <div className="text-[10px] font-mono font-bold text-slate-800">
+                                    {Math.round(maxTemp)}° / {Math.round(minTemp)}°
+                                  </div>
+                                  <div className="text-[9px] text-slate-500 mt-0.5 flex items-center justify-center gap-0.5">
+                                    💧 {rainProb}%
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-400 italic text-center">
-                    No upcoming events scheduled to align weather forecasts.
-                  </div>
-                )}
-
-              </div>
-            ) : (
-              <div className="text-center text-xs text-slate-400 italic py-6">
-                Unable to load weather forecast data.
-              </div>
-            )}
-          </div>
-          )}
-
-          {/* Upcoming Events Card */}
-          <div className="bg-[#fcfaf7] rounded-xl border border-[#e2dcd0] p-6 shadow-sm hover:shadow-md hover:-translate-y-1 transition duration-200 space-y-4">
-            <div>
-              <h3 className="text-lg font-serif font-bold text-[#1e293b] flex items-center gap-2">
-                <Calendar className="text-[#856637]" size={20} />
-                Upcoming Events
-              </h3>
-              <p className="text-xs text-slate-500">
-                The next several scheduled ministry milestones and events.
-              </p>
-            </div>
-
-            {(() => {
-              const upcomingEventsList = [...events]
-                .filter(evt => {
-                  const [y, m, d] = evt.date.split('-');
-                  const eventDate = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
-                  const today = new Date(2026, 6, 6); // July 6, 2026 for consistency
-                  const d1 = Date.UTC(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate());
-                  const d2 = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
-                  const diffDays = Math.ceil((d1 - d2) / (1000 * 60 * 60 * 24));
-                  return diffDays >= 0;
-                })
-                .sort((a, b) => a.date.localeCompare(b.date))
-                .slice(0, 5);
-
-              const getEventDaysOut = (dateStr: string) => {
-                const [y, m, d] = dateStr.split('-');
-                const eventDate = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
-                const today = new Date(2026, 6, 6);
-                const d1 = Date.UTC(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate());
-                const d2 = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
-                return Math.ceil((d1 - d2) / (1000 * 60 * 60 * 24));
-              };
-
-              const getEventDistanceLabel = (days: number) => {
-                if (days === 0) return 'today';
-                if (days === 1) return 'tomorrow';
-                if (days < 7) return `in ${days} days`;
-                const weeks = Math.round(days / 7);
-                if (days < 30) {
-                  return `in ${weeks} ${weeks === 1 ? 'week' : 'weeks'}`;
-                }
-                const months = Math.round(days / 30);
-                return `in ${months} ${months === 1 ? 'month' : 'months'}`;
-              };
-
-              if (upcomingEventsList.length === 0) {
-                return (
-                  <p className="text-xs text-slate-400 italic py-2">
-                    No upcoming events scheduled right now.
-                  </p>
-                );
-              }
-
-              return (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {upcomingEventsList.map(evt => {
-                    const daysOut = getEventDaysOut(evt.date);
-                    const distanceLabel = getEventDistanceLabel(daysOut);
-                    return (
-                      <div
-                        key={evt.id}
-                        onClick={() => {
-                          onSelectEvent?.(evt.id);
-                          onNavigate('timeline');
-                        }}
-                        className="flex items-center justify-between p-4 rounded-xl border border-[#efe0c2] bg-white hover:bg-[#f5ebd6]/20 hover:border-[#c2aa80] transition duration-200 cursor-pointer shadow-xs group"
-                      >
-                        <div className="space-y-1 min-w-0 flex-1 pr-3">
-                          <h4 className="text-sm font-serif font-bold text-[#1e293b] group-hover:text-black transition truncate">
-                            {evt.name}
-                          </h4>
-                          <p className="text-xs text-slate-500 font-medium">
-                            {formatHumanDate(evt.date)}
+                    )
+                  ) : (
+                    /* Case 3: No event, show general 5-day outlook */
+                    <div className="space-y-2">
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                            General Outlook
+                          </span>
+                          <p className="text-[10px] text-slate-400 mt-0.5">
+                            Upcoming 5-day weather outlook for {selectedCity.name}:
                           </p>
                         </div>
-                        <div className="text-right shrink-0">
-                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-[#f5ebd6]/60 text-[#856637] border border-[#efe0c2] shadow-xs">
-                            {distanceLabel}
-                          </span>
-                        </div>
                       </div>
-                    );
-                  })}
-                </div>
-              );
-            })()}
-          </div>
 
-          {/* Quick Lane Reference Card */}
-          <div className="bg-[#fcfaf7] rounded-xl border border-[#e2dcd0] p-6 shadow-sm hover:shadow-md hover:-translate-y-1 transition duration-200 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                      <div className="flex items-stretch gap-2 overflow-x-auto pb-1 scrollbar-thin">
+                        {weatherData.time.slice(0, 5).map((dateStr: string, i: number) => {
+                          const code = weatherData.weathercode[i];
+                          const maxTemp = weatherData.temperature_2m_max[i];
+                          const minTemp = weatherData.temperature_2m_min[i];
+                          const rainProb = weatherData.precipitation_probability_max[i];
+                          const details = getWeatherDetails(code);
+
+                          const [y, m, d] = dateStr.split('-');
+                          const dateObj = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
+                          const weekday = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
+                          const dayMonth = dateObj.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
+
+                          return (
+                            <div 
+                              key={dateStr}
+                              className="flex-1 min-w-[76px] bg-white border border-[#efe0c2]/60 rounded-lg p-2 flex flex-col items-center justify-between text-center space-y-1 hover:border-[#c2aa80] transition"
+                            >
+                              <div className="leading-none">
+                                <span className="text-[11px] font-bold text-slate-700 block">{weekday}</span>
+                                <span className="text-[9px] text-slate-400 block mt-0.5">{dayMonth}</span>
+                              </div>
+                              <div className="scale-75 my-0.5">
+                                {React.cloneElement(details.icon as React.ReactElement, { size: 16 })}
+                              </div>
+                              <div className="leading-tight">
+                                <div className="text-[10px] font-mono font-bold text-slate-800">
+                                  {Math.round(maxTemp)}° / {Math.round(minTemp)}°
+                                </div>
+                                <div className="text-[9px] text-slate-500 mt-0.5 flex items-center justify-center gap-0.5">
+                                  💧 {rainProb}%
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center text-xs text-slate-400 italic py-2">
+                  Unable to load weather forecast data.
+                </div>
+              )}
+            </div>
+          )}
+
+      </div>
+
+      {/* Team setup section */}
+      <div className="bg-white border border-[#e2dcd0] rounded-2xl overflow-hidden shadow-xs">
+        <div
+          id="team-setup-header"
+          className="w-full flex items-center justify-between p-5 bg-[#fcfaf7] border-b border-[#e2dcd0] text-left"
+        >
+          <div className="flex items-center gap-3">
+            <Settings className="text-[#856637]" size={18} />
+            <div>
+              <h3 className="font-serif font-black text-slate-800 text-sm leading-tight">Team setup</h3>
+              <p className="text-[10px] text-slate-400 font-medium">Manage ministry lanes and lead team coordinators</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-[#efe0c2]/30">
               <div>
-                <h3 className="text-lg font-serif font-bold text-[#1e293b]">Ministry Lanes & Leads</h3>
+                <h4 className="text-sm font-serif font-bold text-[#1e293b]">Ministry Lanes & Leads</h4>
                 <p className="text-xs text-slate-500">
                   Workloads are categorized into tactical lanes. Each has an assigned coordinator on the lead team.
                 </p>
@@ -1642,18 +1376,80 @@ function DashboardOverview({
             </div>
 
             {!isManaging ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {lanes.map((lane) => (
-                  <div key={lane.id} className={`flex items-center justify-between p-3 rounded-lg ${getLaneBgAndBorder(lane.name)}`}>
-                    <div className="flex items-center gap-2">
-                      <div className={`w-2 h-2 rounded-full ${getLaneDotColor(lane.name)}`} />
-                      <span className="text-xs font-semibold text-slate-700">{lane.name} Lane</span>
-                    </div>
-                    <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${getLaneBadgeColor(lane.name)}`}>
-                      Lead: {lane.leadName}
-                    </span>
+              <div className="space-y-6">
+                <div>
+                  <h5 className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-3">Ministry Lanes</h5>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {lanes.map((lane) => (
+                      <div key={lane.id} className={`flex items-center justify-between p-3 rounded-lg ${getLaneBgAndBorder(lane.name)}`}>
+                        <div className="flex items-center gap-2">
+                          <div className={`w-2 h-2 rounded-full ${getLaneDotColor(lane.name)}`} />
+                          <span className="text-xs font-semibold text-slate-700">{lane.name} Lane</span>
+                        </div>
+                        <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${getLaneBadgeColor(lane.name)}`}>
+                          Lead: {lane.leadName}
+                        </span>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                </div>
+
+                <div>
+                  <h5 className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-3">Lead Coordinator Workloads</h5>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {leadStatsList.map((lead, idx) => {
+                      const isOver = lead.activeTasksCount > LEAD_TASK_CAPACITY;
+                      return (
+                        <div 
+                          key={idx} 
+                          className={`p-3.5 rounded-xl border transition ${
+                            isOver 
+                              ? 'bg-rose-50/40 border-rose-200 text-slate-900 shadow-xs' 
+                              : 'bg-[#faf8f4]/60 border-[#efe0c2] text-slate-800'
+                          }`}
+                        >
+                          <div className="flex justify-between items-start gap-2">
+                            <div className="min-w-0">
+                              <p className="font-serif font-bold text-xs flex items-center gap-1.5 flex-wrap">
+                                <span className="truncate">{lead.leadName}</span>
+                                {isOver ? (
+                                  <span className="inline-flex text-[9px] font-semibold bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded border border-rose-200">
+                                    Over capacity
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex text-[9px] font-semibold bg-[#f5ebd6] text-[#856637] px-1.5 py-0.5 rounded border border-[#efe0c2]">
+                                    Safe workload
+                                  </span>
+                                )}
+                              </p>
+                              <p className="text-[10px] text-slate-500 mt-0.5 truncate">
+                                Lanes: {lead.lanes.join(', ')}
+                              </p>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p className="text-xs font-bold font-mono">
+                                {lead.activeTasksCount} <span className="text-slate-400 font-sans font-medium">/ {LEAD_TASK_CAPACITY} Tasks</span>
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Load bar */}
+                          <div className="mt-3 text-[10px] font-semibold text-slate-500 border-t border-[#efe0c2]/30 pt-2">
+                            <div>
+                              <span className="block text-[9px] text-slate-400">Task Limit ({LEAD_TASK_CAPACITY})</span>
+                              <div className="w-full bg-[#efe9dc]/40 h-1.5 rounded-full overflow-hidden mt-0.5">
+                                <div 
+                                  className={`h-full rounded-full ${lead.activeTasksCount > LEAD_TASK_CAPACITY ? 'bg-rose-500' : 'bg-[#c2aa80]'}`}
+                                  style={{ width: `${Math.min((lead.activeTasksCount / LEAD_TASK_CAPACITY) * 100, 100)}%` }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="space-y-4">
@@ -1711,7 +1507,7 @@ function DashboardOverview({
                                         setEditingLaneId(null);
                                       }
                                     }}
-                                    className="p-1 text-emerald-600 hover:bg-emerald-50 rounded cursor-pointer"
+                                    className="p-1 text-emerald-650 hover:bg-emerald-50 rounded cursor-pointer"
                                     title="Save Changes"
                                   >
                                     <Check size={14} />
@@ -1816,124 +1612,9 @@ function DashboardOverview({
               </div>
             )}
           </div>
-
-
-
       </div>
 
-      {/* Burnout Modal */}
-      {showBurnoutModal && (
-        <div className="fixed inset-0 bg-black/45 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div 
-            ref={burnoutModalRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="burnout-modal-title"
-            className="bg-white rounded-2xl border border-[#e2dcd0] shadow-2xl max-w-lg w-full overflow-hidden animate-scaleUp"
-          >
-            {/* Header */}
-            <div className="bg-[#fcfaf7] p-5 border-b border-[#e2dcd0] flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="text-rose-650" size={20} aria-hidden="true" />
-                <div>
-                  <h3 id="burnout-modal-title" className="font-serif font-black text-slate-800 text-sm leading-tight">Workload check</h3>
-                  <p className="text-[10px] text-slate-400 font-medium">Workload safety thresholds: max 15 active tasks or 20 weekly hours</p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setShowBurnoutModal(false)}
-                aria-label="Close workload auditor modal"
-                className="text-slate-400 hover:text-slate-600 transition p-1 cursor-pointer"
-              >
-                <X size={18} aria-hidden="true" />
-              </button>
-            </div>
 
-            {/* Content */}
-            <div className="p-6 space-y-4 max-h-[350px] overflow-y-auto">
-              {leadStatsList.length === 0 ? (
-                <p className="text-xs text-slate-400 italic text-center py-6">No ministry coordinators found.</p>
-              ) : (
-                <div className="space-y-3">
-                  {leadStatsList.map((lead, idx) => {
-                    const isOver = lead.activeTasksCount > 15 || lead.weeklyHours > 20;
-                    return (
-                      <div 
-                        key={idx} 
-                        className={`p-3.5 rounded-xl border transition ${
-                          isOver 
-                            ? 'bg-rose-50/40 border-rose-200 text-slate-900' 
-                            : 'bg-[#faf8f4]/60 border-[#efe0c2] text-slate-800'
-                        }`}
-                      >
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <p className="font-serif font-bold text-xs flex items-center gap-1.5">
-                              {lead.leadName}
-                              {isOver ? (
-                                <span className="inline-flex text-[10px] font-semibold bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded border border-rose-200">
-                                  Over capacity
-                                </span>
-                              ) : (
-                                <span className="inline-flex text-[10px] font-semibold bg-[#f5ebd6] text-[#856637] px-1.5 py-0.5 rounded border border-[#efe0c2]">
-                                  Safe workload
-                                </span>
-                              )}
-                            </p>
-                            <p className="text-[10px] text-slate-500 mt-0.5">
-                              Assigned Lane(s): {lead.lanes.join(', ')}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-xs font-bold font-mono">
-                              {lead.activeTasksCount} <span className="text-slate-400 font-sans font-medium">/ 15 Tasks</span>
-                            </p>
-                            <p className="text-[10px] text-slate-500 font-mono font-semibold">
-                              {lead.weeklyHours}h <span className="text-slate-400 font-sans font-normal">/ 20 hrs max</span>
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Visual alerts bar */}
-                        <div className="mt-3 grid grid-cols-2 gap-3 text-[10px] font-semibold text-slate-500 border-t border-slate-100 pt-2">
-                          <div>
-                            <span className="block text-[9px]">Task limit (15)</span>
-                            <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-0.5">
-                              <div 
-                                className={`h-full rounded-full ${lead.activeTasksCount > 15 ? 'bg-rose-500' : 'bg-[#c2aa80]'}`}
-                                style={{ width: `${Math.min((lead.activeTasksCount / 15) * 100, 100)}%` }}
-                              />
-                            </div>
-                          </div>
-                          <div>
-                            <span className="block text-[9px]">Hours limit (20h)</span>
-                            <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-0.5">
-                              <div 
-                                className={`h-full rounded-full ${lead.weeklyHours > 20 ? 'bg-rose-500' : 'bg-[#c2aa80]'}`}
-                                style={{ width: `${Math.min((lead.weeklyHours / 20) * 100, 100)}%` }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="bg-[#faf8f4] p-4 border-t border-[#e2dcd0] flex justify-end">
-              <button 
-                onClick={() => setShowBurnoutModal(false)}
-                className="px-4 py-2 bg-[#1e293b] hover:bg-[#0f172a] text-white font-bold text-xs rounded-lg transition shadow-sm cursor-pointer"
-              >
-                Done Auditing
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Floating Quick Actions Menu */}
       <div className="fixed bottom-8 right-8 z-40 flex flex-col items-end gap-3 select-none">
@@ -2074,7 +1755,7 @@ function DashboardOverview({
                     className="space-y-4"
                   >
                     <div>
-                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Target Event *</label>
+                      <label className="block text-xs font-semibold text-slate-500 mb-1">Target event *</label>
                       <select
                         required
                         value={quickTaskEventId}
@@ -2093,7 +1774,7 @@ function DashboardOverview({
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Task Title *</label>
+                        <label className="block text-xs font-semibold text-slate-500 mb-1">Task title *</label>
                         <input
                           type="text"
                           required
@@ -2104,7 +1785,7 @@ function DashboardOverview({
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Milestone Phase *</label>
+                        <label className="block text-xs font-semibold text-slate-500 mb-1">Milestone phase *</label>
                         <select
                           required
                           value={quickTaskMilestone}
@@ -2134,7 +1815,7 @@ function DashboardOverview({
 
                     <div className="grid grid-cols-3 gap-4">
                       <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Department / Lane *</label>
+                        <label className="block text-xs font-semibold text-slate-500 mb-1">Department / lane *</label>
                         <select
                           required
                           value={quickTaskLane}
@@ -2152,7 +1833,7 @@ function DashboardOverview({
                       </div>
 
                       <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Due Date *</label>
+                        <label className="block text-xs font-semibold text-slate-500 mb-1">Due date *</label>
                         <input
                           type="date"
                           required
@@ -2163,7 +1844,7 @@ function DashboardOverview({
                       </div>
 
                       <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Assigned Lead</label>
+                        <label className="block text-xs font-semibold text-slate-500 mb-1">Assigned lead</label>
                         <select
                           value={quickTaskAssignedTo}
                           onChange={(e) => setQuickTaskAssignedTo(e.target.value)}
@@ -2227,7 +1908,7 @@ function DashboardOverview({
                   >
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Full Name *</label>
+                        <label className="block text-xs font-semibold text-slate-500 mb-1">Full name *</label>
                         <input
                           type="text"
                           required
@@ -2238,7 +1919,7 @@ function DashboardOverview({
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Email Address *</label>
+                        <label className="block text-xs font-semibold text-slate-500 mb-1">Email address *</label>
                         <input
                           type="email"
                           required
@@ -2252,7 +1933,7 @@ function DashboardOverview({
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Phone Number</label>
+                        <label className="block text-xs font-semibold text-slate-500 mb-1">Phone number</label>
                         <input
                           type="tel"
                           placeholder="e.g. (202) 555-0193"
@@ -2262,7 +1943,7 @@ function DashboardOverview({
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Primary Skills / Tags</label>
+                        <label className="block text-xs font-semibold text-slate-500 mb-1">Primary skills / tags</label>
                         <input
                           type="text"
                           placeholder="e.g. Photography, AV, Coding"
@@ -2274,7 +1955,7 @@ function DashboardOverview({
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Assigned Roles / Stations (Comma-separated)</label>
+                      <label className="block text-xs font-semibold text-slate-500 mb-1">Assigned roles / stations (comma-separated)</label>
                       <input
                         type="text"
                         placeholder="e.g. Audio Lead, Welcome Desk"
@@ -2282,11 +1963,11 @@ function DashboardOverview({
                         onChange={(e) => setQuickVolRoles(e.target.value)}
                         className="w-full p-2 border border-[#efe0c2] rounded focus:outline-none focus:ring-1 focus:ring-[#c2aa80] bg-[#faf8f4] text-xs text-slate-700"
                       />
-                      <span className="text-[9px] text-slate-400 mt-1 block">Separating roles with commas automatically indexes them inside the volunteer database.</span>
+                      <span className="text-[10px] text-slate-400 mt-1 block">Separating roles with commas automatically indexes them inside the volunteer database.</span>
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Onboarding Notes</label>
+                      <label className="block text-xs font-semibold text-slate-500 mb-1">Onboarding notes</label>
                       <textarea
                         rows={2}
                         placeholder="General availability, background notes, or preferences..."
@@ -2336,7 +2017,7 @@ function DashboardOverview({
                   >
                     <div className="grid grid-cols-3 gap-4">
                       <div className="col-span-2">
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Event Title *</label>
+                        <label className="block text-xs font-semibold text-slate-500 mb-1">Event title *</label>
                         <input
                           type="text"
                           required
@@ -2347,7 +2028,7 @@ function DashboardOverview({
                         />
                       </div>
                       <div className="col-span-1">
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Launch Date *</label>
+                        <label className="block text-xs font-semibold text-slate-500 mb-1">Launch date *</label>
                         <input
                           type="date"
                           required
@@ -2418,7 +2099,7 @@ function DashboardOverview({
               <div className="bg-[#faf8f4] border-b border-[#efe0c2] px-5 py-4 flex justify-between items-center">
                 <div>
                   <h3 id="clone-event-overview-title" className="font-serif font-bold text-slate-800 text-lg">Clone Event to New Year</h3>
-                  <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-0.5 font-bold">Rollover Setup</p>
+                  <p className="text-xs text-slate-500 mt-0.5 font-semibold">Rollover setup</p>
                 </div>
                 <button 
                   onClick={() => { setCloneEventTargetId(null); setCloneEventNewDate(''); }}
@@ -2430,7 +2111,7 @@ function DashboardOverview({
               </div>
               <div className="p-5 space-y-4">
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">New Event Date *</label>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">New event date *</label>
                   <input
                     type="date"
                     required

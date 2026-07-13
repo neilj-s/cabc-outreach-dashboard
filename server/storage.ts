@@ -301,8 +301,7 @@ export const SEED_DATA = {
           status: 'Sent'
         }
       ],
-      customFields: {} as Record<string, string>,
-      hasVulnerableSectorCheck: true
+      customFields: {} as Record<string, string>
     },
     {
       id: 'vol_2',
@@ -321,8 +320,7 @@ export const SEED_DATA = {
           status: 'Sent'
         }
       ],
-      customFields: {} as Record<string, string>,
-      hasVulnerableSectorCheck: true
+      customFields: {} as Record<string, string>
     },
     {
       id: 'vol_3',
@@ -341,8 +339,7 @@ export const SEED_DATA = {
           status: 'Sent'
         }
       ],
-      customFields: {} as Record<string, string>,
-      hasVulnerableSectorCheck: true
+      customFields: {} as Record<string, string>
     },
     {
       id: 'vol_4',
@@ -361,8 +358,7 @@ export const SEED_DATA = {
           status: 'Delivered'
         }
       ],
-      customFields: {} as Record<string, string>,
-      hasVulnerableSectorCheck: false
+      customFields: {} as Record<string, string>
     },
     {
       id: 'vol_5',
@@ -381,8 +377,7 @@ export const SEED_DATA = {
           status: 'Opened'
         }
       ],
-      customFields: {} as Record<string, string>,
-      hasVulnerableSectorCheck: true
+      customFields: {} as Record<string, string>
     }
   ],
   auditLogs: [] as AuditLog[],

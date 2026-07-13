@@ -185,7 +185,7 @@ function BudgetExpenseTracker({
   if (!activeEvent) {
     return (
       <div className="flex items-center justify-center min-h-[400px] text-slate-500">
-        <p>No events found. Please create an event first inside the Reverse-Timeline or Command Overview.</p>
+        <p>No events found. Please create an event first inside the Reverse-Timeline or Overview.</p>
       </div>
     );
   }

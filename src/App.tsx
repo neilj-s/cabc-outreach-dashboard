@@ -62,7 +62,6 @@ interface SummaryData {
   completedTasks: number;
   missingHighValueCount: number;
   overburdenedVolunteersCount: number;
-  nonCompliantVolunteersCount: number;
 }
 
 const recalculateSummary = (
@@ -117,23 +116,22 @@ const recalculateSummary = (
     }
   });
 
-  const leadStats: Record<string, { activeTasksCount: number; weeklyHours: number }> = {};
+  const LEAD_TASK_CAPACITY = 12;
+  const leadStats: Record<string, { activeTasksCount: number }> = {};
   currentLanes.forEach((lane) => {
     if (!lane) return;
     const leadName = lane.leadName;
     if (!leadName) return;
     if (!leadStats[leadName]) {
-      leadStats[leadName] = { activeTasksCount: 0, weeklyHours: 0 };
+      leadStats[leadName] = { activeTasksCount: 0 };
     }
     const tasksInLane = activeTasksByLane[lane.name] || [];
     leadStats[leadName].activeTasksCount += tasksInLane.length;
-    const hoursInLane = tasksInLane.reduce((sum: number, t: Task) => sum + (t.estimatedHours || 2), 0);
-    leadStats[leadName].weeklyHours += hoursInLane;
   });
 
   let overallocatedLeadsCount = 0;
   Object.values(leadStats).forEach((stats) => {
-    if (stats.activeTasksCount > 15 || stats.weeklyHours > 20) {
+    if (stats.activeTasksCount > LEAD_TASK_CAPACITY) {
       overallocatedLeadsCount++;
     }
   });
@@ -404,8 +402,7 @@ function MainApp() {
     totalTasks: 0,
     completedTasks: 0,
     missingHighValueCount: 0,
-    overburdenedVolunteersCount: 0,
-    nonCompliantVolunteersCount: 0
+    overburdenedVolunteersCount: 0
   });
 
   const availableYears = Array.isArray(events)
@@ -1155,14 +1152,13 @@ function MainApp() {
       return;
     }
 
-    const headers = ['Name', 'Email', 'Phone', 'Roles', 'Skills', 'Vulnerable Sector Check', 'Notes'];
+    const headers = ['Name', 'Email', 'Phone', 'Roles', 'Skills', 'Notes'];
     const rows = volunteers.map(vol => [
       vol.name || '',
       vol.email || '',
       vol.phone || '',
       Array.isArray(vol.roles) ? vol.roles.join(', ') : '',
       vol.skills || '',
-      vol.hasVulnerableSectorCheck ? 'Yes' : 'No',
       vol.notes || ''
     ]);
 
@@ -1237,7 +1233,7 @@ function MainApp() {
 
   // Layout-independent tabs configuration
   const tabsList = [
-    { id: 'dashboard', label: 'Command Overview', icon: <LayoutDashboard size={14} /> },
+    { id: 'dashboard', label: 'Overview', icon: <LayoutDashboard size={14} /> },
     { id: 'timeline', label: 'Reverse-Timeline', icon: <Calendar size={14} /> },
     { id: 'planning', label: 'Planning Centre', icon: <Lightbulb size={14} /> },
     { id: 'logistics', label: 'Logistics Manager', icon: <Package size={14} /> },
