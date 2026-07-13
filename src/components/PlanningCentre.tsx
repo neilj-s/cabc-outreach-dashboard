@@ -1748,6 +1748,16 @@ function PlanningCentre({
                                             </button>
 
                                             <button
+                                              onClick={() => handleAuditDocument(doc)}
+                                              disabled={auditingDocId === doc.id}
+                                              className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-lg border bg-white border-slate-200 text-slate-600 hover:text-[#856637] hover:border-[#c2aa80] disabled:opacity-50 transition shadow-xs cursor-pointer select-none"
+                                              title="Audit Permissions"
+                                            >
+                                              {auditingDocId === doc.id ? <Loader2 size={10} className="animate-spin" /> : <Shield size={10} />}
+                                              <span>Audit</span>
+                                            </button>
+
+                                            <button
                                               onClick={() => setExpandedCardId(expandedCardId === doc.id ? null : doc.id)}
                                               className={`inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-lg border transition shadow-xs cursor-pointer select-none ${
                                                 expandedCardId === doc.id 
@@ -1765,18 +1775,6 @@ function PlanningCentre({
                                         {/* Collapsible Details section */}
                                         {expandedCardId === doc.id && (
                                           <div className="mt-2 pt-2 border-t border-slate-200/50 flex flex-col gap-2 transition-all duration-200 bg-slate-50/50 p-2 rounded-lg">
-                                            <div className="flex items-center justify-between text-[10px] py-1 border-b border-slate-100 last:border-0">
-                                              <span className="text-slate-500 font-medium">Security Access Audit</span>
-                                              <button
-                                                onClick={() => handleAuditDocument(doc)}
-                                                disabled={auditingDocId === doc.id}
-                                                className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-slate-200 rounded-md text-[10px] text-slate-700 hover:text-[#856637] hover:border-[#c2aa80] disabled:opacity-50 transition shadow-xs cursor-pointer"
-                                              >
-                                                {auditingDocId === doc.id ? <Loader2 size={10} className="animate-spin" /> : <Shield size={10} />}
-                                                <span>Audit Permissions</span>
-                                              </button>
-                                            </div>
-
                                             <div className="flex items-center justify-between text-[10px] py-1 border-b border-slate-100 last:border-0">
                                               <span className="text-slate-500 font-medium flex items-center gap-1">
                                                 <span className={`w-1.5 h-1.5 rounded-full ${doc.watchStatus === 'active' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></span>

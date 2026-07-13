@@ -25,6 +25,7 @@ interface TaskCardProps {
   onDeleteTask?: (eventId: string, taskId: string) => Promise<void>;
   lanes?: LaneDetail[];
   volunteers?: Volunteer[];
+  isOverdue?: boolean;
 }
 
 export default function TaskCard({
@@ -37,7 +38,8 @@ export default function TaskCard({
   onUpdateTask,
   onDeleteTask,
   lanes = [],
-  volunteers = []
+  volunteers = [],
+  isOverdue = false
 }: TaskCardProps) {
   const [localTitle, setLocalTitle] = useState(task.title);
   const [localDescription, setLocalDescription] = useState(task.description || '');
@@ -191,6 +193,8 @@ export default function TaskCard({
       className={`p-4 rounded-xl border transition-all ${
         task.completed 
           ? 'bg-[#faf8f4]/60 border-[#e2dcd0]/50 opacity-75' 
+          : isOverdue
+          ? 'bg-rose-50/45 border-rose-200 border-l-4 border-l-rose-500 shadow-xs'
           : 'bg-[#fcfaf7] border border-[#e2dcd0] hover:border-[#c2aa80] shadow-sm'
       }`}
     >
@@ -246,6 +250,11 @@ export default function TaskCard({
                 {task.lane} Lane
               </span>
               <span className="text-[10px] text-slate-400">| Due: {formatHumanDate(task.dueDate)}</span>
+              {isOverdue && (
+                <span className="inline-flex items-center text-[9px] font-semibold bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded border border-rose-200">
+                  Overdue
+                </span>
+              )}
               <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase border flex items-center gap-1 ${
                 (task.priority || 'Medium') === 'High' 
                   ? 'bg-rose-50 text-rose-700 border-rose-200' 

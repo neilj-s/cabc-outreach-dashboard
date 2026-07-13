@@ -11,7 +11,7 @@ router.get('/', (req, res) => {
 
 router.post('/', (req, res) => {
   const db = getDb();
-  const { name, category, totalStock, notes } = req.body;
+  const { name, category, totalStock, notes, isHighValue } = req.body;
 
   if (!name || !category || !totalStock) {
     return res.status(400).json({ error: 'Missing required parameters: name, category, totalStock' });
@@ -22,6 +22,7 @@ router.post('/', (req, res) => {
     name: name.trim(),
     category: category.trim(),
     totalStock: parseInt(totalStock) || 1,
+    isHighValue: !!isHighValue,
     notes: notes ? notes.trim() : ''
   };
 
@@ -42,7 +43,7 @@ router.post('/', (req, res) => {
 router.put('/:id', (req, res) => {
   const db = getDb();
   const { id } = req.params;
-  const { name, category, totalStock, notes } = req.body;
+  const { name, category, totalStock, notes, isHighValue } = req.body;
 
   if (!db.inventory) db.inventory = [];
   const index = db.inventory.findIndex((item: InventoryItem) => item.id === id);
@@ -60,6 +61,7 @@ router.put('/:id', (req, res) => {
     name: name ? name.trim() : currentItem.name,
     category: category ? category.trim() : currentItem.category,
     totalStock: newStock,
+    isHighValue: isHighValue !== undefined ? !!isHighValue : currentItem.isHighValue,
     notes: notes !== undefined ? notes.trim() : currentItem.notes
   };
 

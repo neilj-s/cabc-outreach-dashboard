@@ -209,6 +209,15 @@ export const DEFAULT_DOCS: EventDoc[] = [
 export const SEED_DATA = {
   events: [
     {
+      id: 'evt_0',
+      name: 'Youth Summer Kickoff',
+      date: '2026-06-15',
+      description: 'Outdoor summer kickoff for youth group with live band and photo booth.',
+      tasks: [] as Task[],
+      docs: JSON.parse(JSON.stringify(DEFAULT_DOCS)) as EventDoc[],
+      budgetCap: 400
+    },
+    {
       id: 'evt_1',
       name: 'Free Car Wash & BBQ',
       date: '2026-08-15',
@@ -418,9 +427,21 @@ export const SEED_DATA = {
     { id: 'inv_3', name: 'Yamaha Stage Sound System', category: 'Audio/Visual', totalStock: 2, notes: '2 active speakers, 6-channel mixer, 2 wireless mics.' },
     { id: 'inv_4', name: 'Giant Cooler Chests (120qt)', category: 'Catering', totalStock: 5, notes: 'Clean with bleach spray after use.' },
     { id: 'inv_5', name: 'Corrugated Plastic Lawn Signs', category: 'Logistics', totalStock: 20, notes: 'White blanks, dry-erase compatible. Includes metal stakes.' },
-    { id: 'inv_6', name: 'High-Visibility Safety Vests', category: 'Logistics', totalStock: 30, notes: 'Neon yellow with reflective bands. Medium & Large sizes.' }
+    { id: 'inv_6', name: 'High-Visibility Safety Vests', category: 'Logistics', totalStock: 30, notes: 'Neon yellow with reflective bands. Medium & Large sizes.' },
+    { id: 'inv_7', name: 'Sony Alpha DSLR Camera & Lenses', category: 'Audio/Visual', totalStock: 3, isHighValue: true, notes: 'High value camera equipment. Store in hard shell case.' },
+    { id: 'inv_8', name: 'Pro Motorola Walkie-Talkies (Set of 6)', category: 'Audio/Visual', totalStock: 4, isHighValue: true, notes: 'Must be returned to charging docks after event.' }
   ],
   reservations: [
+    {
+      id: 'res_0',
+      assetId: 'inv_7',
+      eventId: 'evt_0',
+      eventName: 'Youth Summer Kickoff',
+      eventDate: '2026-06-15',
+      quantity: 1,
+      reservedBy: 'Bea P.',
+      status: 'Packed'
+    },
     {
       id: 'res_1',
       assetId: 'inv_1',

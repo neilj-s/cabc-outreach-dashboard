@@ -83,7 +83,8 @@ export default function ReverseTimeline({
 
   // Filter state
   const [selectedLaneFilter, setSelectedLaneFilter] = useState<MinistryLane | 'All'>('All');
-  const [taskSortOrder, setTaskSortOrder] = useState<'default' | 'priority-desc' | 'priority-asc' | 'due-date'>('default');
+  const [selectedAssigneeFilter, setSelectedAssigneeFilter] = useState<string>('All');
+  const [taskSortOrder, setTaskSortOrder] = useState<'default' | 'priority-desc' | 'due-date'>('default');
   const [timelineViewMode, setTimelineViewMode] = useState<'list' | 'calendar'>('list');
   const [calMonth, setCalMonth] = useState<number>(new Date('2026-07-08').getMonth()); // July (index 6)
   const [calYear, setCalYear] = useState<number>(new Date('2026-07-08').getFullYear()); // 2026
@@ -99,6 +100,9 @@ export default function ReverseTimeline({
 
   // Collapsed status for description
   const [expandedTasks, setExpandedTasks] = useState<Record<string, boolean>>({});
+
+  // Collapsed status for milestone groups
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
 
   const [showBriefingModal, setShowBriefingModal] = useState(false);
 
@@ -137,6 +141,32 @@ export default function ReverseTimeline({
   };
 
   const selectedEvent = events.find(e => e.id === selectedEventId) || events[0];
+
+  const assigneeOptions = (() => {
+    const allTasks = selectedEvent?.tasks || [];
+    const uniqueAssignees = new Set<string>();
+    allTasks.forEach(task => {
+      if (task.assignedTo && task.assignedTo.trim() !== '') {
+        uniqueAssignees.add(task.assignedTo.trim());
+      }
+    });
+    return Array.from(uniqueAssignees).sort();
+  })();
+
+  const isOverdue = (task: Task) => {
+    if (task.completed) return false;
+    if (!task.dueDate) return false;
+
+    const parseLocalDate = (dateStr: string): Date => {
+      const [year, month, day] = dateStr.split('-').map(Number);
+      return new Date(year, month - 1, day);
+    };
+
+    const taskDate = parseLocalDate(task.dueDate);
+    const todayDate = parseLocalDate('2026-07-08');
+
+    return taskDate.getTime() < todayDate.getTime();
+  };
 
   const briefingModalRef = useFocusTrap(showBriefingModal && !!selectedEvent, () => setShowBriefingModal(false));
   const rescaleModalRef = useFocusTrap(showRescaleModal && !!selectedEvent, () => setShowRescaleModal(false));
@@ -334,7 +364,17 @@ export default function ReverseTimeline({
     event.tasks.forEach(task => {
       const group = groups.find(g => g.key === task.milestoneKey);
       if (group) {
-        if (selectedLaneFilter === 'All' || task.lane === selectedLaneFilter) {
+        const matchesLane = selectedLaneFilter === 'All' || task.lane === selectedLaneFilter;
+        let matchesAssignee = false;
+        if (selectedAssigneeFilter === 'All') {
+          matchesAssignee = true;
+        } else if (selectedAssigneeFilter === 'Unassigned') {
+          matchesAssignee = !task.assignedTo || task.assignedTo.trim() === '';
+        } else {
+          matchesAssignee = task.assignedTo === selectedAssigneeFilter;
+        }
+
+        if (matchesLane && matchesAssignee) {
           group.tasks.push(task);
         }
       }
@@ -348,13 +388,6 @@ export default function ReverseTimeline({
           const weightA = priorityWeight[a.priority || 'Medium'] || 2;
           const weightB = priorityWeight[b.priority || 'Medium'] || 2;
           return weightB - weightA;
-        });
-      } else if (taskSortOrder === 'priority-asc') {
-        group.tasks.sort((a, b) => {
-          const priorityWeight = { 'High': 3, 'Medium': 2, 'Low': 1 };
-          const weightA = priorityWeight[a.priority || 'Medium'] || 2;
-          const weightB = priorityWeight[b.priority || 'Medium'] || 2;
-          return weightA - weightB;
         });
       } else if (taskSortOrder === 'due-date') {
         group.tasks.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
@@ -772,6 +805,23 @@ export default function ReverseTimeline({
                       {lane}
                     </button>
                   ))}
+
+                  <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1 ml-2 sm:ml-4 border-l border-slate-200 pl-3">
+                    Assignee:
+                  </span>
+                  <select
+                    value={selectedAssigneeFilter}
+                    onChange={e => setSelectedAssigneeFilter(e.target.value)}
+                    className="text-[11px] font-bold border border-[#efe0c2] bg-[#fcfaf7] rounded-lg px-2 py-1 text-slate-700 cursor-pointer focus:ring-1 focus:ring-[#c2aa80] focus:outline-none"
+                  >
+                    <option value="All">All</option>
+                    <option value="Unassigned">Unassigned</option>
+                    {assigneeOptions.map(assignee => (
+                      <option key={assignee} value={assignee}>
+                        {assignee}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="flex items-center gap-2 self-start md:self-auto">
@@ -783,10 +833,9 @@ export default function ReverseTimeline({
                     onChange={e => setTaskSortOrder(e.target.value as any)}
                     className="text-[11px] font-bold border border-[#efe0c2] bg-[#fcfaf7] rounded-lg px-2 py-1 text-slate-700 cursor-pointer focus:ring-1 focus:ring-[#c2aa80] focus:outline-none"
                   >
-                    <option value="default">🕒 Timeline Order</option>
-                    <option value="priority-desc">🔴 Priority: High to Low</option>
-                    <option value="priority-asc">🟢 Priority: Low to High</option>
-                    <option value="due-date">📅 Due Date</option>
+                    <option value="default">Timeline Order</option>
+                    <option value="priority-desc">Priority: High to Low</option>
+                    <option value="due-date">Due Date</option>
                   </select>
                 </div>
               </div>
@@ -972,6 +1021,41 @@ export default function ReverseTimeline({
               )}
             </div>
 
+            {/* Event Task Progress Header */}
+            {(() => {
+              const allTasks = selectedEvent?.tasks || [];
+              const totalTasks = allTasks.length;
+              const completedTasks = allTasks.filter(t => t.completed).length;
+              const percent = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+              return (
+                <div className="bg-white border border-[#e2dcd0] rounded-xl p-4 shadow-sm mb-6 max-w-3xl">
+                  {totalTasks === 0 ? (
+                    <div className="text-xs text-slate-500 italic font-medium">
+                      No tasks yet
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="font-bold text-slate-700">
+                          {completedTasks} of {totalTasks} tasks complete
+                        </span>
+                        <span className="font-mono font-bold text-[#856637]">
+                          {percent}%
+                        </span>
+                      </div>
+                      <div className="w-full bg-[#efe9dc]/40 h-2 rounded-full overflow-hidden">
+                        <div 
+                          className="bg-[#856637] h-full rounded-full transition-all duration-300"
+                          style={{ width: `${percent}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* Timelines container */}
             <div className="relative border-l-2 border-[#e2dcd0] ml-4 pl-6 space-y-8">
               {getMilestoneGroups(selectedEvent).map(group => {
@@ -983,6 +1067,8 @@ export default function ReverseTimeline({
                 const dynamicLabel = getTimeOutLabel(groupDate, selectedEvent.date);
                 const displayedTitle = dynamicLabel ? `${cleanedTitle} (${dynamicLabel})` : cleanedTitle;
 
+                const isExpanded = !collapsedGroups[group.key];
+
                 return (
                   <div key={group.key} className="relative">
                     {/* Timeline Node Ring */}
@@ -991,20 +1077,40 @@ export default function ReverseTimeline({
                     </div>
 
                     {/* Milestone Header */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 bg-[#fcfaf7] border border-[#e2dcd0] p-3 rounded-xl">
-                      <div>
-                        <h4 className="font-serif font-bold text-[#1e293b] text-sm leading-tight">{displayedTitle}</h4>
-                        <div className="flex items-center gap-1.5 text-[10px] text-slate-500 mt-1">
-                          <Clock size={10} />
-                          <span>Estimated Due: {formatHumanDate(groupDate)}</span>
+                    <div 
+                      onClick={() => {
+                        setCollapsedGroups(prev => ({
+                          ...prev,
+                          [group.key]: !prev[group.key]
+                        }));
+                      }}
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 bg-[#fcfaf7] border border-[#e2dcd0] p-3 rounded-xl cursor-pointer hover:bg-[#faf8f4] transition select-none"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <ChevronDown 
+                          size={16} 
+                          className={`text-slate-400 transition-transform duration-200 shrink-0 ${isExpanded ? '' : '-rotate-90'}`} 
+                        />
+                        <div>
+                          <h4 className="font-serif font-bold text-[#1e293b] text-sm leading-tight">{displayedTitle}</h4>
+                          <div className="flex items-center gap-1.5 text-[10px] text-slate-500 mt-1">
+                            <Clock size={10} />
+                            <span>Estimated Due: {formatHumanDate(groupDate)}</span>
+                          </div>
                         </div>
                       </div>
-                      <div className="flex items-center justify-between sm:justify-end gap-3">
-                        <span className="text-[10px] text-slate-505 font-medium">
-                          {completedInGroup}/{totalInGroup} Completed
+                      <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0" onClick={e => e.stopPropagation()}>
+                        <span className="text-[10px] text-slate-500 font-bold bg-[#efe9dc]/40 px-2 py-0.5 rounded-full">
+                          {completedInGroup} / {totalInGroup} done
                         </span>
                         <button
                           onClick={() => {
+                            if (!isExpanded) {
+                              setCollapsedGroups(prev => ({
+                                ...prev,
+                                [group.key]: false
+                              }));
+                            }
                             setShowTaskFormForMilestone(showTaskFormForMilestone === group.key ? null : group.key);
                             setNewTaskMilestone(group.key);
                           }}
@@ -1016,7 +1122,7 @@ export default function ReverseTimeline({
                     </div>
 
                     {/* Custom Task Injection Form inside Milestone */}
-                    {showTaskFormForMilestone === group.key && (
+                    {isExpanded && showTaskFormForMilestone === group.key && (
                       <div className="mb-4 bg-[#fcfaf7] border border-[#efe0c2] rounded-xl p-4 shadow-sm hover:shadow-md hover:-translate-y-1 transition duration-200 space-y-3 ml-2 animate-fadeIn">
                         <h5 className="text-xs font-serif font-bold text-slate-750">Add custom task to milestone</h5>
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1085,27 +1191,30 @@ export default function ReverseTimeline({
                     )}
 
                     {/* Task Cards Stack */}
-                    <div className="space-y-2.5 ml-2">
-                      {group.tasks.length === 0 ? (
-                        <p className="text-xs text-slate-400 italic py-2">No tasks matching the lane filter in this milestone.</p>
-                      ) : (
-                        group.tasks.map(task => (
-                          <TaskCard
-                            key={task.id}
-                            eventId={selectedEvent.id}
-                            task={task}
-                            onToggleTask={onToggleTask}
-                            onUpdateTaskLane={onUpdateTaskLane}
-                            onUpdateTaskAssignment={onUpdateTaskAssignment}
-                            onUpdateTaskDueDate={onUpdateTaskDueDate}
-                            onUpdateTask={onUpdateTask}
-                            onDeleteTask={onDeleteTask}
-                            lanes={lanes}
-                            volunteers={volunteers}
-                          />
-                        ))
-                      )}
-                    </div>
+                    {isExpanded && (
+                      <div className="space-y-2.5 ml-2">
+                        {group.tasks.length === 0 ? (
+                          <p className="text-xs text-slate-400 italic py-2">No tasks matching the lane filter in this milestone.</p>
+                        ) : (
+                          group.tasks.map(task => (
+                            <TaskCard
+                              key={task.id}
+                              eventId={selectedEvent.id}
+                              task={task}
+                              onToggleTask={onToggleTask}
+                              onUpdateTaskLane={onUpdateTaskLane}
+                              onUpdateTaskAssignment={onUpdateTaskAssignment}
+                              onUpdateTaskDueDate={onUpdateTaskDueDate}
+                              onUpdateTask={onUpdateTask}
+                              onDeleteTask={onDeleteTask}
+                              lanes={lanes}
+                              volunteers={volunteers}
+                              isOverdue={isOverdue(task)}
+                            />
+                          ))
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -1286,38 +1395,53 @@ export default function ReverseTimeline({
                               📋 Active Milestones & Deadlines ({dayTasks.length})
                             </h5>
                             <div className="space-y-2 animate-fadeIn">
-                              {dayTasks.map(task => (
-                                <div 
-                                  key={task.id}
-                                  className="p-3 rounded-lg bg-white border border-[#e2dcd0] space-y-2.5 shadow-sm"
-                                >
-                                  <div className="flex justify-between items-start gap-2">
-                                    <div className="flex items-start gap-2">
-                                      <button
-                                        type="button"
-                                        onClick={() => onToggleTask(task.eventId, task.id, !task.completed)}
-                                        className="mt-0.5 shrink-0 text-slate-400 hover:text-[#856637] transition"
-                                      >
-                                        {task.completed ? (
-                                          <CheckCircle2 size={14} className="text-emerald-600" />
-                                        ) : (
-                                          <div className="w-3.5 h-3.5 border border-slate-350 rounded-sm hover:border-[#856637]" />
-                                        )}
-                                      </button>
-                                      <h6 className={`text-xs font-bold text-slate-800 leading-snug ${task.completed ? 'line-through text-slate-400' : ''}`}>
-                                        {task.title}
-                                      </h6>
+                              {dayTasks.map(task => {
+                                const overdue = isOverdue(task);
+                                return (
+                                  <div 
+                                    key={task.id}
+                                    className={`p-3 rounded-lg border space-y-2.5 shadow-sm transition-all ${
+                                      task.completed
+                                        ? 'bg-[#faf8f4]/60 border-[#e2dcd0]/50 opacity-75'
+                                        : overdue
+                                        ? 'bg-rose-50/40 border-rose-200 border-l-4 border-l-rose-500 shadow-xs'
+                                        : 'bg-white border-[#e2dcd0]'
+                                    }`}
+                                  >
+                                    <div className="flex justify-between items-start gap-2">
+                                      <div className="flex items-start gap-2 min-w-0 flex-1">
+                                        <button
+                                          type="button"
+                                          onClick={() => onToggleTask(task.eventId, task.id, !task.completed)}
+                                          className="mt-0.5 shrink-0 text-slate-400 hover:text-[#856637] transition"
+                                        >
+                                          {task.completed ? (
+                                            <CheckCircle2 size={14} className="text-emerald-600" />
+                                          ) : (
+                                            <div className="w-3.5 h-3.5 border border-slate-350 rounded-sm hover:border-[#856637]" />
+                                          )}
+                                        </button>
+                                        <div className="min-w-0 flex-1">
+                                          <h6 className={`text-xs font-bold text-slate-800 leading-snug break-words ${task.completed ? 'line-through text-slate-400' : ''}`}>
+                                            {task.title}
+                                          </h6>
+                                          {overdue && (
+                                            <span className="inline-flex items-center text-[8px] font-semibold bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded border border-rose-200 uppercase tracking-wider mt-1">
+                                              Overdue
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                      <span className={`inline-flex items-center text-[8px] font-black px-1.5 py-0.5 rounded-full border shrink-0 ${
+                                        task.priority === 'High' 
+                                          ? 'bg-rose-50 text-rose-700 border-rose-200' 
+                                          : task.priority === 'Medium'
+                                          ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                          : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                      }`}>
+                                        {task.priority || 'Medium'}
+                                      </span>
                                     </div>
-                                    <span className={`inline-flex items-center text-[8px] font-black px-1.5 py-0.5 rounded-full border shrink-0 ${
-                                      task.priority === 'High' 
-                                        ? 'bg-rose-50 text-rose-700 border-rose-200' 
-                                        : task.priority === 'Medium'
-                                        ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                        : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                    }`}>
-                                      {task.priority || 'Medium'}
-                                    </span>
-                                  </div>
                                   <p className="text-[10px] text-slate-500 leading-relaxed pl-5">{task.description}</p>
                                   
                                   <div className="flex flex-wrap gap-1 items-center justify-between pt-1.5 border-t border-[#f2ece2] text-[9px] font-medium text-slate-400 pl-5">
@@ -1327,7 +1451,7 @@ export default function ReverseTimeline({
                                     </span>
                                   </div>
                                 </div>
-                              ))}
+                              );})}
                             </div>
                           </div>
                         )}

@@ -108,6 +108,31 @@ router.post('/', (req, res) => {
   res.json({ success: true, reservation: resDoc, reservations: db.reservations });
 });
 
+router.post('/bulk-return', (req, res) => {
+  const db = getDb();
+  const { eventId } = req.body;
+
+  if (!eventId) {
+    return res.status(400).json({ error: 'Missing required parameter: eventId' });
+  }
+
+  if (!db.reservations) db.reservations = [];
+
+  let updatedCount = 0;
+  db.reservations.forEach((r: AssetReservation) => {
+    if (r.eventId === eventId) {
+      r.status = 'Returned';
+      updatedCount++;
+    }
+  });
+
+  if (updatedCount > 0) {
+    saveDb(db);
+  }
+
+  res.json({ success: true, updatedCount, reservations: db.reservations });
+});
+
 router.delete('/:id', (req, res) => {
   const db = getDb();
   const { id } = req.params;

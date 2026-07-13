@@ -147,9 +147,19 @@ async function startServer() {
         }
       });
 
-      // High value assets
-      const highValueAssets = assetsList.filter((a: Asset) => a && a.isHighValue);
-      const missingHighValue = highValueAssets.filter((a: Asset) => a && a.status !== 'Returned');
+      // High value assets from reservations
+      const reservationsList = Array.isArray(db.reservations) ? db.reservations : [];
+      const inventoryList = Array.isArray(db.inventory) ? db.inventory : [];
+      const todayStr = new Date().toISOString().split('T')[0];
+
+      const missingHighValueCount = reservationsList.filter((res: any) => {
+        if (!res) return false;
+        const item = inventoryList.find((inv: any) => inv && inv.id === res.assetId);
+        const isHighValue = item ? !!item.isHighValue : false;
+        const isPastEvent = res.eventDate && res.eventDate < todayStr;
+        const isNotReturned = res.status !== 'Returned';
+        return isHighValue && isPastEvent && isNotReturned;
+      }).length;
 
       // Burnout stats
       const activeTasksByLane: Record<string, Task[]> = {};
@@ -195,7 +205,7 @@ async function startServer() {
         totalVolunteers,
         totalTasks,
         completedTasks,
-        missingHighValueCount: missingHighValue.length,
+        missingHighValueCount: missingHighValueCount,
         overburdenedVolunteersCount: overallocatedLeadsCount,
         nonCompliantVolunteersCount: 0
       });

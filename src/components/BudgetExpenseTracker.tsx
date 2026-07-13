@@ -27,7 +27,8 @@ import {
   ChevronUp,
   ChevronDown,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Download
 } from 'lucide-react';
 import { MinistryEvent, Expense } from '../types';
 
@@ -105,6 +106,8 @@ function BudgetExpenseTracker({
   const [formDate, setFormDate] = useState<string>('');
   const [attachedFileName, setAttachedFileName] = useState<string>('');
   const [attachedFileData, setAttachedFileData] = useState<string>('');
+  const [formPaidBy, setFormPaidBy] = useState<string>('');
+  const [formReimbursed, setFormReimbursed] = useState<boolean>(false);
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
 
   // Receipt preview modal state
@@ -127,6 +130,8 @@ function BudgetExpenseTracker({
         formDate,
         attachedFileName,
         attachedFileData,
+        formPaidBy,
+        formReimbursed,
       };
       localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(draft));
     }
@@ -140,6 +145,8 @@ function BudgetExpenseTracker({
     formDate,
     attachedFileName,
     attachedFileData,
+    formPaidBy,
+    formReimbursed,
   ]);
 
   // Default to first event if events are loaded
@@ -196,6 +203,9 @@ function BudgetExpenseTracker({
   const budgetCap = activeEvent.budgetCap || 500;
   const remainingBudget = budgetCap - totalSpent;
   const spentPercentage = Math.round((totalSpent / budgetCap) * 100);
+  const totalOwed = currentExpenses
+    .filter(exp => !exp.reimbursed && exp.paidBy && exp.paidBy.trim().length > 0)
+    .reduce((sum, exp) => sum + exp.cost, 0);
 
   // Color dynamics based on spent percentage
   let progressColor = 'bg-emerald-600';
@@ -231,7 +241,7 @@ function BudgetExpenseTracker({
     e.preventDefault();
     const parsed = parseFloat(budgetCapInput);
     if (isNaN(parsed) || parsed < 0) {
-      alert('Please enter a valid positive number for the budget.');
+      showNotification('Please enter a valid positive number for the budget.', 'error');
       return;
     }
 
@@ -247,7 +257,7 @@ function BudgetExpenseTracker({
       setIsEditingBudget(false);
       if (onUploadCompleted) onUploadCompleted(); // triggers main refresh
     } catch (err: any) {
-      alert(err.message || 'Could not update budget.');
+      showNotification(err.message || 'Could not update budget.', 'error');
     } finally {
       setIsUpdatingBudget(false);
     }
@@ -269,7 +279,7 @@ function BudgetExpenseTracker({
     // Check file type
     const isValidType = file.type.startsWith('image/') || file.type === 'application/pdf';
     if (!isValidType) {
-      alert('Please upload an image file (PNG/JPG) or PDF of the receipt.');
+      showNotification('Please upload an image file (PNG/JPG) or PDF of the receipt.', 'error');
       return;
     }
 
@@ -311,6 +321,8 @@ function BudgetExpenseTracker({
         setFormDate(parsed.formDate || new Date().toISOString().split('T')[0]);
         setAttachedFileName(parsed.attachedFileName || '');
         setAttachedFileData(parsed.attachedFileData || '');
+        setFormPaidBy(parsed.formPaidBy || '');
+        setFormReimbursed(parsed.formReimbursed || false);
       } catch (e) {
         setFormDescription('');
         setFormCategory('Food');
@@ -319,6 +331,8 @@ function BudgetExpenseTracker({
         setFormDate(new Date().toISOString().split('T')[0]);
         setAttachedFileName('');
         setAttachedFileData('');
+        setFormPaidBy('');
+        setFormReimbursed(false);
       }
     } else {
       setFormDescription('');
@@ -328,6 +342,8 @@ function BudgetExpenseTracker({
       setFormDate(new Date().toISOString().split('T')[0]);
       setAttachedFileName('');
       setAttachedFileData('');
+      setFormPaidBy('');
+      setFormReimbursed(false);
     }
     setIsFormOpen(true);
   };
@@ -342,6 +358,8 @@ function BudgetExpenseTracker({
     setFormDate(expense.date);
     setAttachedFileName(expense.receiptName || '');
     setAttachedFileData(expense.receiptData || '');
+    setFormPaidBy(expense.paidBy || '');
+    setFormReimbursed(expense.reimbursed || false);
     setIsFormOpen(true);
   };
 
@@ -413,7 +431,9 @@ function BudgetExpenseTracker({
         purchaser: formPurchaser,
         date: formDate,
         receiptName: attachedFileName || undefined,
-        receiptData: attachedFileData || undefined
+        receiptData: attachedFileData || undefined,
+        paidBy: formPaidBy || undefined,
+        reimbursed: formReimbursed
       };
 
       let res;
@@ -614,6 +634,75 @@ function BudgetExpenseTracker({
       : <ChevronDown size={12} className="inline ml-1" />;
   };
 
+  const handleExportExpensesCSV = () => {
+    if (!filteredExpenses || filteredExpenses.length === 0) {
+      showNotification('No expenses found matching the current filters to export.', 'error');
+      return;
+    }
+
+    const hasReimbursement = expenses.some(exp => 'paidBy' in exp || 'reimbursed' in exp);
+    const headers = ['Date', 'Description', 'Category', 'Cost', 'Receipt Status'];
+    if (hasReimbursement) {
+      headers.push('Paid By', 'Reimbursed');
+    }
+
+    const rows = filteredExpenses.map(exp => {
+      const row = [
+        exp.date || '',
+        exp.description || '',
+        exp.category || '',
+        exp.cost !== undefined ? exp.cost.toString() : '0',
+        exp.receiptName || exp.receiptData ? 'Attached' : 'None'
+      ];
+      if (hasReimbursement) {
+        row.push(
+          (exp as any).paidBy || '',
+          (exp as any).reimbursed !== undefined ? ((exp as any).reimbursed ? 'Yes' : 'No') : ''
+        );
+      }
+      return row;
+    });
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(val => `"${val.replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const today = new Date().toISOString().split('T')[0];
+    const eventNameSlug = activeEvent.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+    link.href = url;
+    link.download = `cabc-expenses-${eventNameSlug}-${today}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const toggleReimbursed = async (expense: Expense) => {
+    try {
+      const res = await apiFetch(`/api/expenses/${expense.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...expense,
+          reimbursed: !expense.reimbursed
+        })
+      });
+      if (!res.ok) throw new Error('Failed to update reimbursement status');
+      await fetchExpenses();
+      if (onUploadCompleted) onUploadCompleted();
+      showNotification(
+        `Expense "${expense.description}" marked as ${!expense.reimbursed ? 'Reimbursed' : 'Owed'}.`,
+        'success'
+      );
+    } catch (err: any) {
+      showNotification(err.message || 'Failed to update reimbursement status.', 'error');
+    }
+  };
+
   return (
     <div className="space-y-6 text-slate-800">
       {/* Header Info */}
@@ -740,15 +829,23 @@ function BudgetExpenseTracker({
             <Coins size={20} className="text-[#856637] opacity-60" />
           </div>
 
-          <div className="grid grid-cols-2 gap-3 border-t border-[#e2dcd0]/60 pt-3">
-            <div>
-              <span className="text-[9px] uppercase tracking-wider text-slate-400 font-bold block">Total Logged</span>
-              <span className="text-sm font-serif font-bold text-slate-800">${totalSpent.toFixed(2)}</span>
+          <div className="border-t border-[#e2dcd0]/60 pt-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <span className="text-[9px] uppercase tracking-wider text-slate-400 font-bold block">Total Logged</span>
+                <span className="text-sm font-serif font-bold text-slate-800">${totalSpent.toFixed(2)}</span>
+              </div>
+              <div>
+                <span className="text-[9px] uppercase tracking-wider text-slate-400 font-bold block">Remaining Funds</span>
+                <span className={`text-sm font-serif font-bold ${remainingBudget < 0 ? 'text-rose-600 font-mono' : 'text-slate-800'}`}>
+                  {remainingBudget < 0 ? '-' : ''}${Math.abs(remainingBudget).toFixed(2)}
+                </span>
+              </div>
             </div>
-            <div>
-              <span className="text-[9px] uppercase tracking-wider text-slate-400 font-bold block">Remaining Funds</span>
-              <span className={`text-sm font-serif font-bold ${remainingBudget < 0 ? 'text-rose-600 font-mono' : 'text-slate-800'}`}>
-                {remainingBudget < 0 ? '-' : ''}${Math.abs(remainingBudget).toFixed(2)}
+            <div className="mt-2 text-[10px] text-slate-500 flex items-center justify-between border-t border-[#e2dcd0]/40 pt-1.5 font-medium">
+              <span>Owed to volunteers:</span>
+              <span className={`font-mono font-bold ${totalOwed > 0 ? 'text-amber-600' : 'text-slate-600'}`}>
+                ${totalOwed.toFixed(2)}
               </span>
             </div>
           </div>
@@ -978,12 +1075,23 @@ function BudgetExpenseTracker({
             </div>
 
             {/* Right side: Actions */}
-            <button
-              onClick={openAddModal}
-              className="px-4 py-2 bg-[#856637] text-white hover:bg-[#6c522b] rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition"
-            >
-              <Plus size={14} /> Log Purchase Expense
-            </button>
+            <div className="flex items-center gap-2 self-stretch md:self-auto justify-end">
+              <button
+                type="button"
+                onClick={handleExportExpensesCSV}
+                className="px-4 py-2 bg-white border border-[#e2dcd0] text-slate-700 hover:bg-[#faf8f4] hover:text-slate-900 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition"
+                title="Export filtered expenses as CSV"
+              >
+                <Download size={14} /> Export CSV
+              </button>
+              <button
+                type="button"
+                onClick={openAddModal}
+                className="px-4 py-2 bg-[#856637] text-white hover:bg-[#6c522b] rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition whitespace-nowrap"
+              >
+                <Plus size={14} /> Log Purchase Expense
+              </button>
+            </div>
           </div>
 
           {/* Info label about active filters */}
@@ -1054,6 +1162,7 @@ function BudgetExpenseTracker({
                     <th className="p-3.5">Cost</th>
                     <th className="p-3.5">Purchaser</th>
                     <th className="p-3.5">Purchase Date</th>
+                    <th className="p-3.5 text-center">Reimbursement</th>
                     <th className="p-3.5 text-center">Receipt Status</th>
                     <th className="p-3.5 text-right pr-4">Actions</th>
                   </tr>
@@ -1079,6 +1188,9 @@ function BudgetExpenseTracker({
                       </td>
                       <td className="p-3.5">
                         <div className="h-3 bg-[#efe9dc]/50 rounded w-24"></div>
+                      </td>
+                      <td className="p-3.5 text-center">
+                        <div className="h-5 bg-[#efe9dc]/50 rounded-full w-24 mx-auto"></div>
                       </td>
                       <td className="p-3.5 text-center">
                         <div className="h-5 bg-[#efe9dc]/50 rounded-full w-28 mx-auto"></div>
@@ -1171,6 +1283,7 @@ function BudgetExpenseTracker({
                     >
                       Purchase Date {renderSortIcon('date')}
                     </th>
+                    <th className="p-3.5 text-center">Reimbursement</th>
                     <th className="p-3.5 text-center">Receipt Status</th>
                     <th className="p-3.5 text-right pr-4">Actions</th>
                   </tr>
@@ -1219,6 +1332,28 @@ function BudgetExpenseTracker({
                       </td>
                       <td className="p-3.5 text-slate-500 font-medium">
                         {formattedDate}
+                      </td>
+                      <td className="p-3.5 text-center">
+                        {exp.paidBy ? (
+                          <div className="flex flex-col items-center gap-1">
+                            <span className="text-[10px] text-slate-500 font-semibold truncate max-w-[120px]" title={`Paid by ${exp.paidBy}`}>
+                              {exp.paidBy}
+                            </span>
+                            <button
+                              onClick={() => toggleReimbursed(exp)}
+                              className={`px-2 py-0.5 rounded-full text-[9px] font-bold border transition cursor-pointer ${
+                                exp.reimbursed
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                                  : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                              }`}
+                              title={`Click to mark as ${exp.reimbursed ? 'Owed' : 'Reimbursed'}`}
+                            >
+                              {exp.reimbursed ? 'Reimbursed' : 'Owed'}
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 italic">Church Paid</span>
+                        )}
                       </td>
                       <td className="p-3.5 text-center">
                         {exp.receiptData ? (
@@ -1418,6 +1553,33 @@ function BudgetExpenseTracker({
                       onChange={e => setFormDate(e.target.value)}
                       className="w-full px-3 py-2 border border-[#e2dcd0] bg-[#faf8f4] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#856637] focus:bg-white text-xs transition font-mono cursor-pointer"
                     />
+                  </div>
+                </div>
+
+                {/* Paid By & Reimbursed Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="font-bold text-slate-600">Paid By (Volunteer Name)</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. John Doe (if self-funded)"
+                      value={formPaidBy}
+                      onChange={e => setFormPaidBy(e.target.value)}
+                      className="w-full px-3 py-2 border border-[#e2dcd0] bg-[#faf8f4] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#856637] focus:bg-white text-xs transition"
+                    />
+                  </div>
+
+                  <div className="flex items-center space-x-2 pt-6">
+                    <input 
+                      type="checkbox" 
+                      id="form-reimbursed"
+                      checked={formReimbursed}
+                      onChange={e => setFormReimbursed(e.target.checked)}
+                      className="w-4 h-4 text-[#856637] border-slate-300 rounded focus:ring-[#856637] focus:ring-1 cursor-pointer accent-[#856637]"
+                    />
+                    <label htmlFor="form-reimbursed" className="font-bold text-slate-600 cursor-pointer select-none">
+                      Reimbursed / Settled
+                    </label>
                   </div>
                 </div>
 

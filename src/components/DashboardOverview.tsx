@@ -1042,13 +1042,7 @@ function DashboardOverview({
         })()}
 
         {/* Section A: At-a-glance KPI row */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Card 1: Events this year */}
-          <div className="bg-white border border-[#e2dcd0] rounded-2xl p-5 shadow-xs flex flex-col justify-between">
-            <span className="text-xs text-slate-400 font-medium">Events this year</span>
-            <span className="text-2xl font-serif font-black text-slate-800 mt-1">{events.length}</span>
-          </div>
-
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {/* Card 2: Volunteers */}
           <div className="bg-white border border-[#e2dcd0] rounded-2xl p-5 shadow-xs flex flex-col justify-between">
             <span className="text-xs text-slate-400 font-medium">Volunteers</span>
@@ -1067,20 +1061,6 @@ function DashboardOverview({
                 ></div>
               </div>
             </div>
-          </div>
-
-          {/* Card 4: Needs attention */}
-          <div className={`border rounded-2xl p-5 shadow-xs flex flex-col justify-between transition duration-200 ${
-            totalAttentionCount > 0 
-              ? 'bg-amber-50/50 border-amber-200 text-amber-800' 
-              : 'bg-white border-[#e2dcd0] text-slate-800'
-          }`}>
-            <span className={`text-xs font-medium ${totalAttentionCount > 0 ? 'text-amber-700/80' : 'text-slate-400'}`}>
-              Needs attention
-            </span>
-            <span className={`text-2xl font-serif font-black mt-1 ${totalAttentionCount > 0 ? 'text-amber-800' : 'text-slate-800'}`}>
-              {totalAttentionCount}
-            </span>
           </div>
         </div>
 
@@ -1395,7 +1375,8 @@ function DashboardOverview({
                 </div>
 
                 <div>
-                  <h5 className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-3">Lead Coordinator Workloads</h5>
+                  <h5 className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Lead Burnout Watch</h5>
+                  <p className="text-xs text-slate-500 mb-3">Keep leads under the task limit to avoid burnout.</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {leadStatsList.map((lead, idx) => {
                       const isOver = lead.activeTasksCount > LEAD_TASK_CAPACITY;
@@ -1414,7 +1395,7 @@ function DashboardOverview({
                                 <span className="truncate">{lead.leadName}</span>
                                 {isOver ? (
                                   <span className="inline-flex text-[9px] font-semibold bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded border border-rose-200">
-                                    Over capacity
+                                    At risk of burnout
                                   </span>
                                 ) : (
                                   <span className="inline-flex text-[9px] font-semibold bg-[#f5ebd6] text-[#856637] px-1.5 py-0.5 rounded border border-[#efe0c2]">

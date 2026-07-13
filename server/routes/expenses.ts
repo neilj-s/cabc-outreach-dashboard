@@ -11,7 +11,7 @@ router.get('/', (req, res) => {
 
 router.post('/', (req, res) => {
   const db = getDb();
-  const { eventId, description, category, cost, purchaser, date, receiptName, receiptData } = req.body;
+  const { eventId, description, category, cost, purchaser, date, receiptName, receiptData, paidBy, reimbursed } = req.body;
 
   if (!eventId || !description || !category || cost === undefined || !purchaser || !date) {
     return res.status(400).json({ error: 'Missing required fields for logging an expense.' });
@@ -31,7 +31,9 @@ router.post('/', (req, res) => {
     purchaser: purchaser.trim(),
     date,
     receiptName: receiptName ? receiptName.trim() : undefined,
-    receiptData: receiptData || undefined
+    receiptData: receiptData || undefined,
+    paidBy: paidBy ? paidBy.trim() : undefined,
+    reimbursed: reimbursed !== undefined ? !!reimbursed : false
   };
 
   if (!db.expenses) db.expenses = [];
@@ -56,7 +58,7 @@ router.post('/', (req, res) => {
 router.put('/:id', (req, res) => {
   const db = getDb();
   const { id } = req.params;
-  const { description, category, cost, purchaser, date, receiptName, receiptData } = req.body;
+  const { description, category, cost, purchaser, date, receiptName, receiptData, paidBy, reimbursed } = req.body;
 
   if (!db.expenses) db.expenses = [];
   const index = db.expenses.findIndex((exp: Expense) => exp.id === id);
@@ -80,7 +82,9 @@ router.put('/:id', (req, res) => {
     purchaser: purchaser ? purchaser.trim() : currentExpense.purchaser,
     date: date || currentExpense.date,
     receiptName: receiptName !== undefined ? receiptName : currentExpense.receiptName,
-    receiptData: receiptData !== undefined ? receiptData : currentExpense.receiptData
+    receiptData: receiptData !== undefined ? receiptData : currentExpense.receiptData,
+    paidBy: paidBy !== undefined ? (paidBy ? paidBy.trim() : undefined) : currentExpense.paidBy,
+    reimbursed: reimbursed !== undefined ? !!reimbursed : currentExpense.reimbursed
   };
 
   logActivity(

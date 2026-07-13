@@ -61,6 +61,8 @@ export interface Expense {
   date: string; // YYYY-MM-DD
   receiptName?: string;
   receiptData?: string; // base64 preview or placeholder
+  paidBy?: string;
+  reimbursed?: boolean;
 }
 
 export interface Debrief {
@@ -191,6 +193,7 @@ export interface InventoryItem {
   name: string;
   category: string;
   totalStock: number;
+  isHighValue?: boolean;
   imageUrl?: string;
   notes?: string;
 }

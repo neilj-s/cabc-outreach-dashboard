@@ -2,6 +2,7 @@ import { apiFetch } from "../lib/api";
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useFocusTrap } from '../lib/useFocusTrap';
+import { useNotification } from '../context/NotificationContext';
 import { 
   Package, 
   Calendar, 
@@ -33,6 +34,7 @@ interface LogisticsManagerProps {
 }
 
 function LogisticsManager({ selectedEventId, events, onUploadCompleted }: LogisticsManagerProps) {
+  const { showNotification } = useNotification();
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [reservations, setReservations] = useState<AssetReservation[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -56,6 +58,7 @@ function LogisticsManager({ selectedEventId, events, onUploadCompleted }: Logist
   const [newAssetCategory, setNewAssetCategory] = useState<string>('Logistics');
   const [newAssetStock, setNewAssetStock] = useState<number>(5);
   const [newAssetNotes, setNewAssetNotes] = useState<string>('');
+  const [newAssetIsHighValue, setNewAssetIsHighValue] = useState<boolean>(false);
 
   // Edit Asset state variables
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
@@ -63,6 +66,7 @@ function LogisticsManager({ selectedEventId, events, onUploadCompleted }: Logist
   const [editAssetCategory, setEditAssetCategory] = useState<string>('Logistics');
   const [editAssetStock, setEditAssetStock] = useState<number>(5);
   const [editAssetNotes, setEditAssetNotes] = useState<string>('');
+  const [editAssetIsHighValue, setEditAssetIsHighValue] = useState<boolean>(false);
   const [isUpdating, setIsUpdating] = useState<boolean>(false);
 
   const reserveModalRef = useFocusTrap(!!selectedItemForReserve, () => setSelectedItemForReserve(null));
@@ -176,17 +180,13 @@ function LogisticsManager({ selectedEventId, events, onUploadCompleted }: Logist
       setSelectedItemForReserve(null);
       if (onUploadCompleted) onUploadCompleted(); // Sync metrics with main dashboard
     } catch (err: any) {
-      alert(err.message || "Could not complete reservation");
+      showNotification(err.message || "Could not complete reservation", "error");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const toggleReservationStatus = async (reservation: any) => {
-    const statuses = ['Pending', 'Packed', 'Returned'];
-    const currentIdx = statuses.indexOf(reservation.status || 'Pending');
-    const nextStatus = statuses[(currentIdx + 1) % statuses.length];
-
+  const updateReservationStatus = async (reservation: any, nextStatus: string) => {
     try {
       const res = await apiFetch(`/api/reservations/${reservation.id}`, {
         method: 'PATCH',
@@ -196,7 +196,28 @@ function LogisticsManager({ selectedEventId, events, onUploadCompleted }: Logist
       if (!res.ok) throw new Error();
       await fetchLogisticsData();
     } catch (err) {
-      alert("Failed to update status.");
+      showNotification("Failed to update status.", "error");
+    }
+  };
+
+  const handleMarkAllReturned = async () => {
+    if (!activeEvent) return;
+    if (currentEventReservations.length === 0) return;
+
+    const confirmMark = window.confirm(`Are you sure you want to mark all ${currentEventReservations.length} reservations as "Returned" for "${activeEvent.name}"?`);
+    if (!confirmMark) return;
+
+    try {
+      const res = await apiFetch(`/api/reservations/bulk-return`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventId: activeEvent.id })
+      });
+      if (!res.ok) throw new Error("Could not process bulk return");
+      await fetchLogisticsData();
+      showNotification("All items marked as returned successfully.", "success");
+    } catch (err: any) {
+      showNotification(err.message || "Failed to update bulk return status.", "error");
     }
   };
 
@@ -241,7 +262,7 @@ function LogisticsManager({ selectedEventId, events, onUploadCompleted }: Logist
     if (!selectedEventId) return;
     const newQty = Math.max(0, currentQty + change);
     if (newQty > maxAllowed) {
-      alert(`Cannot exceed available stock limit (${maxAllowed} units).`);
+      showNotification(`Cannot exceed available stock limit (${maxAllowed} units).`, "error");
       return;
     }
 
@@ -261,7 +282,7 @@ function LogisticsManager({ selectedEventId, events, onUploadCompleted }: Logist
       await fetchLogisticsData();
       if (onUploadCompleted) onUploadCompleted();
     } catch (err) {
-      alert("Error adjusting reservation allocation.");
+      showNotification("Error adjusting reservation allocation.", "error");
     }
   };
 
@@ -275,7 +296,7 @@ function LogisticsManager({ selectedEventId, events, onUploadCompleted }: Logist
       await fetchLogisticsData();
       if (onUploadCompleted) onUploadCompleted();
     } catch (err) {
-      alert("Failed to release reservation.");
+      showNotification("Failed to release reservation.", "error");
     }
   };
 
@@ -293,6 +314,7 @@ function LogisticsManager({ selectedEventId, events, onUploadCompleted }: Logist
           name: newAssetName.trim(),
           category: newAssetCategory,
           totalStock: newAssetStock,
+          isHighValue: newAssetIsHighValue,
           notes: newAssetNotes.trim()
         })
       });
@@ -304,11 +326,12 @@ function LogisticsManager({ selectedEventId, events, onUploadCompleted }: Logist
 
       setNewAssetName('');
       setNewAssetNotes('');
+      setNewAssetIsHighValue(false);
       setShowAddAssetForm(false);
       await fetchLogisticsData();
     } catch (err) {
       // Let's fall back to showing an alert or just saving to memory
-      alert("Failed to register physical inventory. Adding catalog additions dynamically is fully supported in our schema.");
+      showNotification("Failed to register physical inventory. Adding catalog additions dynamically is fully supported in our schema.", "error");
     }
   };
 
@@ -334,7 +357,7 @@ function LogisticsManager({ selectedEventId, events, onUploadCompleted }: Logist
       await fetchLogisticsData();
       if (onUploadCompleted) onUploadCompleted();
     } catch (err: any) {
-      alert(err.message || "Could not delete asset");
+      showNotification(err.message || "Could not delete asset", "error");
     }
   };
 
@@ -352,6 +375,7 @@ function LogisticsManager({ selectedEventId, events, onUploadCompleted }: Logist
           name: editAssetName.trim(),
           category: editAssetCategory,
           totalStock: editAssetStock,
+          isHighValue: editAssetIsHighValue,
           notes: editAssetNotes.trim()
         })
       });
@@ -365,7 +389,7 @@ function LogisticsManager({ selectedEventId, events, onUploadCompleted }: Logist
       await fetchLogisticsData();
       if (onUploadCompleted) onUploadCompleted();
     } catch (err: any) {
-      alert(err.message || "Could not update asset");
+      showNotification(err.message || "Could not update asset", "error");
     } finally {
       setIsUpdating(false);
     }
@@ -541,6 +565,18 @@ function LogisticsManager({ selectedEventId, events, onUploadCompleted }: Logist
                       />
                     </div>
                   </div>
+                  <div className="flex items-center gap-2 py-1 bg-amber-50/40 px-2 rounded-lg border border-[#e2dcd0]/50 max-w-fit">
+                    <input 
+                      type="checkbox" 
+                      id="newAssetIsHighValue"
+                      checked={newAssetIsHighValue}
+                      onChange={e => setNewAssetIsHighValue(e.target.checked)}
+                      className="rounded border-[#e2dcd0] text-[#856637] focus:ring-[#856637] cursor-pointer"
+                    />
+                    <label htmlFor="newAssetIsHighValue" className="font-bold text-slate-700 cursor-pointer select-none">
+                      High-value item (requires strict return auditing)
+                    </label>
+                  </div>
                   <div className="flex gap-2 justify-end pt-1">
                     <button 
                       type="button" 
@@ -625,7 +661,7 @@ function LogisticsManager({ selectedEventId, events, onUploadCompleted }: Logist
                       key={item.id}
                       onClick={() => {
                         if (availableStock <= 0 && thisEventQty === 0) {
-                          alert(`Conflict: "${item.name}" is fully reserved by other events on this day.`);
+                          showNotification(`Conflict: "${item.name}" is fully reserved by other events on this day.`, "error");
                           return;
                         }
                         setSelectedItemForReserve(item);
@@ -634,8 +670,10 @@ function LogisticsManager({ selectedEventId, events, onUploadCompleted }: Logist
                       className={`border p-4 rounded-xl cursor-pointer transition flex flex-col justify-between space-y-3 relative group overflow-hidden ${
                         thisEventQty > 0 
                           ? 'border-[#efe0c2] bg-[#fcfaf7] ring-1 ring-[#856637]/20 hover:border-[#856637]/40' 
-                          : availableStock <= 0 
-                          ? 'border-slate-200 bg-slate-50/50 opacity-60 hover:opacity-80' 
+                          : availableStock === 0 
+                          ? 'border-rose-200 bg-rose-50/10 hover:border-rose-300 hover:shadow-xs' 
+                          : availableStock === 1
+                          ? 'border-amber-200 bg-amber-50/10 hover:border-amber-300 hover:shadow-sm'
                           : 'border-slate-200 bg-white hover:border-[#856637]/30 hover:shadow-sm'
                       }`}
                     >
@@ -648,9 +686,16 @@ function LogisticsManager({ selectedEventId, events, onUploadCompleted }: Logist
 
                       <div className="space-y-1">
                         <div className="flex items-center justify-between gap-1.5">
-                          <span className="text-[9px] uppercase tracking-wider font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
-                            {item.category}
-                          </span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[9px] uppercase tracking-wider font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                              {item.category}
+                            </span>
+                            {item.isHighValue && (
+                              <span className="text-[9px] uppercase tracking-wider font-bold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded">
+                                High-Value
+                              </span>
+                            )}
+                          </div>
                           
                           {/* Admin Controls */}
                           <div className="flex items-center gap-1 opacity-40 group-hover:opacity-100 transition">
@@ -662,6 +707,7 @@ function LogisticsManager({ selectedEventId, events, onUploadCompleted }: Logist
                                 setEditAssetCategory(item.category);
                                 setEditAssetStock(item.totalStock);
                                 setEditAssetNotes(item.notes || '');
+                                setEditAssetIsHighValue(!!item.isHighValue);
                               }}
                               className="p-1 hover:text-[#856637] hover:bg-slate-100 rounded transition cursor-pointer"
                               title="Edit item / stock availability"
@@ -694,8 +740,14 @@ function LogisticsManager({ selectedEventId, events, onUploadCompleted }: Logist
                       <div className="border-t border-slate-100 pt-2 flex items-center justify-between text-xs mt-auto">
                         <div className="space-y-0.5">
                           <p className="text-[10px] text-slate-400 font-medium">Stock Availability</p>
-                          <p className="font-bold text-slate-700">
-                            {availableStock} <span className="text-[10px] font-normal text-slate-400">/ {totalStock} Available</span>
+                          <p className={`font-bold text-xs ${
+                            availableStock === 0 
+                              ? 'text-rose-600' 
+                              : availableStock === 1 
+                              ? 'text-amber-600' 
+                              : 'text-slate-700'
+                          }`}>
+                            {availableStock === 0 ? 'Fully reserved' : `${availableStock} of ${totalStock} available`}
                           </p>
                         </div>
 
@@ -755,14 +807,26 @@ function LogisticsManager({ selectedEventId, events, onUploadCompleted }: Logist
                   Allocated to <span className="font-bold underline">{activeEvent?.name}</span>
                 </p>
               </div>
-              <button 
-                onClick={handleExportPackingList}
-                className="px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider bg-white border border-[#e2dcd0] text-slate-700 rounded-lg hover:bg-slate-50 hover:text-slate-900 transition flex items-center gap-1 cursor-pointer"
-                title="Generate printable packing list"
-              >
-                <Printer size={12} />
-                Export List
-              </button>
+              <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                {currentEventReservations.length > 0 && (
+                  <button 
+                    onClick={handleMarkAllReturned}
+                    className="px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg hover:bg-emerald-100 hover:text-emerald-900 transition flex items-center gap-1 cursor-pointer"
+                    title="Mark all items for this event as returned"
+                  >
+                    <CheckCircle size={12} />
+                    Mark Returned
+                  </button>
+                )}
+                <button 
+                  onClick={handleExportPackingList}
+                  className="px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider bg-white border border-[#e2dcd0] text-slate-700 rounded-lg hover:bg-slate-50 hover:text-slate-900 transition flex items-center gap-1 cursor-pointer"
+                  title="Generate printable packing list"
+                >
+                  <Printer size={12} />
+                  Export List
+                </button>
+              </div>
             </div>
 
             {/* List of active reservations for this specific event */}
@@ -782,18 +846,34 @@ function LogisticsManager({ selectedEventId, events, onUploadCompleted }: Logist
               ) : (
                 currentEventReservations.map(res => {
                   const maxAllowed = res.itemDetail ? getItemAvailability(res.itemDetail).availableStock + res.quantity : 0;
+                  const isPastEvent = res.eventDate && res.eventDate < new Date().toISOString().split('T')[0];
+                  const isUnreturnedHighValue = isPastEvent && res.itemDetail?.isHighValue && res.status !== 'Returned';
                   
                   return (
                     <div 
                       key={res.id} 
-                      className="bg-white border border-[#e2dcd0] rounded-xl shadow-xs hover:border-slate-350 transition group overflow-hidden"
+                      className={`bg-white border rounded-xl shadow-xs hover:border-slate-350 transition group overflow-hidden ${
+                        isUnreturnedHighValue 
+                          ? 'border-rose-400 bg-rose-50/10 ring-1 ring-rose-400/25' 
+                          : 'border-[#e2dcd0]'
+                      }`}
                     >
                       <div className="p-3.5 flex items-center justify-between gap-3">
                         <div className="space-y-1 min-w-0 flex-1">
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-[8px] uppercase tracking-wider font-bold text-slate-400 bg-slate-50 px-1 py-0.5 rounded">
                               {res.itemDetail?.category || "Unknown"}
                             </span>
+                            {res.itemDetail?.isHighValue && (
+                              <span className="text-[8px] uppercase tracking-wider font-bold text-rose-700 bg-rose-50 border border-rose-150 px-1 py-0.5 rounded">
+                                High-Value
+                              </span>
+                            )}
+                            {isUnreturnedHighValue && (
+                              <span className="text-[8px] uppercase tracking-wider font-bold text-rose-800 bg-rose-100 border border-rose-300 px-1 py-0.5 rounded animate-pulse">
+                                Not Returned
+                              </span>
+                            )}
                           </div>
                           <h4 className="font-serif font-bold text-slate-800 text-xs truncate leading-normal">
                             {res.itemDetail?.name || "Unregistered Asset"}
@@ -837,20 +917,37 @@ function LogisticsManager({ selectedEventId, events, onUploadCompleted }: Logist
                       </div>
                       
                       {/* Status Toggle Row */}
-                      <div className="bg-[#faf8f4] border-t border-[#e2dcd0] px-3.5 py-2 flex items-center justify-between">
+                      <div className="bg-[#faf8f4] border-t border-[#e2dcd0] px-3.5 py-2 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
                         <span className="text-[10px] font-medium text-slate-500">Fulfillment Status:</span>
-                        <button
-                          onClick={() => toggleReservationStatus(res)}
-                          className={`px-2 py-0.5 text-[10px] font-bold rounded cursor-pointer border transition ${
-                            !res.status || res.status === 'Pending' 
-                              ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
-                              : res.status === 'Packed'
-                              ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
-                              : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                          }`}
-                        >
-                          {!res.status || res.status === 'Pending' ? '○ Pending' : res.status === 'Packed' ? '📦 Packed' : '✓ Returned'}
-                        </button>
+                        <div className="flex items-center gap-1">
+                          {(['Pending', 'Packed', 'Returned'] as const).map((status) => {
+                            const isSelected = (res.status || 'Pending') === status;
+                            let btnStyle = 'text-[9px] px-2 py-0.5 rounded-md border text-slate-500 bg-white border-slate-200 hover:bg-slate-50 hover:text-slate-700 transition font-medium cursor-pointer';
+                            
+                            if (isSelected) {
+                              if (status === 'Pending') {
+                                btnStyle = 'text-[9px] px-2 py-0.5 rounded-md border bg-amber-50 text-amber-700 border-amber-200 font-bold transition cursor-pointer';
+                              } else if (status === 'Packed') {
+                                btnStyle = 'text-[9px] px-2 py-0.5 rounded-md border bg-blue-50 text-blue-700 border-blue-200 font-bold transition cursor-pointer';
+                              } else {
+                                btnStyle = 'text-[9px] px-2 py-0.5 rounded-md border bg-emerald-50 text-emerald-700 border-emerald-200 font-bold transition cursor-pointer';
+                              }
+                            } else if (status === 'Returned' && isUnreturnedHighValue) {
+                              // Highlight "Returned" as recommended action to fix unreturned high-value state
+                              btnStyle = 'text-[9px] px-2 py-0.5 rounded-md border bg-rose-50/50 text-rose-700 border-rose-200 hover:bg-rose-50 transition font-medium cursor-pointer animate-pulse';
+                            }
+
+                            return (
+                              <button
+                                key={status}
+                                onClick={() => updateReservationStatus(res, status)}
+                                className={btnStyle}
+                              >
+                                {status === 'Pending' ? '○ Pending' : status === 'Packed' ? '📦 Packed' : '✓ Returned'}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                     </div>
                   );
@@ -979,7 +1076,7 @@ function LogisticsManager({ selectedEventId, events, onUploadCompleted }: Logist
                           type="button"
                           onClick={() => {
                             if (reserveQuantity >= maxAllowed) {
-                              alert(`Cannot exceed maximum available stock count (${maxAllowed} units) on this date.`);
+                              showNotification(`Cannot exceed maximum available stock count (${maxAllowed} units) on this date.`, "error");
                               return;
                             }
                             setReserveQuantity(prev => prev + 1);
@@ -1131,6 +1228,19 @@ function LogisticsManager({ selectedEventId, events, onUploadCompleted }: Logist
                     onChange={e => setEditAssetNotes(e.target.value)}
                     className="w-full px-3 py-2 border border-[#e2dcd0] bg-[#faf8f4] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#856637] focus:bg-white text-xs transition"
                   />
+                </div>
+
+                <div className="flex items-center gap-2 py-1 bg-amber-50/40 px-2.5 rounded-xl border border-[#e2dcd0]/50 max-w-fit">
+                  <input 
+                    type="checkbox" 
+                    id="editAssetIsHighValue"
+                    checked={editAssetIsHighValue}
+                    onChange={e => setEditAssetIsHighValue(e.target.checked)}
+                    className="rounded border-[#e2dcd0] text-[#856637] focus:ring-[#856637] cursor-pointer"
+                  />
+                  <label htmlFor="editAssetIsHighValue" className="font-bold text-slate-700 cursor-pointer select-none">
+                    High-value item (requires strict return auditing)
+                  </label>
                 </div>
 
                 <div className="flex gap-2 justify-end pt-2 border-t border-slate-100">
