@@ -21,6 +21,7 @@ import {
   List,
   ExternalLink,
   ChevronRight,
+  ChevronDown,
   Edit2,
   Check,
   Plus,
@@ -175,14 +176,13 @@ function VolunteerTable({
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // Role & Station mapping state
-  const [editingRolesVolId, setEditingRolesVolId] = useState<string | null>(null);
+  // Expanded Roster Row State
+  const [expandedRosterVolId, setExpandedRosterVolId] = useState<string | null>(null);
   const [newRoleName, setNewRoleName] = useState('');
   const [newStationName, setNewStationName] = useState('');
   const [newEventNotes, setNewEventNotes] = useState('');
 
   // Contact Outreach Tracker state
-  const [editingEmailsVolId, setEditingEmailsVolId] = useState<string | null>(null);
   const [rowLastContacted, setRowLastContacted] = useState('');
   const [rowContactNotes, setRowContactNotes] = useState('');
 
@@ -273,102 +273,6 @@ function VolunteerTable({
       showNotification("Error adding volunteers to event.", "error");
     } finally {
       setPickerSubmitting(false);
-    }
-  };
-
-  const handleSaveProfile = async () => {
-    if (!selectedVol) return;
-    try {
-      await onUpdateVolunteer(selectedVol.id, {
-        name: editName.trim(),
-        email: editEmail.trim(),
-        phone: editPhone.trim(),
-        skills: editSkills.trim()
-      });
-      setIsEditingProfile(false);
-    } catch (err) {
-      console.error('Failed to update volunteer profile:', err);
-    }
-  };
-
-  const handleSavePlacement = async () => {
-    if (!selectedVol || !activeEventId) return;
-    try {
-      const currentAssignments = selectedVol.eventAssignments || {};
-      const updatedAssignments = {
-        ...currentAssignments,
-        [activeEventId]: {
-          role: detailRole.trim() || 'General Helper',
-          station: detailStation.trim() || 'General Area',
-          notes: detailNotes.trim()
-        }
-      };
-      await onUpdateVolunteer(selectedVol.id, { eventAssignments: updatedAssignments });
-      setIsEditingPlacement(false);
-    } catch (err) {
-      console.error('Failed to update placement:', err);
-    }
-  };
-
-  const handleUpdateContactStatus = async (volId: string, status: string) => {
-    const vol = volunteers.find(v => v.id === volId);
-    if (!vol || !activeEventId) return;
-    try {
-      const currentAssignments = vol.eventAssignments || {};
-      const currentAssignmentForEvent = currentAssignments[activeEventId] || {
-        role: '',
-        station: '',
-        notes: ''
-      };
-      const updatedAssignments = {
-        ...currentAssignments,
-        [activeEventId]: {
-          ...currentAssignmentForEvent,
-          contactStatus: status as any
-        }
-      };
-      await onUpdateVolunteer(vol.id, { eventAssignments: updatedAssignments });
-    } catch (err) {
-      console.error('Failed to update contact status:', err);
-    }
-  };
-
-  const handleClearPlacementDirect = async () => {
-    if (!selectedVol || !activeEventId) return;
-    try {
-      const currentAssignments = { ...(selectedVol.eventAssignments || {}) };
-      delete currentAssignments[activeEventId];
-      await onUpdateVolunteer(selectedVol.id, { eventAssignments: currentAssignments });
-      setDetailRole('');
-      setDetailStation('');
-      setDetailNotes('');
-      setIsEditingPlacement(false);
-    } catch (err) {
-      console.error('Failed to clear placement:', err);
-    }
-  };
-
-  const handleSavePrivateNotes = async () => {
-    if (!selectedVol) return;
-    try {
-      await onUpdateVolunteer(selectedVol.id, { notes: detailPrivateNotes.trim() });
-      setIsEditingPrivateNotes(false);
-    } catch (err) {
-      console.error('Failed to save notes:', err);
-    }
-  };
-
-  const handleSaveOutreach = async () => {
-    if (!selectedVol) return;
-    try {
-      await onUpdateVolunteer(selectedVol.id, {
-        lastContacted: detailLastContacted,
-        contactNotes: detailContactNotes.trim()
-      });
-      showNotification("Outreach contact record saved successfully.", "success");
-    } catch (err) {
-      console.error('Failed to save outreach:', err);
-      showNotification("Could not save outreach details.", "error");
     }
   };
 
@@ -542,6 +446,127 @@ function VolunteerTable({
   const activeDirectoryVolId = selectedVolId;
   const selectedVol = volunteers.find(v => v.id === activeDirectoryVolId);
 
+  const hasUnsavedChanges = React.useMemo(() => {
+    if (!selectedVol) return false;
+    const assignment = selectedVol.eventAssignments?.[activeEventId];
+    
+    const profileChanged = 
+      editName.trim() !== (selectedVol.name || '').trim() ||
+      editEmail.trim() !== (selectedVol.email || '').trim() ||
+      editPhone.trim() !== (selectedVol.phone || '').trim() ||
+      editSkills.trim() !== (selectedVol.skills || '').trim();
+      
+    const privateNotesChanged =
+      detailPrivateNotes.trim() !== (selectedVol.notes || '').trim();
+      
+    const outreachChanged =
+      detailLastContacted !== (selectedVol.lastContacted || '') ||
+      detailContactNotes.trim() !== (selectedVol.contactNotes || '').trim();
+      
+    const placementChanged =
+      detailRole.trim() !== (assignment?.role || '').trim() ||
+      detailStation.trim() !== (assignment?.station || '').trim() ||
+      detailNotes.trim() !== (assignment?.notes || '').trim();
+      
+    return profileChanged || privateNotesChanged || outreachChanged || placementChanged;
+  }, [
+    selectedVol,
+    activeEventId,
+    editName,
+    editEmail,
+    editPhone,
+    editSkills,
+    detailPrivateNotes,
+    detailLastContacted,
+    detailContactNotes,
+    detailRole,
+    detailStation,
+    detailNotes
+  ]);
+
+  const handleSaveChanges = async () => {
+    if (!selectedVol) return;
+    try {
+      const updatePayload: Partial<Volunteer> = {
+        name: editName.trim(),
+        email: editEmail.trim(),
+        phone: editPhone.trim(),
+        skills: editSkills.trim(),
+        notes: detailPrivateNotes.trim(),
+        lastContacted: detailLastContacted,
+        contactNotes: detailContactNotes.trim()
+      };
+
+      if (activeEventId) {
+        const currentAssignments = selectedVol.eventAssignments || {};
+        const existingEntry = currentAssignments[activeEventId];
+        const existingStatus = existingEntry?.contactStatus || 'Not Contacted';
+
+        // Save placement info if we are editing placement or already have one
+        if (isEditingPlacement || currentAssignments[activeEventId]) {
+          updatePayload.eventAssignments = {
+            ...currentAssignments,
+            [activeEventId]: {
+              role: detailRole.trim() || 'General Helper',
+              station: detailStation.trim() || 'General Area',
+              notes: detailNotes.trim(),
+              contactStatus: existingStatus
+            }
+          };
+        }
+      }
+
+      await onUpdateVolunteer(selectedVol.id, updatePayload);
+      
+      setIsEditingProfile(false);
+      setIsEditingPlacement(false);
+      setIsEditingPrivateNotes(false);
+      
+      showNotification("Volunteer changes saved successfully.", "success");
+    } catch (err) {
+      console.error('Failed to save volunteer changes:', err);
+      showNotification("Could not save volunteer changes.", "error");
+    }
+  };
+
+  const handleUpdateContactStatus = async (volId: string, status: string) => {
+    const vol = volunteers.find(v => v.id === volId);
+    if (!vol || !activeEventId) return;
+    try {
+      const currentAssignments = vol.eventAssignments || {};
+      const currentAssignmentForEvent = currentAssignments[activeEventId] || {
+        role: '',
+        station: '',
+        notes: ''
+      };
+      const updatedAssignments = {
+        ...currentAssignments,
+        [activeEventId]: {
+          ...currentAssignmentForEvent,
+          contactStatus: status as any
+        }
+      };
+      await onUpdateVolunteer(vol.id, { eventAssignments: updatedAssignments });
+    } catch (err) {
+      console.error('Failed to update contact status:', err);
+    }
+  };
+
+  const handleClearPlacementDirect = async () => {
+    if (!selectedVol || !activeEventId) return;
+    try {
+      const currentAssignments = { ...(selectedVol.eventAssignments || {}) };
+      delete currentAssignments[activeEventId];
+      await onUpdateVolunteer(selectedVol.id, { eventAssignments: currentAssignments });
+      setDetailRole('');
+      setDetailStation('');
+      setDetailNotes('');
+      setIsEditingPlacement(false);
+    } catch (err) {
+      console.error('Failed to clear placement:', err);
+    }
+  };
+
   // Sync edit state when active volunteer changes
   React.useEffect(() => {
     if (selectedVol) {
@@ -574,16 +599,27 @@ function VolunteerTable({
     setIsEditingPrivateNotes(false);
   }, [activeDirectoryVolId, activeEventId]);
 
-  // Sync row-level edit state when editingEmailsVolId changes
+  // Sync row-level edit state when expandedRosterVolId changes
   React.useEffect(() => {
-    if (editingEmailsVolId) {
-      const vol = volunteers.find(v => v.id === editingEmailsVolId);
+    if (expandedRosterVolId) {
+      const vol = volunteers.find(v => v.id === expandedRosterVolId);
       if (vol) {
         setRowLastContacted(vol.lastContacted || '');
         setRowContactNotes(vol.contactNotes || '');
+
+        const assignment = vol.eventAssignments?.[activeEventId];
+        if (assignment) {
+          setNewRoleName(assignment.role);
+          setNewStationName(assignment.station);
+          setNewEventNotes(assignment.notes || '');
+        } else {
+          setNewRoleName('');
+          setNewStationName('');
+          setNewEventNotes('');
+        }
       }
     }
-  }, [editingEmailsVolId, volunteers]);
+  }, [expandedRosterVolId, volunteers, activeEventId]);
 
   const handleSaveRowOutreach = async (volId: string) => {
     try {
@@ -592,7 +628,6 @@ function VolunteerTable({
         contactNotes: rowContactNotes.trim()
       });
       showNotification("Outreach contact record saved successfully.", "success");
-      setEditingEmailsVolId(null);
     } catch (err) {
       console.error('Failed to save row outreach:', err);
       showNotification("Could not save contact record.", "error");
@@ -663,20 +698,20 @@ function VolunteerTable({
     if (!vol) return;
 
     const currentAssignments = vol.eventAssignments || {};
+    const existingEntry = currentAssignments[activeEventId];
+    const existingStatus = existingEntry?.contactStatus || 'Not Contacted';
+
     const updatedAssignments = {
       ...currentAssignments,
       [activeEventId]: {
         role: newRoleName.trim() || 'General Helper',
         station: newStationName.trim() || 'General Area',
-        notes: newEventNotes.trim()
+        notes: newEventNotes.trim(),
+        contactStatus: existingStatus
       }
     };
 
     await onUpdateVolunteer(volId, { eventAssignments: updatedAssignments });
-    setNewRoleName('');
-    setNewStationName('');
-    setNewEventNotes('');
-    setEditingRolesVolId(null);
   };
 
   const handleClearAssignment = async (volId: string) => {
@@ -688,6 +723,9 @@ function VolunteerTable({
     delete currentAssignments[activeEventId];
 
     await onUpdateVolunteer(volId, { eventAssignments: currentAssignments });
+    setNewRoleName('');
+    setNewStationName('');
+    setNewEventNotes('');
   };
 
   const handleBulkAssignRoleStation = async () => {
@@ -1523,236 +1561,238 @@ function VolunteerTable({
 
                             <button
                               onClick={() => {
-                                setEditingEmailsVolId(editingEmailsVolId === vol.id ? null : vol.id);
-                                setEditingRolesVolId(null);
+                                setExpandedRosterVolId(expandedRosterVolId === vol.id ? null : vol.id);
                               }}
-                              className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition shadow-sm cursor-pointer flex items-center gap-1 ${
-                                editingEmailsVolId === vol.id 
-                                  ? 'bg-amber-50 text-[#856637] border-[#efe0c2]' 
-                                  : 'bg-[#1e293b] hover:bg-[#0f172a] text-[#faf8f4] border-transparent'
-                              }`}
-                              title="Contact Outreach Logger"
-                            >
-                              <Mail size={12} />
-                              <span>Outreach</span>
-                            </button>
-
-                            <button
-                              onClick={() => {
-                                setEditingRolesVolId(editingRolesVolId === vol.id ? null : vol.id);
-                                setEditingEmailsVolId(null);
-                                // Prepopulate current mapping if exists
-                                if (assignment) {
-                                  setNewRoleName(assignment.role);
-                                  setNewStationName(assignment.station);
-                                   setNewEventNotes(assignment.notes || '');
-                                } else {
-                                  setNewRoleName('');
-                                  setNewStationName('');
-                                  setNewEventNotes('');
-                                }
-                              }}
-                              className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition shadow-sm cursor-pointer flex items-center gap-1 ${
-                                editingRolesVolId === vol.id
+                              className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition shadow-sm cursor-pointer flex items-center gap-1.5 ${
+                                expandedRosterVolId === vol.id
                                   ? 'bg-amber-50 text-[#856637] border-[#efe0c2]'
                                   : 'bg-white hover:bg-[#faf8f4] text-slate-700 border-[#e2dcd0]'
                               }`}
+                              title="Manage placement and outreach logger"
                             >
-                              <Bookmark size={12} />
-                              <span>Assign Role &amp; Station</span>
-                            </button>
-
-                            <button
-                              onClick={async () => {
-                                const confirm = await confirmAction(
-                                  "Remove from Event Roster",
-                                  `Are you sure you want to remove ${vol.name} from the roster for this event? This will not delete them from the volunteer directory.`
-                                );
-                                if (confirm) {
-                                  await handleClearAssignment(vol.id);
-                                  showNotification(`Removed ${vol.name} from event roster`, 'success');
-                                }
-                              }}
-                              className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-rose-200 bg-white hover:bg-rose-50 text-rose-750 transition shadow-sm cursor-pointer flex items-center gap-1 shrink-0"
-                              title="Remove from Event"
-                              aria-label="Remove from Event"
-                            >
-                              <X size={12} aria-hidden="true" />
-                              <span>Remove from event</span>
+                              <span>Manage</span>
+                              <ChevronDown
+                                size={12}
+                                className={`transition-transform duration-200 ${
+                                  expandedRosterVolId === vol.id ? 'rotate-180' : ''
+                                }`}
+                              />
                             </button>
                           </div>
                         </td>
                       </tr>
 
-                      {/* Interactive Email Communication Tracker Sub-panel */}
-                      {/* Interactive Contact Outreach Record Sub-panel */}
-                      {editingEmailsVolId === vol.id && (
-                        <tr className="bg-[#fcfbf9] border-y border-[#efe0c2]/60 shadow-inner animate-fadeIn">
+                      {/* Unified Expanded Management Sub-panel */}
+                      {expandedRosterVolId === vol.id && (
+                        <tr className="bg-[#faf8f4]/90 border-y border-[#efe0c2]/65 shadow-inner animate-fadeIn">
                           <td colSpan={7} className="p-6">
-                            <div className="max-w-xl space-y-4">
-                              <div className="flex items-center justify-between border-b border-[#efe0c2] pb-2">
-                                <div className="flex items-center gap-1.5 text-sm text-[#1e293b] font-bold font-serif">
-                                  <Mail size={16} className="text-[#856637]" />
-                                  Outreach Contact Record for {vol.name}
-                                </div>
+                            <div className="space-y-6 max-w-4xl mx-auto text-left">
+                              {/* Header */}
+                              <div className="flex items-center justify-between border-b border-[#efe0c2] pb-3">
+                                <h4 className="text-sm text-[#1e293b] font-bold font-serif flex items-center gap-1.5">
+                                  <Users size={16} className="text-[#856637]" />
+                                  <span>Manage Volunteer: {vol.name}</span>
+                                </h4>
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedRosterVolId(null)}
+                                  className="text-xs text-slate-400 hover:text-slate-600 transition cursor-pointer"
+                                  title="Close Panel"
+                                >
+                                  <X size={14} />
+                                </button>
                               </div>
 
-                              <div className="space-y-3">
-                                <div>
-                                  <label className="block text-[10px] font-bold uppercase text-slate-450 mb-1">
-                                    Last Contacted Date
-                                  </label>
-                                  <input
-                                    type="date"
-                                    value={rowLastContacted}
-                                    onChange={e => setRowLastContacted(e.target.value)}
-                                    className="text-xs p-2 rounded-lg border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-semibold text-slate-800"
-                                  />
-                                </div>
-
-                                <div>
-                                  <label className="block text-[10px] font-bold uppercase text-slate-450 mb-1">
-                                    Contact Notes
-                                  </label>
-                                  <textarea
-                                    value={rowContactNotes}
-                                    rows={3}
-                                    onChange={e => setRowContactNotes(e.target.value)}
-                                    className="w-full text-xs p-2 rounded-lg border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80]"
-                                    placeholder="Summary of communications, emails sent, phone call response, or scheduling alignment..."
-                                  />
-                                </div>
-
-                                <div className="flex gap-2">
-                                  {vol.email && (
-                                    <a
-                                      href={`mailto:${vol.email}?subject=${encodeURIComponent('Ministry Outreach + Volunteer Recruitment')}`}
-                                      className="py-2 px-3 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-lg border border-[#e2dcd0] transition cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
-                                      title="Open local email composer"
-                                    >
-                                      <Mail size={12} className="text-slate-500" />
-                                      <span>Open Composer</span>
-                                    </a>
-                                  )}
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSaveRowOutreach(vol.id)}
-                                    className="py-2 px-4 bg-[#1e293b] hover:bg-[#0f172a] text-[#faf8f4] text-xs font-bold rounded-lg transition cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
-                                  >
-                                    <Check size={12} />
-                                    <span>Save Contact Record</span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setEditingEmailsVolId(null)}
-                                    className="py-2 px-3 bg-white hover:bg-slate-50 text-slate-550 text-xs font-bold rounded-lg border border-[#e2dcd0] transition cursor-pointer"
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-
-                      {/* Interactive Role & Station Mapping Sub-panel */}
-                      {editingRolesVolId === vol.id && (
-                        <tr className="bg-[#faf8f4]/60 border-y border-dashed border-[#e2dcd0]">
-                          <td colSpan={7} className="p-6">
-                            <div className="space-y-4 max-w-xl">
-                              <div className="flex items-center gap-1.5 text-xs text-[#1e293b] font-bold">
-                                <Bookmark size={14} className="text-[#856637]" />
-                                Event Placement Assignment: <span className="font-serif italic text-[#856637]">"{activeEvent?.name}"</span>
-                              </div>
-                              <p className="text-[11px] text-slate-500 leading-normal">
-                                Map this volunteer to a unique Assigned Role and Station location for this specific event. This implements Option B's centralized junction mapping cleanly.
-                              </p>
-
-                              {/* Active assignments summary */}
-                              {hasAssignment ? (
-                                <div className="bg-white p-3 rounded-lg border border-[#e2dcd0] flex items-center justify-between gap-3 shadow-xs">
-                                  <div className="flex flex-wrap items-center gap-4">
-                                    <div className="space-y-0.5">
-                                      <p className="text-[9px] font-bold uppercase text-slate-450">Active Role</p>
-                                      <p className="text-xs font-serif font-black text-slate-800">{assignment.role || 'General Helper'}</p>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {/* Left Section: Event Placement Assignment */}
+                                <div className="space-y-4 bg-white p-4 rounded-xl border border-[#efe0c2]/60 shadow-xs flex flex-col justify-between">
+                                  <div>
+                                    <div className="flex items-center gap-1.5 text-xs text-[#1e293b] font-bold">
+                                      <Bookmark size={14} className="text-[#856637]" />
+                                      <span>Event Placement Assignment: "{activeEvent?.name}"</span>
                                     </div>
-                                    <div className="space-y-0.5">
-                                      <p className="text-[9px] font-bold uppercase text-slate-450">Active Station</p>
-                                      <p className="text-xs font-semibold text-slate-600 flex items-center gap-1">
-                                        <MapPin size={10} className="text-[#856637]" />
-                                        {assignment.station || 'General Area'}
-                                      </p>
+                                    <p className="text-[11px] text-slate-500 leading-normal mt-1">
+                                      Map this volunteer to a unique Assigned Role and Station location for this specific event.
+                                    </p>
+
+                                    {/* Active assignments summary */}
+                                    <div className="mt-3">
+                                      {hasAssignment ? (
+                                        <div className="bg-[#faf8f4] p-3 rounded-lg border border-[#e2dcd0] flex items-center justify-between gap-3 shadow-xs">
+                                          <div className="flex flex-wrap items-center gap-4">
+                                            <div className="space-y-0.5">
+                                              <p className="text-[9px] font-bold uppercase text-slate-450">Active Role</p>
+                                              <p className="text-xs font-serif font-black text-slate-800">{assignment.role || 'General Helper'}</p>
+                                            </div>
+                                            <div className="space-y-0.5">
+                                              <p className="text-[9px] font-bold uppercase text-slate-450">Active Station</p>
+                                              <p className="text-xs font-semibold text-slate-600 flex items-center gap-1">
+                                                <MapPin size={10} className="text-[#856637]" />
+                                                {assignment.station || 'General Area'}
+                                              </p>
+                                            </div>
+                                            {assignment.notes && (
+                                              <div className="space-y-0.5 min-w-[120px] max-w-xs">
+                                                <p className="text-[9px] font-bold uppercase text-slate-450">Operational Comments</p>
+                                                <p className="text-xs italic text-[#856637] font-serif break-words">"{assignment.notes}"</p>
+                                              </div>
+                                            )}
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleClearAssignment(vol.id)}
+                                            className="px-2 py-1 text-[10px] font-bold text-rose-600 hover:bg-rose-50 rounded border border-rose-200 cursor-pointer transition shrink-0"
+                                          >
+                                            Clear Placement
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <p className="text-[10px] italic text-slate-500 bg-slate-50 p-2.5 rounded-lg border border-dashed border-slate-200">
+                                          Currently unassigned for this event.
+                                        </p>
+                                      )}
                                     </div>
-                                    {assignment.notes && (
-                                      <div className="space-y-0.5 min-w-[150px] max-w-xs">
-                                        <p className="text-[9px] font-bold uppercase text-slate-450">Operational Comments</p>
-                                        <p className="text-xs italic text-[#856637] font-serif break-words">"{assignment.notes}"</p>
+
+                                    {/* Role mapping creator */}
+                                    <div className="space-y-3 pt-3 mt-3 border-t border-slate-100">
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div>
+                                          <label className="block text-[9px] font-bold uppercase text-slate-450 mb-1">Role Assignment</label>
+                                          <input
+                                            type="text"
+                                            placeholder="e.g. Front Gate Greeter"
+                                            value={newRoleName}
+                                            onChange={e => setNewRoleName(e.target.value)}
+                                            className="w-full text-xs p-2 rounded-lg border border-[#efe0c2] bg-[#faf8f4] focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-semibold"
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="block text-[9px] font-bold uppercase text-slate-450 mb-1">Station / Location Assignment</label>
+                                          <input
+                                            type="text"
+                                            placeholder="e.g. Main Lobby Desk, Gate 2"
+                                            value={newStationName}
+                                            onChange={e => setNewStationName(e.target.value)}
+                                            className="w-full text-xs p-2 rounded-lg border border-[#efe0c2] bg-[#faf8f4] focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-semibold"
+                                          />
+                                        </div>
                                       </div>
-                                    )}
+                                      <div>
+                                        <label className="block text-[9px] font-bold uppercase text-slate-450 mb-1">Temporary Operational Comments / Notes</label>
+                                        <textarea
+                                          placeholder="e.g. Arriving early, needs high chair, leaves by 3 PM..."
+                                          rows={2}
+                                          value={newEventNotes}
+                                          onChange={e => setNewEventNotes(e.target.value)}
+                                          className="w-full text-xs p-2 rounded-lg border border-[#efe0c2] bg-[#faf8f4] focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-semibold"
+                                        />
+                                      </div>
+                                    </div>
                                   </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleClearAssignment(vol.id)}
-                                    className="px-2.5 py-1 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded border border-rose-200 cursor-pointer transition shrink-0"
-                                  >
-                                    Clear Placement
-                                  </button>
-                                </div>
-                              ) : (
-                                <p className="text-[10px] italic text-slate-400">Currently unassigned for this event.</p>
-                              )}
 
-                              {/* Role mapping creator */}
-                              <div className="space-y-3 pt-2 border-t border-[#e2dcd0]/60">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                  <div>
-                                    <label className="block text-[9px] font-bold uppercase text-slate-450 mb-1">Role Assignment</label>
-                                    <input
-                                      type="text"
-                                      placeholder="e.g. Front Gate Greeter"
-                                      value={newRoleName}
-                                      onChange={e => setNewRoleName(e.target.value)}
-                                      className="w-full text-xs p-2 rounded-lg border border-[#efe0c2] bg-[#faf8f4] focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-semibold"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="block text-[9px] font-bold uppercase text-slate-450 mb-1">Station / Location Assignment</label>
-                                    <input
-                                      type="text"
-                                      placeholder="e.g. Main Lobby Desk, Gate 2"
-                                      value={newStationName}
-                                      onChange={e => setNewStationName(e.target.value)}
-                                      className="w-full text-xs p-2 rounded-lg border border-[#efe0c2] bg-[#faf8f4] focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-semibold"
-                                    />
+                                  <div className="flex gap-2 justify-end pt-4 border-t border-slate-100 mt-4">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAssignRoleStation(vol.id)}
+                                      className="px-4 py-1.5 bg-[#1e293b] hover:bg-[#0f172a] text-[#faf8f4] text-xs font-bold rounded-lg transition cursor-pointer shadow-sm flex items-center gap-1"
+                                    >
+                                      <Check size={12} />
+                                      <span>Save Placement</span>
+                                    </button>
                                   </div>
                                 </div>
-                                <div>
-                                  <label className="block text-[9px] font-bold uppercase text-slate-450 mb-1">Temporary Operational Comments / Notes</label>
-                                  <textarea
-                                    placeholder="e.g. Arriving early, needs high chair, leaves by 3 PM..."
-                                    rows={2}
-                                    value={newEventNotes}
-                                    onChange={e => setNewEventNotes(e.target.value)}
-                                    className="w-full text-xs p-2 rounded-lg border border-[#efe0c2] bg-[#faf8f4] focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-semibold"
-                                  />
+
+                                {/* Right Section: Outreach Contact Record */}
+                                <div className="space-y-4 bg-white p-4 rounded-xl border border-[#efe0c2]/60 shadow-xs flex flex-col justify-between">
+                                  <div>
+                                    <div className="flex items-center gap-1.5 text-xs text-[#1e293b] font-bold">
+                                      <Mail size={14} className="text-[#856637]" />
+                                      <span>Outreach Contact Record for {vol.name}</span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-500 leading-normal mt-1">
+                                      Log communication history and details of contact made with this volunteer.
+                                    </p>
+
+                                    <div className="space-y-3 mt-3">
+                                      <div>
+                                        <label className="block text-[9px] font-bold uppercase text-slate-450 mb-1">
+                                          Last Contacted Date
+                                        </label>
+                                        <input
+                                          type="date"
+                                          value={rowLastContacted}
+                                          onChange={e => setRowLastContacted(e.target.value)}
+                                          className="text-xs p-2 rounded-lg border border-[#efe0c2] bg-[#faf8f4] focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-semibold text-slate-800"
+                                        />
+                                      </div>
+
+                                      <div>
+                                        <label className="block text-[9px] font-bold uppercase text-slate-450 mb-1">
+                                          Contact Notes
+                                        </label>
+                                        <textarea
+                                          value={rowContactNotes}
+                                          rows={4}
+                                          onChange={e => setRowContactNotes(e.target.value)}
+                                          className="w-full text-xs p-2 rounded-lg border border-[#efe0c2] bg-[#faf8f4] focus:outline-none focus:ring-1 focus:ring-[#c2aa80]"
+                                          placeholder="Summary of communications, emails sent, phone call response, or scheduling alignment..."
+                                        />
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex gap-2 justify-end pt-4 border-t border-slate-100 mt-4">
+                                    {vol.email && (
+                                      <a
+                                        href={`mailto:${vol.email}?subject=${encodeURIComponent('Ministry Outreach + Volunteer Recruitment')}`}
+                                        className="py-1.5 px-3 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-lg border border-[#e2dcd0] transition cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+                                        title="Open local email composer"
+                                      >
+                                        <Send size={12} className="text-slate-500" />
+                                        <span>Open Composer</span>
+                                      </a>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSaveRowOutreach(vol.id)}
+                                      className="py-1.5 px-4 bg-[#1e293b] hover:bg-[#0f172a] text-[#faf8f4] text-xs font-bold rounded-lg transition cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+                                    >
+                                      <Check size={12} />
+                                      <span>Save Outreach</span>
+                                    </button>
+                                  </div>
                                 </div>
-                                <div className="flex gap-2 justify-end pt-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => setEditingRolesVolId(null)}
-                                    className="px-3 py-1.5 border border-[#e2dcd0] hover:bg-[#faf8f4] text-slate-600 text-xs font-semibold rounded-lg transition cursor-pointer"
-                                  >
-                                    Close
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleAssignRoleStation(vol.id)}
-                                    className="px-4 py-1.5 bg-[#1e293b] hover:bg-[#0f172a] text-[#faf8f4] text-xs font-bold rounded-lg transition cursor-pointer shadow-sm"
-                                  >
-                                    Save Placement
-                                  </button>
-                                </div>
+                              </div>
+
+                              {/* Footer action row: Remove and Close */}
+                              <div className="flex flex-col sm:flex-row items-center justify-between pt-4 border-t border-[#efe0c2] gap-3">
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const confirm = await confirmAction(
+                                      "Remove from Event Roster",
+                                      `Are you sure you want to remove ${vol.name} from the roster for this event? This will not delete them from the volunteer directory.`
+                                    );
+                                    if (confirm) {
+                                      await handleClearAssignment(vol.id);
+                                      showNotification(`Removed ${vol.name} from event roster`, 'success');
+                                      setExpandedRosterVolId(null);
+                                    }
+                                  }}
+                                  className="text-xs font-semibold py-2 px-4 rounded-lg border border-rose-200 bg-white hover:bg-rose-50 text-rose-700 transition shadow-sm cursor-pointer flex items-center gap-1.5 w-full sm:w-auto justify-center"
+                                  title="Remove from Event Roster"
+                                >
+                                  <X size={14} aria-hidden="true" />
+                                  <span>Remove from event roster</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedRosterVolId(null)}
+                                  className="py-2 px-5 bg-white hover:bg-slate-50 text-slate-600 border border-[#e2dcd0] text-xs font-bold rounded-lg transition cursor-pointer w-full sm:w-auto text-center"
+                                >
+                                  Close Management Panel
+                                </button>
                               </div>
                             </div>
                           </td>
@@ -2265,15 +2305,6 @@ function VolunteerTable({
                                                 className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80]"
                                                 placeholder="Internal availability, private flags..."
                                               />
-                                              <div className="flex justify-end">
-                                                <button
-                                                  type="button"
-                                                  onClick={handleSavePrivateNotes}
-                                                  className="px-3 py-1 bg-[#1e293b] text-[#faf8f4] text-[10px] font-bold rounded-lg cursor-pointer"
-                                                >
-                                                  Save Notes
-                                                </button>
-                                              </div>
                                             </div>
                                           ) : (
                                             <p className="text-xs text-slate-600 italic">
@@ -2325,22 +2356,6 @@ function VolunteerTable({
                                             className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80]"
                                             placeholder="e.g. Cooking, AV Stage, Welcoming"
                                           />
-                                          <div className="flex gap-2 justify-end pt-1">
-                                            <button
-                                              type="button"
-                                              onClick={() => setIsEditingProfile(false)}
-                                              className="px-3 py-1.5 border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs font-semibold rounded-xl cursor-pointer"
-                                            >
-                                              Cancel
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={handleSaveProfile}
-                                              className="px-4 py-1.5 bg-[#1e293b] text-[#faf8f4] text-xs font-bold rounded-xl cursor-pointer"
-                                            >
-                                              Save Details
-                                            </button>
-                                          </div>
                                         </div>
                                       ) : (
                                         <>
@@ -2422,22 +2437,6 @@ function VolunteerTable({
                                                 Clear Assignment
                                               </button>
                                             ) : <div />}
-                                            <div className="flex gap-2">
-                                              <button
-                                                type="button"
-                                                onClick={() => setIsEditingPlacement(false)}
-                                                className="px-3 py-1 border border-slate-200 text-slate-650 text-[10px] font-semibold rounded-lg bg-white cursor-pointer"
-                                              >
-                                                Cancel
-                                              </button>
-                                              <button
-                                                type="button"
-                                                onClick={handleSavePlacement}
-                                                className="px-3.5 py-1 bg-[#1e293b] text-[#faf8f4] text-[10px] font-bold rounded-lg cursor-pointer"
-                                              >
-                                                Save Assignment
-                                              </button>
-                                            </div>
                                           </div>
                                         </div>
                                       ) : (
@@ -2515,16 +2514,19 @@ function VolunteerTable({
                                         </div>
                                       </div>
 
-                                      <div className="flex justify-end pt-1">
-                                        <button
-                                          type="button"
-                                          onClick={handleSaveOutreach}
-                                          className="py-1.5 px-4 bg-[#1e293b] text-[#faf8f4] text-xs font-bold rounded-xl cursor-pointer hover:bg-[#0f172a] shadow-xs flex items-center gap-1"
-                                        >
-                                          <Check size={12} />
-                                          <span>Save Contact Record</span>
-                                        </button>
-                                      </div>
+                                      {/* Unified Save Changes Button */}
+                                      {hasUnsavedChanges && (
+                                        <div className="pt-4 border-t border-amber-200/50 flex justify-end animate-fadeIn">
+                                          <button
+                                            type="button"
+                                            onClick={handleSaveChanges}
+                                            className="py-2.5 px-6 bg-[#856637] hover:bg-[#6c522c] text-white text-xs font-bold rounded-xl cursor-pointer transition shadow-md flex items-center gap-1.5 uppercase tracking-wider"
+                                          >
+                                            <Check size={14} />
+                                            <span>Save Changes</span>
+                                          </button>
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
                                 </motion.div>
