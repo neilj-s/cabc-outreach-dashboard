@@ -2052,203 +2052,324 @@ function VolunteerTable({
 
                           {/* Expanded Workspace Sub-Row */}
                           {isExpanded && (
-                            <tr className="bg-[#faf8f4]/50">
-                              <td colSpan={7} className="p-4 border-l-2 border-l-[#856637] bg-slate-50/20">
+                            <tr className="bg-[#faf8f4]/30">
+                              <td colSpan={7} className="p-6 border-l-2 border-l-[#856637] bg-slate-50/10">
                                 <motion.div
                                   initial={{ opacity: 0, y: -4 }}
                                   animate={{ opacity: 1, y: 0 }}
                                   exit={{ opacity: 0, y: -4 }}
                                   transition={{ duration: 0.15 }}
-                                  className="grid grid-cols-1 xl:grid-cols-12 gap-5"
+                                  className="max-w-2xl mx-auto bg-white border border-[#e2dcd0] rounded-2xl shadow-sm overflow-hidden"
                                 >
-                                  {/* Left Panel: Profile Info and Event assignment */}
-                                  <div className="xl:col-span-6 space-y-4">
-                                    {/* Sub-panel 1: Personal profile */}
-                                    <div className="bg-white border border-[#e2dcd0] p-4 rounded-xl shadow-xs space-y-3 relative">
-                                      <div className="flex justify-between items-center border-b border-[#efe0c2]/60 pb-1.5">
-                                        <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-450 flex items-center gap-1.5">
-                                          <Users size={12} /> Personal Profile Details
-                                        </h4>
-                                        <button
-                                          onClick={() => setIsEditingProfile(!isEditingProfile)}
-                                          className={`px-2 py-1 text-[10px] font-bold rounded border transition flex items-center gap-0.5 cursor-pointer ${
-                                            isEditingProfile
-                                              ? 'bg-[#faf6ee] text-[#856637] border-[#efe0c2]'
-                                              : 'bg-white hover:bg-slate-50 text-slate-705 border-slate-200'
+                                  <div className="p-6 space-y-6">
+                                    {/* 1. Header Row */}
+                                    <div className="flex items-center justify-between gap-4">
+                                      <div className="flex items-center gap-3">
+                                        <div className="w-12 h-12 rounded-full bg-[#faf5ec] text-[#856637] font-bold border border-[#efe0c2] flex items-center justify-center font-serif text-base shrink-0">
+                                          {getInitials(vol.name)}
+                                        </div>
+                                        <div className="min-w-0">
+                                          <h3 className="text-base font-bold text-slate-800 font-serif leading-tight">
+                                            {vol.name}
+                                          </h3>
+                                          <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                                            {assignedEventsCount > 0 ? `Assigned to ${assignedEventsCount} event${assignedEventsCount === 1 ? '' : 's'}` : 'Unassigned'}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <div className="shrink-0">
+                                        <select
+                                          value={status}
+                                          onChange={(e) => handleUpdateContactStatus(vol.id, e.target.value)}
+                                          className={`text-[10px] font-bold px-2.5 py-1 rounded-full border cursor-pointer focus:outline-none shadow-xs transition ${
+                                            status === 'Confirmed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100/70' :
+                                            status === 'Declined' ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100/70' :
+                                            status === 'Awaiting Reply' ? 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100/70' :
+                                            status === 'Contacted' ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100/70' :
+                                            'bg-slate-50 text-slate-650 border-slate-200 hover:bg-slate-100/70'
                                           }`}
                                         >
-                                          <Edit2 size={10} />
-                                          <span>{isEditingProfile ? 'Cancel' : 'Edit Details'}</span>
-                                        </button>
+                                          <option value="Not Contacted">⚪ Not Contacted</option>
+                                          <option value="Contacted">🔵 Contacted</option>
+                                          <option value="Awaiting Reply">🟡 Awaiting Reply</option>
+                                          <option value="Confirmed">🟢 Confirmed</option>
+                                          <option value="Declined">🔴 Declined</option>
+                                        </select>
                                       </div>
+                                    </div>
 
+                                    {/* 2. Action Row */}
+                                    <div className={`grid gap-3 ${vol.phone ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                                      <a
+                                        href={`mailto:${vol.email}`}
+                                        className="py-2 px-4 bg-white hover:bg-slate-50 text-slate-705 text-xs font-bold rounded-xl border border-[#e2dcd0] transition cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
+                                      >
+                                        <Mail size={13} className="text-[#856637]" />
+                                        <span>Email</span>
+                                      </a>
+                                      {vol.phone && (
+                                        <a
+                                          href={`tel:${vol.phone}`}
+                                          className="py-2 px-4 bg-white hover:bg-slate-50 text-slate-705 text-xs font-bold rounded-xl border border-[#e2dcd0] transition cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
+                                        >
+                                          <Phone size={13} className="text-[#856637]" />
+                                          <span>Call</span>
+                                        </a>
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={() => setIsEditingProfile(!isEditingProfile)}
+                                        className={`py-2 px-4 text-xs font-bold rounded-xl border transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs ${
+                                          isEditingProfile
+                                            ? 'bg-[#faf6ee] text-[#856637] border-[#efe0c2]'
+                                            : 'bg-[#1e293b] hover:bg-[#0f172a] text-[#faf8f4] border-transparent'
+                                        }`}
+                                      >
+                                        <Edit2 size={13} />
+                                        <span>{isEditingProfile ? 'Cancel Edit' : 'Edit'}</span>
+                                      </button>
+                                    </div>
+
+                                    {/* 3. Contact Details Block & Profile Inline Edit Form */}
+                                    {isEditingProfile ? (
+                                      <div className="space-y-4 border-t border-slate-100 pt-5 animate-fadeIn">
+                                        <div>
+                                          <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Full Name</label>
+                                          <input
+                                            type="text"
+                                            value={editName}
+                                            onChange={e => setEditName(e.target.value)}
+                                            className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80]"
+                                          />
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                          <div>
+                                            <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Email</label>
+                                            <input
+                                              type="email"
+                                              value={editEmail}
+                                              onChange={e => setEditEmail(e.target.value)}
+                                              className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80]"
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Phone Number</label>
+                                            <input
+                                              type="text"
+                                              value={editPhone}
+                                              onChange={e => setEditPhone(e.target.value)}
+                                              className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80]"
+                                            />
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="space-y-3 border-t border-slate-100 pt-5 text-xs">
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-slate-400 font-medium">Email Address</span>
+                                          <a href={`mailto:${vol.email}`} className="text-[#856637] font-semibold hover:underline font-mono">
+                                            {vol.email}
+                                          </a>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-slate-400 font-medium">Phone Number</span>
+                                          {vol.phone ? (
+                                            <span className="text-slate-705 font-mono font-bold">{vol.phone}</span>
+                                          ) : (
+                                            <span className="text-slate-400 italic">No phone listed</span>
+                                          )}
+                                        </div>
+
+                                        {/* Keep Private Operational Notes functionality here */}
+                                        <div className="pt-2 border-t border-slate-50">
+                                          <div className="flex justify-between items-center mb-1">
+                                            <span className="text-slate-400 font-medium">Private Notes</span>
+                                            <button
+                                              type="button"
+                                              onClick={() => setIsEditingPrivateNotes(!isEditingPrivateNotes)}
+                                              className="text-[10px] text-[#856637] font-semibold hover:underline bg-transparent border-0 cursor-pointer"
+                                            >
+                                              {isEditingPrivateNotes ? 'Cancel' : 'Edit'}
+                                            </button>
+                                          </div>
+                                          {isEditingPrivateNotes ? (
+                                            <div className="space-y-2 animate-fadeIn">
+                                              <textarea
+                                                value={detailPrivateNotes}
+                                                rows={2}
+                                                onChange={e => setDetailPrivateNotes(e.target.value)}
+                                                className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80]"
+                                                placeholder="Internal availability, private flags..."
+                                              />
+                                              <div className="flex justify-end">
+                                                <button
+                                                  type="button"
+                                                  onClick={handleSavePrivateNotes}
+                                                  className="px-3 py-1 bg-[#1e293b] text-[#faf8f4] text-[10px] font-bold rounded-lg cursor-pointer"
+                                                >
+                                                  Save Notes
+                                                </button>
+                                              </div>
+                                            </div>
+                                          ) : (
+                                            <p className="text-xs text-slate-600 italic">
+                                              {vol.notes?.trim() ? `"${vol.notes}"` : 'No private notes logged.'}
+                                            </p>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* 4. Roles */}
+                                    <div className="space-y-1.5 border-t border-slate-100 pt-5">
+                                      <span className="text-[10px] font-bold uppercase text-slate-400 block">Roles</span>
+                                      {(() => {
+                                        const volunteerRoles = vol.roles && vol.roles.length > 0
+                                          ? vol.roles
+                                          : Array.from(new Set(
+                                              (Object.values(vol.eventAssignments || {}) as any[])
+                                                .map(assignment => assignment.role)
+                                                .filter((r): r is string => !!r && r.trim() !== '')
+                                            ));
+
+                                        return volunteerRoles.length > 0 ? (
+                                          <div className="flex flex-wrap gap-1.5">
+                                            {volunteerRoles.map((role, rIdx) => (
+                                              <span
+                                                key={rIdx}
+                                                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold border shadow-xs ${getRoleBadgeColors(role)}`}
+                                              >
+                                                {role}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        ) : (
+                                          <p className="text-xs text-slate-400 italic">No registered roles</p>
+                                        );
+                                      })()}
+                                    </div>
+
+                                    {/* 5. Skills */}
+                                    <div className="space-y-1.5 border-t border-slate-100 pt-5">
                                       {isEditingProfile ? (
-                                        <div className="space-y-2.5 animate-fadeIn">
-                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                            <div>
-                                              <label className="block text-[8px] font-bold uppercase text-slate-450 mb-0.5">Full Name</label>
-                                              <input
-                                                type="text"
-                                                value={editName}
-                                                onChange={e => setEditName(e.target.value)}
-                                                className="w-full text-[11px] p-1.5 rounded border border-[#efe0c2] bg-white focus:outline-none"
-                                              />
-                                            </div>
-                                            <div>
-                                              <label className="block text-[8px] font-bold uppercase text-slate-450 mb-0.5">Email</label>
-                                              <input
-                                                type="email"
-                                                value={editEmail}
-                                                onChange={e => setEditEmail(e.target.value)}
-                                                className="w-full text-[11px] p-1.5 rounded border border-[#efe0c2] bg-white focus:outline-none"
-                                              />
-                                            </div>
-                                          </div>
-                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                            <div>
-                                              <label className="block text-[8px] font-bold uppercase text-slate-450 mb-0.5">Phone Number</label>
-                                              <input
-                                                type="text"
-                                                value={editPhone}
-                                                onChange={e => setEditPhone(e.target.value)}
-                                                className="w-full text-[11px] p-1.5 rounded border border-[#efe0c2] bg-white focus:outline-none"
-                                              />
-                                            </div>
-                                            <div>
-                                              <label className="block text-[8px] font-bold uppercase text-slate-450 mb-0.5">Skills Tagging (comma-separated)</label>
-                                              <input
-                                                type="text"
-                                                value={editSkills}
-                                                onChange={e => setEditSkills(e.target.value)}
-                                                className="w-full text-[11px] p-1.5 rounded border border-[#efe0c2] bg-white focus:outline-none"
-                                                placeholder="e.g. Cooking, AV Stage, Welcoming"
-                                              />
-                                            </div>
-                                          </div>
+                                        <div className="space-y-2">
+                                          <label className="block text-[10px] font-bold uppercase text-slate-400">Skills Tagging (comma-separated)</label>
+                                          <input
+                                            type="text"
+                                            value={editSkills}
+                                            onChange={e => setEditSkills(e.target.value)}
+                                            className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80]"
+                                            placeholder="e.g. Cooking, AV Stage, Welcoming"
+                                          />
                                           <div className="flex gap-2 justify-end pt-1">
                                             <button
+                                              type="button"
                                               onClick={() => setIsEditingProfile(false)}
-                                              className="px-2.5 py-1.5 border border-slate-200 text-slate-655 hover:bg-slate-50 text-[10px] font-semibold rounded-md cursor-pointer"
+                                              className="px-3 py-1.5 border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs font-semibold rounded-xl cursor-pointer"
                                             >
                                               Cancel
                                             </button>
                                             <button
+                                              type="button"
                                               onClick={handleSaveProfile}
-                                              className="px-3.5 py-1.5 bg-[#1e293b] text-[#faf8f4] text-[10px] font-bold rounded-md cursor-pointer"
+                                              className="px-4 py-1.5 bg-[#1e293b] text-[#faf8f4] text-xs font-bold rounded-xl cursor-pointer"
                                             >
                                               Save Details
                                             </button>
                                           </div>
                                         </div>
                                       ) : (
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs pt-0.5">
-                                          <div className="space-y-1.5 font-medium">
-                                            <p className="text-[9px] font-bold uppercase text-slate-400">Contact Channels</p>
-                                            <div className="space-y-1 text-slate-700">
-                                              <a href={`mailto:${vol.email}`} className="flex items-center gap-1.5 text-slate-650 hover:text-[#856637] hover:underline transition truncate">
-                                                <Mail size={11} className="text-slate-400 shrink-0" />
-                                                <span className="truncate font-semibold">{vol.email}</span>
-                                              </a>
-                                              {vol.phone ? (
-                                                <a href={`tel:${vol.phone}`} className="flex items-center gap-1.5 text-slate-650 hover:text-[#856637] hover:underline transition">
-                                                  <Phone size={11} className="text-slate-400 shrink-0" />
-                                                  <span className="font-mono font-bold text-[11px]">{vol.phone}</span>
-                                                </a>
-                                              ) : (
-                                                <span className="text-[10px] text-slate-400 italic">No phone listed</span>
-                                              )}
+                                        <>
+                                          <span className="text-[10px] font-bold uppercase text-slate-400 block">Skills</span>
+                                          {vol.skills && vol.skills.split(',').map(s => s.trim()).filter(s => s !== '').length > 0 ? (
+                                            <div className="flex flex-wrap gap-1.5">
+                                              {vol.skills.split(',').map(s => s.trim()).filter(s => s !== '').map((skill, sIdx) => (
+                                                <span
+                                                  key={sIdx}
+                                                  className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-medium border border-slate-200 text-slate-600 bg-white shadow-xs"
+                                                >
+                                                  {skill}
+                                                </span>
+                                              ))}
                                             </div>
-                                          </div>
-                                          <div className="space-y-1.5">
-                                            <p className="text-[9px] font-bold uppercase text-slate-400 font-medium">Registered Talents</p>
-                                            {vol.skills ? (
-                                              <div className="flex flex-wrap gap-1 font-medium">
-                                                {vol.skills.split(',').map((skill, sIdx) => (
-                                                  <span key={sIdx} className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-[#faf5ec] text-[#856637] border border-[#efe0c2] shadow-xs">
-                                                    <Sparkles size={7} /> {skill.trim()}
-                                                  </span>
-                                                ))}
-                                              </div>
-                                            ) : (
-                                              <span className="text-[10px] text-slate-400 italic font-medium">No custom skills listed</span>
-                                            )}
-                                          </div>
-                                        </div>
+                                          ) : (
+                                            <p className="text-xs text-slate-400 italic">No custom skills listed</p>
+                                          )}
+                                        </>
                                       )}
                                     </div>
 
-                                    {/* Sub-panel 2: Active event placement */}
-                                    <div className="bg-white border border-[#e2dcd0] p-4 rounded-xl shadow-xs space-y-3 relative">
-                                      <div className="flex justify-between items-center border-b border-[#efe0c2]/60 pb-1.5">
-                                        <div className="space-y-0.5">
-                                          <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-450">
-                                            Active Event Placement Map
-                                          </h4>
-                                          <p className="text-[9px] font-semibold text-[#856637] leading-none font-serif">
-                                            Event: {activeEvent?.name || 'Selected Event'}
-                                          </p>
-                                        </div>
+                                    {/* 6. Current-event assignment block (tinted) */}
+                                    <div className="bg-amber-50/20 border border-[#efe0c2]/50 rounded-2xl p-4 space-y-3">
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-[10px] font-bold uppercase text-[#856637]">
+                                          {vol.eventAssignments?.[activeEventId] ? `This Event · ${activeEvent?.name || 'Selected Event'}` : 'Current Event'}
+                                        </span>
                                         <button
+                                          type="button"
                                           onClick={() => setIsEditingPlacement(!isEditingPlacement)}
-                                          className="px-2 py-1 text-[10px] font-bold text-[#856637] hover:bg-amber-50/50 border border-[#efe0c2] rounded shadow-xs transition cursor-pointer"
+                                          className="text-[10px] font-bold text-[#856637] hover:underline cursor-pointer bg-transparent border-0"
                                         >
-                                          {isEditingPlacement ? 'Cancel Assignment' : 'Assign / Edit'}
+                                          {isEditingPlacement ? 'Cancel' : (vol.eventAssignments?.[activeEventId] ? 'Edit Placement' : 'Assign Role')}
                                         </button>
                                       </div>
 
                                       {isEditingPlacement ? (
-                                        <div className="space-y-2.5 pt-0.5 animate-fadeIn">
-                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                        <div className="space-y-3 pt-1 animate-fadeIn">
+                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                             <div>
-                                              <label className="block text-[8px] font-bold uppercase text-slate-450 mb-0.5">Assigned Role</label>
+                                              <label className="block text-[9px] font-bold uppercase text-slate-400 mb-1">Assigned Role</label>
                                               <input
                                                 type="text"
                                                 value={detailRole}
                                                 onChange={e => setDetailRole(e.target.value)}
                                                 placeholder="e.g. Lead Host, Greeter"
-                                                className="w-full text-[11px] p-1.5 rounded border border-[#efe0c2] bg-white focus:outline-none"
+                                                className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none"
                                               />
                                             </div>
                                             <div>
-                                              <label className="block text-[8px] font-bold uppercase text-slate-450 mb-0.5">Assigned Station / Spot</label>
+                                              <label className="block text-[9px] font-bold uppercase text-slate-400 mb-1">Station / Spot</label>
                                               <input
                                                 type="text"
                                                 value={detailStation}
                                                 onChange={e => setDetailStation(e.target.value)}
                                                 placeholder="e.g. Main Lobby Stage"
-                                                className="w-full text-[11px] p-1.5 rounded border border-[#efe0c2] bg-white focus:outline-none"
+                                                className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none"
                                               />
                                             </div>
                                           </div>
                                           <div>
-                                            <label className="block text-[8px] font-bold uppercase text-slate-450 mb-0.5">Placement Notes & Comments</label>
+                                            <label className="block text-[9px] font-bold uppercase text-slate-400 mb-1">Placement Notes & Comments</label>
                                             <textarea
                                               value={detailNotes}
-                                              rows={1.5}
+                                              rows={2}
                                               onChange={e => setDetailNotes(e.target.value)}
                                               placeholder="Specific timing details or accommodations..."
-                                              className="w-full text-[11px] p-1.5 rounded border border-[#efe0c2] bg-white focus:outline-none"
+                                              className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none"
                                             />
                                           </div>
-                                          <div className="flex justify-between items-center pt-1 border-t border-slate-50">
+                                          <div className="flex justify-between items-center pt-2 border-t border-[#efe0c2]/40">
                                             {vol.eventAssignments?.[activeEventId] ? (
                                               <button
+                                                type="button"
                                                 onClick={handleClearPlacementDirect}
-                                                className="px-2 py-1 text-[9px] font-bold text-rose-600 hover:bg-rose-50 border border-[#e2dcd0] rounded transition cursor-pointer"
+                                                className="px-2.5 py-1 text-[10px] font-bold text-rose-600 hover:bg-rose-50 border border-rose-100 rounded-lg transition cursor-pointer"
                                               >
                                                 Clear Assignment
                                               </button>
                                             ) : <div />}
-                                            <div className="flex gap-1.5">
+                                            <div className="flex gap-2">
                                               <button
+                                                type="button"
                                                 onClick={() => setIsEditingPlacement(false)}
-                                                className="px-2.5 py-1 border border-slate-200 text-slate-600 text-[10px] font-semibold rounded cursor-pointer"
+                                                className="px-3 py-1 border border-slate-200 text-slate-650 text-[10px] font-semibold rounded-lg bg-white cursor-pointer"
                                               >
                                                 Cancel
                                               </button>
                                               <button
+                                                type="button"
                                                 onClick={handleSavePlacement}
-                                                className="px-3.5 py-1 bg-[#1e293b] text-[#faf8f4] text-[10px] font-bold rounded cursor-pointer"
+                                                className="px-3.5 py-1 bg-[#1e293b] text-[#faf8f4] text-[10px] font-bold rounded-lg cursor-pointer"
                                               >
                                                 Save Assignment
                                               </button>
@@ -2256,35 +2377,36 @@ function VolunteerTable({
                                           </div>
                                         </div>
                                       ) : (
-                                        <div className="space-y-2 pt-0.5">
+                                        <div className="text-xs">
                                           {vol.eventAssignments?.[activeEventId] ? (
                                             <div className="space-y-2">
                                               <div className="flex flex-wrap gap-4 items-center">
                                                 <div className="space-y-0.5">
-                                                  <p className="text-[8px] font-bold uppercase text-slate-400">Assigned Role</p>
+                                                  <p className="text-[9px] font-bold uppercase text-slate-400">Assigned Role</p>
                                                   <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border shadow-xs ${getRoleBadgeColors(vol.eventAssignments[activeEventId].role)}`}>
                                                     {vol.eventAssignments[activeEventId].role}
                                                   </span>
                                                 </div>
                                                 <div className="space-y-0.5">
-                                                  <p className="text-[8px] font-bold uppercase text-slate-400 font-medium font-medium">Station</p>
-                                                  <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-bold bg-[#faf8f4] text-slate-705 border border-[#e2dcd0] shadow-xs">
+                                                  <p className="text-[9px] font-bold uppercase text-slate-400">Station</p>
+                                                  <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-bold bg-white text-slate-705 border border-[#e2dcd0] shadow-xs">
                                                     <MapPin size={10} className="text-[#856637]" />
                                                     {vol.eventAssignments[activeEventId].station || 'General Area'}
                                                   </span>
                                                 </div>
                                               </div>
                                               {vol.eventAssignments[activeEventId].notes && (
-                                                <div className="bg-slate-50 border border-slate-100 p-2 rounded">
-                                                  <p className="text-[8px] font-bold uppercase text-slate-400">Placement Notes</p>
-                                                  <p className="text-xs text-slate-700 font-serif italic mt-0.5 font-medium">"${vol.eventAssignments[activeEventId].notes}"</p>
+                                                <div className="bg-white/60 border border-[#efe0c2]/40 p-2 rounded-xl">
+                                                  <p className="text-[9px] font-bold uppercase text-slate-400 font-medium">Placement Notes</p>
+                                                  <p className="text-[11px] text-slate-650 italic mt-0.5 font-serif font-medium">"{vol.eventAssignments[activeEventId].notes}"</p>
                                                 </div>
                                               )}
                                             </div>
                                           ) : (
-                                            <div className="border border-dashed border-[#e2dcd0] rounded-xl p-3 text-center bg-white">
-                                              <p className="text-[10px] text-slate-455 italic font-medium">No active assignment role or station mapping.</p>
+                                            <div className="border border-dashed border-[#e2dcd0] rounded-xl p-3 text-center bg-white/50">
+                                              <p className="text-[10px] text-slate-400 italic font-medium">Not assigned to this event.</p>
                                               <button
+                                                type="button"
                                                 onClick={() => setIsEditingPlacement(true)}
                                                 className="mt-1 text-[9px] font-bold text-[#856637] hover:underline cursor-pointer bg-transparent border-0 font-medium"
                                               >
@@ -2295,70 +2417,14 @@ function VolunteerTable({
                                         </div>
                                       )}
                                     </div>
-                                  </div>
 
-                                  {/* Right Panel: Private Notes and Email Outreach Communication logs */}
-                                  <div className="xl:col-span-6 space-y-4">
-                                    {/* Sub-panel 3: Private operational notes */}
-                                    <div className="bg-amber-50/20 border border-[#efe0c2] p-4 rounded-xl shadow-xs space-y-3 relative">
-                                      <div className="flex justify-between items-center border-b border-[#efe0c2] pb-1.5">
-                                        <h4 className="text-[10px] font-bold uppercase tracking-wider text-[#856637] flex items-center gap-1.5">
-                                          <StickyNote size={12} /> Private Operational Notes
-                                        </h4>
-                                        <button
-                                          onClick={() => setIsEditingPrivateNotes(!isEditingPrivateNotes)}
-                                          className="text-[10px] font-bold text-[#856637] hover:underline cursor-pointer bg-transparent border-0"
-                                        >
-                                          {isEditingPrivateNotes ? 'Cancel' : 'Edit Notes'}
-                                        </button>
-                                      </div>
+                                    {/* 7. Contact Tracking Footer */}
+                                    <div className="border-t border-slate-100 pt-5 space-y-4">
+                                      <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-450 flex items-center gap-1.5">
+                                        <Mail size={12} className="text-slate-400" /> Contact Outreach History
+                                      </h4>
 
-                                      {isEditingPrivateNotes ? (
-                                        <div className="space-y-2 animate-fadeIn">
-                                          <textarea
-                                            value={detailPrivateNotes}
-                                            rows={2.5}
-                                            onChange={e => setDetailPrivateNotes(e.target.value)}
-                                            className="w-full text-xs p-2 rounded border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80]"
-                                            placeholder="Internal availability notes, scheduling flags, accommodation details..."
-                                          />
-                                          <div className="flex justify-end gap-1.5">
-                                            <button
-                                              onClick={() => setIsEditingPrivateNotes(false)}
-                                              className="px-2 py-1 border border-slate-655 text-slate-650 text-[10px] font-semibold rounded cursor-pointer"
-                                            >
-                                              Cancel
-                                            </button>
-                                            <button
-                                              onClick={handleSavePrivateNotes}
-                                              className="px-3 py-1 bg-[#1e293b] text-[#faf8f4] text-[10px] font-bold rounded cursor-pointer"
-                                            >
-                                              Save Notes
-                                            </button>
-                                          </div>
-                                        </div>
-                                      ) : (
-                                        <div className="text-xs text-slate-755 leading-relaxed pt-0.5">
-                                          {vol.notes?.trim() ? (
-                                            <p className="bg-white p-2 rounded border border-dashed border-[#efe0c2] italic font-medium">
-                                              "\${vol.notes}"
-                                            </p>
-                                          ) : (
-                                            <p className="text-slate-400 italic text-[11px] font-medium">No private operational profile notes logged.</p>
-                                          )}
-                                        </div>
-                                      )}
-                                    </div>
-
-                                    {/* Sub-panel 4: Outreach Contact Record */}
-                                    <div className="bg-white border border-[#e2dcd0] p-4 rounded-xl shadow-xs space-y-3">
-                                      <div className="flex justify-between items-center border-b border-[#efe0c2]/60 pb-1.5">
-                                        <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-450 flex items-center gap-1.5">
-                                          <Mail size={12} /> Contact Outreach Details
-                                        </h4>
-                                      </div>
-
-                                      <div className="space-y-3 text-xs">
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                         <div>
                                           <label className="block text-[9px] font-bold uppercase text-slate-400 mb-1">
                                             Last Contacted Date
@@ -2367,7 +2433,7 @@ function VolunteerTable({
                                             type="date"
                                             value={detailLastContacted}
                                             onChange={e => setDetailLastContacted(e.target.value)}
-                                            className="w-full text-xs p-1.5 rounded border border-[#efe0c2] bg-white focus:outline-none"
+                                            className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-medium text-slate-800"
                                           />
                                         </div>
 
@@ -2377,32 +2443,23 @@ function VolunteerTable({
                                           </label>
                                           <textarea
                                             value={detailContactNotes}
-                                            rows={3.5}
+                                            rows={3}
                                             onChange={e => setDetailContactNotes(e.target.value)}
-                                            className="w-full text-xs p-2 rounded border border-[#efe0c2] bg-white focus:outline-none"
+                                            className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80]"
                                             placeholder="Write summary of email conversations, direct contact details, or notes..."
                                           />
                                         </div>
+                                      </div>
 
-                                        <div className="flex gap-2">
-                                          {vol.email && (
-                                            <a
-                                              href={`mailto:${vol.email}?subject=${encodeURIComponent('Ministry Outreach + Volunteer Recruitment')}`}
-                                              className="py-1.5 px-3 border border-[#efe0c2] bg-white hover:bg-slate-50 text-slate-705 text-[10px] font-bold rounded-lg cursor-pointer flex items-center justify-center gap-1 shrink-0"
-                                              title="Open email client"
-                                            >
-                                              <Mail size={12} className="text-slate-500" />
-                                              <span>Compose</span>
-                                            </a>
-                                          )}
-                                          <button
-                                            onClick={handleSaveOutreach}
-                                            className="w-full py-1.5 bg-[#1e293b] text-[#faf8f4] text-[10px] font-bold rounded-lg cursor-pointer flex items-center justify-center gap-1 shadow-sm hover:bg-[#0f172a]"
-                                          >
-                                            <Check size={12} />
-                                            <span>Save Contact Record</span>
-                                          </button>
-                                        </div>
+                                      <div className="flex justify-end pt-1">
+                                        <button
+                                          type="button"
+                                          onClick={handleSaveOutreach}
+                                          className="py-1.5 px-4 bg-[#1e293b] text-[#faf8f4] text-xs font-bold rounded-xl cursor-pointer hover:bg-[#0f172a] shadow-xs flex items-center gap-1"
+                                        >
+                                          <Check size={12} />
+                                          <span>Save Contact Record</span>
+                                        </button>
                                       </div>
                                     </div>
                                   </div>
