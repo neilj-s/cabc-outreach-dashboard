@@ -630,7 +630,8 @@ function VolunteerTable({
         [activeEventId]: {
           role: 'General Helper',
           station: 'General Area',
-          notes: ''
+          notes: '',
+          contactStatus: 'Not Contacted' as const
         }
       } : {};
       await onCreateVolunteer({
@@ -786,7 +787,7 @@ function VolunteerTable({
           onClick={() => setShowAddForm(!showAddForm)}
           className="px-3.5 py-2 bg-[#1e293b] hover:bg-[#0f172a] text-[#faf8f4] text-xs font-semibold rounded-lg transition shadow-sm flex items-center gap-1.5 shrink-0 cursor-pointer"
         >
-          <UserPlus size={14} /> Register Volunteer
+          <UserPlus size={14} /> New volunteer
         </button>
       </div>
 
@@ -851,7 +852,7 @@ function VolunteerTable({
       {/* Register Volunteer Form */}
       {showAddForm && (
         <form onSubmit={handleCreateVolunteer} className="bg-[#fcfaf7] p-6 rounded-xl border border-[#e2dcd0] shadow-sm hover:shadow-md hover:-translate-y-1 transition duration-200 max-w-2xl animate-fadeIn space-y-4">
-          <h3 className="font-serif font-bold text-base text-[#1e293b] border-b border-[#efe0c2] pb-2">Register New Ministry Volunteer</h3>
+          <h3 className="font-serif font-bold text-base text-[#1e293b] border-b border-[#efe0c2] pb-2">New volunteer</h3>
           
           <div>
             <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-450 mb-1">Full Name</label>
@@ -924,7 +925,7 @@ function VolunteerTable({
               disabled={submitting}
               className="px-4 py-2 bg-[#1e293b] hover:bg-[#0f172a] text-[#faf8f4] text-xs font-semibold rounded-lg transition cursor-pointer"
             >
-              {submitting ? 'Registering...' : 'Complete Registration'}
+              {submitting ? 'Adding...' : 'Add volunteer'}
             </button>
           </div>
         </form>
@@ -1113,38 +1114,6 @@ function VolunteerTable({
           </div>
         </div>
 
-        {/* Staffing Skills Filter Chips */}
-        {allUniqueSkills.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-[#efe0c2]/40">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-450 mr-1 flex items-center gap-1">
-              <Sparkles size={10} className="text-[#c2aa80]" /> Staffing Skills:
-            </span>
-            {allUniqueSkills.map(skill => {
-              const isSelected = selectedSkills.includes(skill);
-              return (
-                <button
-                  key={skill}
-                  type="button"
-                  onClick={() => {
-                    if (isSelected) {
-                      setSelectedSkills(selectedSkills.filter(s => s !== skill));
-                    } else {
-                      setSelectedSkills([...selectedSkills, skill]);
-                    }
-                  }}
-                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold border transition cursor-pointer ${
-                    isSelected
-                      ? 'bg-[#856637] text-white border-transparent shadow-xs'
-                      : 'bg-white text-slate-600 border-[#efe0c2] hover:bg-[#faf8f4]'
-                  }`}
-                >
-                  {skill}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
         {/* Info label about active filters */}
         {(searchTerm || selectedRoles.length > 0 || selectedSkills.length > 0) && (
           <div className="text-[11px] text-slate-500 flex items-center gap-1 bg-[#faf8f4] border border-[#efe0c2]/50 px-3 py-1.5 rounded-lg animate-fadeIn">
@@ -1210,7 +1179,7 @@ function VolunteerTable({
                 onClick={() => setShowAddExistingModal(true)}
                 className="px-3 py-1.5 bg-[#856637] hover:bg-[#6c522c] text-white text-xs font-semibold rounded-lg transition shadow-sm flex items-center gap-1.5 cursor-pointer"
               >
-                <Plus size={14} /> Add volunteers to this event
+                <Plus size={14} /> Add from directory
               </button>
 
               <div className="relative hidden md:block">
