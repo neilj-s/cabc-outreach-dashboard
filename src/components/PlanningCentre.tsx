@@ -72,7 +72,7 @@ interface PlanningCentreProps {
   activities: RecentActivity[];
   lanes: LaneDetail[];
   onCreateEvent: (name: string, date: string, description: string) => Promise<void>;
-  onCloneEvent?: (id: string, newDate: string) => Promise<void>;
+  onCloneEvent?: (id: string, newDate: string, carryVolunteerIds: string[], copyEquipment: boolean) => Promise<void>;
   onAddTask: (eventId: string, taskData: { title: string; description: string; milestoneKey: MilestoneKey; lane: MinistryLane; dueDate: string }) => Promise<void>;
   onUpdateEventDocs: (eventId: string, docs: EventDoc[]) => Promise<void>;
   triggerFreshSync: () => Promise<void>;
@@ -3084,7 +3084,7 @@ function PlanningCentre({
                     onClick={async () => {
                       if (!cloneEventNewDate || !onCloneEvent) return;
                       setIsCloning(true);
-                      await onCloneEvent(cloneEventTargetId, cloneEventNewDate);
+                      await onCloneEvent(cloneEventTargetId, cloneEventNewDate, [], false);
                       setIsCloning(false);
                       setCloneEventTargetId(null);
                       setCloneEventNewDate('');

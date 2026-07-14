@@ -54,6 +54,34 @@ const LazyLoadingFallback = () => (
   </div>
 );
 
+export function deduplicateVolunteers(vols: Volunteer[]): Volunteer[] {
+  const seenIds = new Set<string>();
+  const seenEmailsOrNames = new Set<string>();
+  
+  return vols.filter((v: Volunteer) => {
+    if (!v) return false;
+    // 1. Dedupe by ID first
+    if (v.id) {
+      if (seenIds.has(v.id)) {
+        return false;
+      }
+      seenIds.add(v.id);
+    }
+    
+    // 2. Dedupe by email or name
+    const emailLower = (v.email || '').toLowerCase().trim();
+    const nameLower = (v.name || '').toLowerCase().trim();
+    const key = emailLower || nameLower;
+    if (key) {
+      if (seenEmailsOrNames.has(key)) {
+        return false;
+      }
+      seenEmailsOrNames.add(key);
+    }
+    return true;
+  });
+}
+
 interface SummaryData {
   totalEvents: number;
   totalAssets: number;
@@ -73,19 +101,7 @@ const recalculateSummary = (
   const totalEvents = currentEvents.length;
   
   // Deduplicate volunteers by email or name
-  const seenVolunteers = new Set<string>();
-  const uniqueVolunteers = currentVolunteers.filter((v: Volunteer) => {
-    if (!v) return false;
-    const emailLower = (v.email || '').toLowerCase().trim();
-    const nameLower = (v.name || '').toLowerCase().trim();
-    const key = emailLower || nameLower;
-    if (!key) return true;
-    if (seenVolunteers.has(key)) {
-      return false;
-    }
-    seenVolunteers.add(key);
-    return true;
-  });
+  const uniqueVolunteers = deduplicateVolunteers(currentVolunteers);
   const totalVolunteers = uniqueVolunteers.length;
 
   let completedTasks = 0;
@@ -196,7 +212,13 @@ function MainApp() {
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [volunteers, setVolunteers] = useState<Volunteer[]>([]);
   const [debriefs, setDebriefs] = useState<Debrief[]>([]);
-  const [prefilledDebrief, setPrefilledDebrief] = useState<{ name: string; date: string } | null>(null);
+  const [prefilledDebrief, setPrefilledDebrief] = useState<{
+    name: string;
+    date: string;
+    budgetGiven?: string;
+    budgetActual?: string;
+    volunteers?: string;
+  } | null>(null);
   const [verses, setVerses] = useState<{ text: string; reference: string; theme: string }[]>([]);
   const [currentVerseIndex, setCurrentVerseIndex] = useState<number>(0);
   const [lanes, setLanes] = useState<LaneDetail[]>([]);
@@ -323,7 +345,7 @@ function MainApp() {
                 const pendingIds = new Set<string>();
                 pendingVolunteersRef.current.forEach(val => pendingIds.add(val.volunteer.id));
                 const filtered = incoming.filter((vol: Volunteer) => !pendingIds.has(vol.id));
-                setVolunteers(filtered);
+                setVolunteers(deduplicateVolunteers(filtered));
                 break;
               }
               case 'EXPENSES_CHANGE': {
@@ -462,7 +484,7 @@ function MainApp() {
         throw new Error(resEvents.error);
       }
       if (Array.isArray(resVolunteers)) {
-        setVolunteers(resVolunteers);
+        setVolunteers(deduplicateVolunteers(resVolunteers));
       }
       if (Array.isArray(resDebriefs)) {
         setDebriefs(resDebriefs);
@@ -542,7 +564,7 @@ function MainApp() {
         setEvents(resEvents);
       }
       if (Array.isArray(resVolunteers)) {
-        setVolunteers(resVolunteers);
+        setVolunteers(deduplicateVolunteers(resVolunteers));
       }
       if (Array.isArray(resDebriefs)) {
         setDebriefs(resDebriefs);
@@ -659,12 +681,12 @@ function MainApp() {
     }
   }, [showNotification]);
 
-  const handleCloneEvent = useCallback(async (id: string, newDate: string) => {
+  const handleCloneEvent = useCallback(async (id: string, newDate: string, carryVolunteerIds: string[], copyEquipment: boolean) => {
     try {
       const res = await apiFetch(`/api/events/${id}/clone`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ newDate })
+        body: JSON.stringify({ newDate, carryVolunteerIds, copyEquipment })
       });
       if (!res.ok) throw new Error("Could not clone event");
       const newEvt = await res.json();
@@ -921,7 +943,6 @@ function MainApp() {
       });
       if (!res.ok) throw new Error("Could not compile volunteer profile");
       const newVol = await res.json();
-      setVolunteers(prev => [...prev, newVol]);
       showNotification(`Volunteer "${newVol.name}" profile compiled successfully!`, 'success');
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Error compiling volunteer profile";
@@ -947,7 +968,7 @@ function MainApp() {
         // Restore on server failure
         setVolunteers(prev => {
           if (prev.some(vol => vol.id === id)) return prev;
-          return [...prev, volunteerToDelete];
+          return deduplicateVolunteers([...prev, volunteerToDelete]);
         });
       }
     }, 5000);
@@ -967,7 +988,7 @@ function MainApp() {
           clearTimeout(pending.timeoutId);
           setVolunteers(prev => {
             if (prev.some(v => v.id === id)) return prev;
-            return [...prev, pending.volunteer];
+            return deduplicateVolunteers([...prev, pending.volunteer]);
           });
           pendingVolunteersRef.current.delete(id);
           showNotification(`Restored "${volunteerToDelete.name}"`, 'success');
@@ -1267,8 +1288,36 @@ function MainApp() {
             onUploadCompleted={triggerFreshSync}
             loading={loading}
             debriefs={debriefs}
-            onPrefillDebrief={(data) => {
-              setPrefilledDebrief(data);
+            onPrefillDebrief={(data: { name: string; date: string; id?: string }) => {
+              const targetEvent = data.id 
+                ? events.find(evt => evt.id === data.id) 
+                : events.find(evt => evt.name === data.name && evt.date === data.date);
+
+              let budgetGiven = '';
+              let budgetActual = '';
+              let computedVolunteers = '';
+
+              if (targetEvent) {
+                if (targetEvent.budgetCap !== undefined && targetEvent.budgetCap !== null) {
+                  budgetGiven = targetEvent.budgetCap.toString();
+                }
+                const eventExpenses = expenses.filter(exp => exp.eventId === targetEvent.id);
+                const totalActual = eventExpenses.reduce((sum, exp) => sum + exp.cost, 0);
+                budgetActual = totalActual.toString();
+
+                const assignedCount = volunteers.filter(
+                  vol => vol.eventAssignments && vol.eventAssignments[targetEvent.id]
+                ).length;
+                computedVolunteers = assignedCount.toString();
+              }
+
+              setPrefilledDebrief({
+                name: data.name,
+                date: data.date,
+                budgetGiven,
+                budgetActual,
+                volunteers: computedVolunteers
+              });
               handleNavigate('debriefs');
             }}
           />

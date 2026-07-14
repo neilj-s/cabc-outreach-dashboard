@@ -13,10 +13,13 @@ import {
   ThumbsUp,
   RefreshCw,
   Search,
-  X
+  X,
+  Printer,
+  Download
 } from 'lucide-react';
 import { Debrief } from '../types';
 import ConfirmDialog from './ConfirmDialog';
+import { useNotification } from '../context/NotificationContext';
 
 interface DebriefArchiveProps {
   debriefs: Debrief[];
@@ -24,7 +27,13 @@ interface DebriefArchiveProps {
   onUpdateDebrief: (id: string, data: Partial<Debrief>) => Promise<void>;
   onDeleteDebrief: (id: string) => Promise<void>;
   loading?: boolean;
-  prefilledDebrief?: { name: string; date: string } | null;
+  prefilledDebrief?: {
+    name: string;
+    date: string;
+    budgetGiven?: string;
+    budgetActual?: string;
+    volunteers?: string;
+  } | null;
   onClearPrefilledDebrief?: () => void;
 }
 
@@ -37,7 +46,66 @@ export default function DebriefArchive({
   prefilledDebrief,
   onClearPrefilledDebrief
 }: DebriefArchiveProps) {
+  const { showNotification } = useNotification();
   const [showForm, setShowForm] = useState(false);
+  const [printDebrief, setPrintDebrief] = useState<Debrief | null>(null);
+
+  useEffect(() => {
+    if (printDebrief) {
+      const timer = setTimeout(() => {
+        window.print();
+        setPrintDebrief(null);
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [printDebrief]);
+
+  const handleExportCSV = () => {
+    if (!debriefs || debriefs.length === 0) {
+      showNotification('No debriefs available to export.', 'error');
+      return;
+    }
+
+    const headers = [
+      'Name',
+      'Date',
+      'Attendance',
+      'Volunteers',
+      'Budget Given',
+      'Budget Actual',
+      'What Went Well',
+      'What To Change',
+      'Filed By'
+    ];
+
+    const rows = debriefs.map(d => [
+      d.name || '',
+      d.date || '',
+      d.attendance || '',
+      d.volunteers || '',
+      d.budgetGiven || '',
+      d.budgetActual || '',
+      d.wentWell || '',
+      d.change || '',
+      d.filedBy || ''
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(val => `"${val.replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const today = new Date().toISOString().split('T')[0];
+    link.href = url;
+    link.download = `cabc-debriefs-${today}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   // Reusable Confirmation Dialog state
   const [confirmState, setConfirmState] = useState<{
@@ -97,9 +165,9 @@ export default function DebriefArchive({
       setName(prefilledDebrief.name);
       setDate(prefilledDebrief.date);
       setAttendance('');
-      setVolunteers('');
-      setBudgetGiven('');
-      setBudgetActual('');
+      setVolunteers(prefilledDebrief.volunteers || '');
+      setBudgetGiven(prefilledDebrief.budgetGiven || '');
+      setBudgetActual(prefilledDebrief.budgetActual || '');
       setWentWell('');
       setChange('');
       setFiledBy('');
@@ -190,12 +258,20 @@ export default function DebriefArchive({
             Finished events live here so next year starts from real memory, numbers, and structured learnings.
           </p>
         </div>
-        <button
-          onClick={handleOpenCreate}
-          className="flex items-center gap-2 px-4 py-2 bg-[#1e293b] hover:bg-[#0f172a] text-[#faf8f4] text-xs font-bold uppercase tracking-wider rounded-lg transition shadow-sm cursor-pointer"
-        >
-          <Plus size={14} /> File Event Debrief
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={handleExportCSV}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-[#e2dcd0] hover:bg-slate-50 text-slate-700 text-xs font-bold uppercase tracking-wider rounded-lg transition shadow-sm cursor-pointer"
+          >
+            <Download size={14} className="text-[#856637]" /> Export CSV
+          </button>
+          <button
+            onClick={handleOpenCreate}
+            className="flex items-center gap-2 px-4 py-2 bg-[#1e293b] hover:bg-[#0f172a] text-[#faf8f4] text-xs font-bold uppercase tracking-wider rounded-lg transition shadow-sm cursor-pointer"
+          >
+            <Plus size={14} /> File Event Debrief
+          </button>
+        </div>
       </div>
 
       {/* Add / Edit Form Modal Dialog */}
@@ -453,6 +529,13 @@ export default function DebriefArchive({
                 </div>
                 <div className="flex gap-1.5 opacity-60 group-hover:opacity-100 transition">
                   <button
+                    onClick={() => setPrintDebrief(d)}
+                    className="p-1.5 text-slate-500 hover:text-[#856637] hover:bg-[#faf8f4] rounded transition cursor-pointer"
+                    title="Print / Save to PDF"
+                  >
+                    <Printer size={14} />
+                  </button>
+                  <button
                     onClick={() => handleOpenEdit(d)}
                     className="p-1.5 text-slate-500 hover:text-[#1e293b] hover:bg-[#faf8f4] rounded transition cursor-pointer"
                     title="Edit Debrief"
@@ -557,6 +640,108 @@ export default function DebriefArchive({
         onConfirm={() => confirmState?.resolve(true)}
         onCancel={() => confirmState?.resolve(false)}
       />
+
+      {/* Printable Area */}
+      {printDebrief && (
+        <div id="debrief-print-area" className="hidden print:block p-8 space-y-8 bg-white text-black font-sans leading-relaxed">
+          <style dangerouslySetInnerHTML={{__html: `
+            @media print {
+              body {
+                background-color: white !important;
+                color: black !important;
+              }
+              body * {
+                visibility: hidden !important;
+              }
+              #debrief-print-area, #debrief-print-area * {
+                visibility: visible !important;
+              }
+              #debrief-print-area {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                padding: 20px !important;
+                margin: 0 !important;
+                box-shadow: none !important;
+                border: none !important;
+                background: white !important;
+              }
+              .no-print {
+                display: none !important;
+              }
+              .print-avoid-break {
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+              }
+            }
+          `}} />
+          
+          <div className="border-b-4 border-slate-900 pb-4">
+            <span className="text-[10px] font-bold tracking-widest text-slate-500 uppercase border border-slate-200 bg-slate-50 px-2 py-0.5 rounded">
+              CABC Community Event Operational Debrief
+            </span>
+            <h1 className="text-3xl font-serif font-black text-slate-950 mt-2 leading-none">{printDebrief.name}</h1>
+            <p className="text-sm text-slate-600 mt-2 font-medium">
+              Event Date: {formatHumanDate(printDebrief.date)}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-4 gap-4 p-4 border border-slate-200 bg-slate-50 rounded-xl">
+            <div className="space-y-1">
+              <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold">People Served</span>
+              <p className="text-base font-serif font-bold text-slate-950">{printDebrief.attendance || '—'}</p>
+            </div>
+            <div className="space-y-1">
+              <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold">Volunteers</span>
+              <p className="text-base font-serif font-bold text-slate-950">{printDebrief.volunteers || '—'}</p>
+            </div>
+            <div className="space-y-1">
+              <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold">Budget Given</span>
+              <p className="text-base font-serif font-bold text-slate-950">
+                {printDebrief.budgetGiven ? `$${printDebrief.budgetGiven}` : '—'}
+              </p>
+            </div>
+            <div className="space-y-1">
+              <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold">Budget Actual</span>
+              <p className="text-base font-serif font-bold text-slate-950">
+                {printDebrief.budgetActual ? `$${printDebrief.budgetActual}` : '—'}
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            {printDebrief.wentWell && (
+              <div className="space-y-2 print-avoid-break">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 border-b border-slate-200 pb-1 flex items-center gap-1.5">
+                  What Went Well
+                </h4>
+                <p className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap pl-1">
+                  {printDebrief.wentWell}
+                </p>
+              </div>
+            )}
+
+            {printDebrief.change && (
+              <div className="space-y-2 print-avoid-break">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 border-b border-slate-200 pb-1 flex items-center gap-1.5">
+                  What we'd change next year
+                </h4>
+                <p className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap pl-1">
+                  {printDebrief.change}
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="border-t border-slate-200 pt-4 flex items-center justify-between text-xs text-slate-500">
+            <span>
+              Filed by: <strong className="text-slate-850 font-bold">{printDebrief.filedBy || '—'}</strong>
+            </span>
+            <span>Printed: {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

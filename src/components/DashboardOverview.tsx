@@ -73,13 +73,13 @@ interface DashboardOverviewProps {
   activities?: RecentActivity[];
   volunteers?: Volunteer[];
   onCreateEvent?: (name: string, date: string, description: string) => Promise<void>;
-  onCloneEvent?: (id: string, newDate: string) => Promise<void>;
+  onCloneEvent?: (id: string, newDate: string, carryVolunteerIds: string[], copyEquipment: boolean) => Promise<void>;
   onAddTask?: (eventId: string, taskData: { title: string; description: string; milestoneKey: MilestoneKey; lane: MinistryLane; dueDate: string; assignedTo?: string }) => Promise<void>;
   onCreateVolunteer?: (volunteerData: Omit<Volunteer, 'id'>) => Promise<void>;
   onUploadCompleted?: () => Promise<void>;
   loading?: boolean;
   debriefs?: Debrief[];
-  onPrefillDebrief?: (data: { name: string; date: string }) => void;
+  onPrefillDebrief?: (data: { name: string; date: string; id?: string }) => void;
 }
 
 const CITIES = [
@@ -207,6 +207,23 @@ function DashboardOverview({
   const [cloneEventTargetId, setCloneEventTargetId] = React.useState<string | null>(null);
   const [cloneEventNewDate, setCloneEventNewDate] = React.useState('');
   const [isCloning, setIsCloning] = React.useState(false);
+  const [selectedVolIds, setSelectedVolIds] = React.useState<string[]>([]);
+  const [copyEquipment, setCopyEquipment] = React.useState(true);
+
+  const assignedVolunteersForClone = React.useMemo(() => {
+    if (!cloneEventTargetId || !volunteers) return [];
+    return volunteers.filter(vol => vol.eventAssignments && vol.eventAssignments[cloneEventTargetId]);
+  }, [cloneEventTargetId, volunteers]);
+
+  React.useEffect(() => {
+    if (cloneEventTargetId) {
+      const ids = assignedVolunteersForClone.map(v => v.id);
+      setSelectedVolIds(ids);
+      setCopyEquipment(true);
+    } else {
+      setSelectedVolIds([]);
+    }
+  }, [cloneEventTargetId, assignedVolunteersForClone]);
 
   const quickActionModalRef = useFocusTrap(!!activeQuickAction, () => setActiveQuickAction(null));
   const cloneEventModalRef = useFocusTrap(!!cloneEventTargetId, () => {
@@ -517,7 +534,7 @@ function DashboardOverview({
       actionText: 'File debrief',
       onClick: () => {
         if (onPrefillDebrief) {
-          onPrefillDebrief({ name: evt.name, date: evt.date });
+          onPrefillDebrief({ name: evt.name, date: evt.date, id: evt.id });
         } else {
           onNavigate('debriefs');
         }
@@ -2104,6 +2121,61 @@ function DashboardOverview({
                     This will create a fresh copy of the event on this new date. Tasks and asset reservations will be copied but reset to pending/incomplete states.
                   </p>
                 </div>
+
+                {/* Carry Volunteers Checklist */}
+                <div className="border-t border-slate-100 pt-3">
+                  <span className="block text-xs font-semibold text-slate-500 mb-1.5">
+                    Carry these volunteers forward (uncheck anyone not returning)
+                  </span>
+                  {assignedVolunteersForClone.length === 0 ? (
+                    <p className="text-[11px] text-slate-400 italic">No volunteers assigned yet</p>
+                  ) : (
+                    <div className="max-h-28 overflow-y-auto space-y-1.5 border border-slate-100 rounded-lg p-2 bg-slate-50">
+                      {assignedVolunteersForClone.map((vol) => {
+                        const isChecked = selectedVolIds.includes(vol.id);
+                        const assignment = vol.eventAssignments?.[cloneEventTargetId!];
+                        const roleDesc = assignment ? ` (${assignment.role}${assignment.station ? ` @ ${assignment.station}` : ''})` : '';
+                        return (
+                          <label key={vol.id} className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedVolIds(prev => [...prev, vol.id]);
+                                } else {
+                                  setSelectedVolIds(prev => prev.filter(id => id !== vol.id));
+                                }
+                              }}
+                              className="rounded text-[#856637] focus:ring-[#856637]"
+                            />
+                            <span className="truncate">
+                              <span className="font-medium text-slate-800">{vol.name}</span>
+                              <span className="text-slate-500 text-[11px]">{roleDesc}</span>
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Copy Equipment Option */}
+                <div className="border-t border-slate-100 pt-3">
+                  <label className="flex items-center gap-2 text-xs font-semibold text-slate-600 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={copyEquipment}
+                      onChange={(e) => setCopyEquipment(e.target.checked)}
+                      className="rounded text-[#856637] focus:ring-[#856637]"
+                    />
+                    <span>Copy reserved equipment</span>
+                  </label>
+                  <p className="text-[10px] text-slate-400 mt-0.5 ml-5">
+                    Carries forward reserved assets for this event (status is reset to Pending).
+                  </p>
+                </div>
+
                 <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
                   <button
                     onClick={() => { setCloneEventTargetId(null); setCloneEventNewDate(''); }}
@@ -2115,7 +2187,7 @@ function DashboardOverview({
                     onClick={async () => {
                       if (!cloneEventNewDate || !onCloneEvent) return;
                       setIsCloning(true);
-                      await onCloneEvent(cloneEventTargetId, cloneEventNewDate);
+                      await onCloneEvent(cloneEventTargetId, cloneEventNewDate, selectedVolIds, copyEquipment);
                       setIsCloning(false);
                       setCloneEventTargetId(null);
                       setCloneEventNewDate('');

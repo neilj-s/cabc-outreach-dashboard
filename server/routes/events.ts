@@ -1,6 +1,6 @@
 import express from 'express';
 import { getDb, saveDb, logActivity, generateTasksForEvent, DEFAULT_DOCS, MILESTONE_TEMPLATES, broadcast, requireAuth } from '../storage';
-import { MinistryEvent, Task, AssetReservation } from '../../src/types';
+import { MinistryEvent, Task, AssetReservation, Volunteer } from '../../src/types';
 
 const router = express.Router();
 
@@ -44,7 +44,7 @@ router.post('/', (req, res) => {
 router.post('/:id/clone', (req, res) => {
   const db = getDb();
   const { id } = req.params;
-  const { newDate } = req.body;
+  const { newDate, carryVolunteerIds = [], copyEquipment = false } = req.body;
   
   if (!newDate) {
     return res.status(400).json({ error: 'newDate is required.' });
@@ -79,17 +79,30 @@ router.post('/:id/clone', (req, res) => {
     driveFolderId: undefined
   };
   
-  // Copy reservations
-  if (db.reservations) {
+  // Carry volunteers: for each volunteer whose id is in carryVolunteerIds and who has an eventAssignments entry for the source event id,
+  // set that volunteer's eventAssignments[newId] to a deep copy of their eventAssignments[sourceId] (same role/station/notes).
+  // Don't touch volunteers not in the list.
+  if (Array.isArray(carryVolunteerIds) && carryVolunteerIds.length > 0 && db.volunteers) {
+    db.volunteers.forEach((v: Volunteer) => {
+      if (carryVolunteerIds.includes(v.id) && v.eventAssignments && v.eventAssignments[id]) {
+        v.eventAssignments[newId] = JSON.parse(JSON.stringify(v.eventAssignments[id]));
+      }
+    });
+  }
+
+  // Carry equipment: if copyEquipment is true, for every reservation in db.reservations whose eventId equals the source event id,
+  // create a new reservation copied from it with a new id, eventId set to the new event id, any date field set to newDate, and status reset to 'Pending'.
+  // If copyEquipment is false, clone no reservations.
+  if (copyEquipment && db.reservations) {
     const sourceReservations = db.reservations.filter((r: AssetReservation) => r.eventId === id);
     sourceReservations.forEach((r: AssetReservation, index: number) => {
       db.reservations.push({
         ...r,
-        id: `res_${Date.now()}_${index}`,
+        id: `res_${Date.now()}_${index}_${Math.random().toString(36).substring(2, 6)}`,
         eventId: newId,
         eventName: newEvent.name,
         eventDate: newDate,
-        status: 'Pending' // reset status if any
+        status: 'Pending'
       });
     });
   }
@@ -108,6 +121,12 @@ router.post('/:id/clone', (req, res) => {
     type: 'EVENTS_CHANGE',
     payload: { events: db.events }
   });
+  if (Array.isArray(carryVolunteerIds) && carryVolunteerIds.length > 0) {
+    broadcast({
+      type: 'VOLUNTEERS_CHANGE',
+      payload: { volunteers: db.volunteers }
+    });
+  }
   res.status(201).json(newEvent);
 });
 
