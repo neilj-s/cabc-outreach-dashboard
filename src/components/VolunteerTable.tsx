@@ -134,6 +134,11 @@ function VolunteerTable({
   // View mode state: roster mapping vs compact directory
   const [viewMode, setViewMode] = useState<'roster' | 'directory'>('roster');
 
+  const [showAddExistingModal, setShowAddExistingModal] = useState(false);
+  const [pickerSearchTerm, setPickerSearchTerm] = useState('');
+  const [pickerSelectedIds, setPickerSelectedIds] = useState<string[]>([]);
+  const [pickerSubmitting, setPickerSubmitting] = useState(false);
+
   // Detailed Comments & Notes modal state
   const [notesModalVolId, setNotesModalVolId] = useState<string | null>(null);
 
@@ -226,6 +231,50 @@ function VolunteerTable({
   const [detailContactNotes, setDetailContactNotes] = useState('');
 
   const activeEventId = selectedEventId || (events[0]?.id || '');
+
+  const unassignedToEventVolunteers = React.useMemo(() => {
+    if (!activeEventId) return [];
+    return volunteers.filter(v => !v.eventAssignments || !(activeEventId in v.eventAssignments));
+  }, [volunteers, activeEventId]);
+
+  const filteredPickerVolunteers = React.useMemo(() => {
+    const query = pickerSearchTerm.toLowerCase().trim();
+    if (!query) return unassignedToEventVolunteers;
+    return unassignedToEventVolunteers.filter(v => v.name.toLowerCase().includes(query));
+  }, [unassignedToEventVolunteers, pickerSearchTerm]);
+
+  const handleAddSelectedVolunteers = async () => {
+    if (pickerSelectedIds.length === 0 || !activeEventId) return;
+    setPickerSubmitting(true);
+    try {
+      let count = 0;
+      for (const volId of pickerSelectedIds) {
+        const vol = volunteers.find(v => v.id === volId);
+        if (!vol) continue;
+        const currentAssignments = vol.eventAssignments || {};
+        const updatedAssignments = {
+          ...currentAssignments,
+          [activeEventId]: {
+            role: 'General Helper',
+            station: 'General Area',
+            notes: '',
+            contactStatus: 'Not Contacted' as const
+          }
+        };
+        await onUpdateVolunteer(volId, { eventAssignments: updatedAssignments });
+        count++;
+      }
+      showNotification(`Successfully added ${count} volunteer(s) to this event.`, 'success');
+      setShowAddExistingModal(false);
+      setPickerSelectedIds([]);
+      setPickerSearchTerm('');
+    } catch (err) {
+      console.error(err);
+      showNotification("Error adding volunteers to event.", "error");
+    } finally {
+      setPickerSubmitting(false);
+    }
+  };
 
   const handleSaveProfile = async () => {
     if (!selectedVol) return;
@@ -362,9 +411,17 @@ function VolunteerTable({
     return Array.from(skillsSet).sort((a, b) => a.localeCompare(b));
   }, [volunteers]);
 
+  const baseVolunteers = React.useMemo(() => {
+    if (viewMode === 'roster') {
+      if (!activeEventId) return [];
+      return volunteers.filter(vol => vol.eventAssignments && (activeEventId in vol.eventAssignments));
+    }
+    return volunteers;
+  }, [volunteers, viewMode, activeEventId]);
+
   // Apply search & multi-select role & skill filters
   const filteredVolunteers = React.useMemo(() => {
-    return volunteers.filter(vol => {
+    return baseVolunteers.filter(vol => {
       // 1. Search filter match
       const query = searchTerm.toLowerCase().trim();
       const matchesSearch = !query || 
@@ -398,7 +455,7 @@ function VolunteerTable({
 
       return true;
     });
-  }, [volunteers, searchTerm, selectedRoles, selectedSkills, activeEventId]);
+  }, [baseVolunteers, searchTerm, selectedRoles, selectedSkills, activeEventId]);
 
   // Filter list by letter if selected
   const directoryVolunteers = React.useMemo(() => {
@@ -569,6 +626,13 @@ function VolunteerTable({
     if (!name || !email) return;
     setSubmitting(true);
     try {
+      const initialAssignments = activeEventId ? {
+        [activeEventId]: {
+          role: 'General Helper',
+          station: 'General Area',
+          notes: ''
+        }
+      } : {};
       await onCreateVolunteer({
         name,
         email,
@@ -577,7 +641,7 @@ function VolunteerTable({
         skills: skills.trim(),
         notes: notes.trim(),
         emails: [],
-        eventAssignments: {}
+        eventAssignments: initialAssignments
       });
       setName('');
       setEmail('');
@@ -737,7 +801,7 @@ function VolunteerTable({
           }`}
         >
           <List size={14} />
-          <span>Roster &amp; Event Mapping</span>
+          <span>Event Roster</span>
           {viewMode === 'roster' && (
             <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#856637]" />
           )}
@@ -751,7 +815,7 @@ function VolunteerTable({
           }`}
         >
           <Grid size={14} />
-          <span>Volunteer Directory</span>
+          <span>Full Directory</span>
           {viewMode === 'directory' && (
             <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#856637]" />
           )}
@@ -1121,43 +1185,65 @@ function VolunteerTable({
           </button>
         </div>
       ) : viewMode === 'roster' ? (
-        <div className="bg-[#fcfaf7] border border-[#e2dcd0] rounded-xl overflow-hidden shadow-sm">
-        <div className="p-4 bg-[#faf8f4] border-b border-[#e2dcd0] flex justify-between items-center flex-wrap gap-2">
-          <span className="text-xs font-serif font-bold uppercase tracking-wider text-[#1e293b] flex items-center gap-1.5">
-            <Users size={16} className="text-[#856637]" /> Active Roster Management
-          </span>
-          <div className="flex items-center gap-3">
-            <div className="relative hidden md:block">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 pointer-events-none">
-                <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-              </span>
-              <input
-                type="text"
-                placeholder="Search global registry..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-48 text-xs pl-8 pr-7 py-1.5 rounded-lg border border-[#e2dcd0] bg-white focus:outline-none focus:ring-1 focus:ring-[#856637] text-slate-800 placeholder-slate-400"
-              />
-              {searchTerm && (
-                <button
-                  type="button"
-                  onClick={() => setSearchTerm('')}
-                  className="absolute inset-y-0 right-0 flex items-center pr-2 text-slate-400 hover:text-slate-600 transition cursor-pointer"
-                >
-                  <X size={12} />
-                </button>
-              )}
-            </div>
-            <span className="text-xs font-medium text-slate-500 font-serif">
-              {filteredVolunteers.length === volunteers.length 
-                ? `${volunteers.length} registered volunteers` 
-                : `Showing ${filteredVolunteers.length} of ${volunteers.length} volunteers`
-              }
-            </span>
+        !activeEventId ? (
+          <div className="flex flex-col items-center justify-center py-16 px-4 text-slate-400 bg-[#fcfaf7] border border-[#e2dcd0] rounded-xl text-center shadow-sm">
+            <Calendar size={40} className="text-[#c2aa80] mb-3" />
+            <h3 className="font-serif font-black text-[#1e293b] text-base">No Event Selected</h3>
+            <p className="text-xs text-slate-500 max-w-sm mt-1 leading-normal">
+              Select an event to see its roster.
+            </p>
           </div>
-        </div>
+        ) : (
+          <div className="bg-[#fcfaf7] border border-[#e2dcd0] rounded-xl overflow-hidden shadow-sm">
+          <div className="p-4 bg-[#faf8f4] border-b border-[#e2dcd0] flex justify-between items-center flex-wrap gap-4">
+            <div className="space-y-0.5">
+              <span className="text-xs font-serif font-bold uppercase tracking-wider text-[#1e293b] flex items-center gap-1.5">
+                <Users size={16} className="text-[#856637]" /> Active Roster Management
+              </span>
+              <p className="text-[10px] text-[#856637] font-medium font-serif leading-none">
+                {baseVolunteers.length} volunteer{baseVolunteers.length === 1 ? '' : 's'} on this event: <span className="font-bold text-slate-700">{activeEvent?.name}</span>
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setShowAddExistingModal(true)}
+                className="px-3 py-1.5 bg-[#856637] hover:bg-[#6c522c] text-white text-xs font-semibold rounded-lg transition shadow-sm flex items-center gap-1.5 cursor-pointer"
+              >
+                <Plus size={14} /> Add volunteers to this event
+              </button>
+
+              <div className="relative hidden md:block">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 pointer-events-none">
+                  <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </span>
+                <input
+                  type="text"
+                  placeholder="Search global registry..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-48 text-xs pl-8 pr-7 py-1.5 rounded-lg border border-[#e2dcd0] bg-white focus:outline-none focus:ring-1 focus:ring-[#856637] text-slate-800 placeholder-slate-400"
+                />
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchTerm('')}
+                    className="absolute inset-y-0 right-0 flex items-center pr-2 text-slate-400 hover:text-slate-600 transition cursor-pointer"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+              <span className="text-xs font-medium text-slate-500 font-serif">
+                {filteredVolunteers.length === baseVolunteers.length 
+                  ? `${baseVolunteers.length} rostered volunteers` 
+                  : `Showing ${filteredVolunteers.length} of ${baseVolunteers.length} rostered`
+                }
+              </span>
+            </div>
+          </div>
 
         {/* Bulk action bar */}
         {selectedVolIds.length > 0 && (
@@ -1509,13 +1595,21 @@ function VolunteerTable({
 
                             <button
                               onClick={async () => {
-                                await onRemoveVolunteer(vol.id);
+                                const confirm = await confirmAction(
+                                  "Remove from Event Roster",
+                                  `Are you sure you want to remove ${vol.name} from the roster for this event? This will not delete them from the volunteer directory.`
+                                );
+                                if (confirm) {
+                                  await handleClearAssignment(vol.id);
+                                  showNotification(`Removed ${vol.name} from event roster`, 'success');
+                                }
                               }}
-                              className="p-1 text-slate-300 hover:text-rose-600 rounded transition cursor-pointer"
-                              title="Delete Volunteer"
-                              aria-label="Delete Volunteer"
+                              className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-rose-200 bg-white hover:bg-rose-50 text-rose-750 transition shadow-sm cursor-pointer flex items-center gap-1 shrink-0"
+                              title="Remove from Event"
+                              aria-label="Remove from Event"
                             >
-                              <Trash2 size={14} aria-hidden="true" />
+                              <X size={12} aria-hidden="true" />
+                              <span>Remove from event</span>
                             </button>
                           </div>
                         </td>
@@ -1703,6 +1797,7 @@ function VolunteerTable({
           </table>
         </div>
       </div>
+        )
       ) : (
         /* Redesigned High-Density Master-Detail Volunteer Directory View */
         <div className="space-y-5 animate-fadeIn">
@@ -2584,6 +2679,130 @@ function VolunteerTable({
             </div>
           );
         })()
+      )}
+
+      {/* Add Existing Volunteers to Event Modal */}
+      {showAddExistingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+          <div 
+            className="fixed inset-0" 
+            onClick={() => setShowAddExistingModal(false)} 
+          />
+          <div 
+            role="dialog"
+            aria-modal="true"
+            className="bg-white rounded-2xl border border-[#efe0c2] w-full max-w-lg shadow-2xl overflow-hidden relative z-10 animate-scaleIn flex flex-col max-h-[85vh]"
+          >
+            {/* Header */}
+            <div className="bg-[#faf8f4] border-b border-[#e2dcd0] px-6 py-4 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-amber-50 border border-amber-200 rounded-xl text-[#856637]">
+                  <UserPlus size={18} aria-hidden="true" />
+                </div>
+                <div>
+                  <h3 className="font-serif font-black text-[#1e293b] text-base">Add Volunteers to Event</h3>
+                  <p className="text-[10px] text-slate-500 font-medium">Select volunteers to add to <span className="font-bold text-slate-700">{activeEvent?.name}</span></p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAddExistingModal(false)}
+                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-450 hover:text-slate-700 transition cursor-pointer"
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+
+            {/* Search Bar */}
+            <div className="p-4 border-b border-[#e2dcd0] bg-[#faf8f4]/50 shrink-0">
+              <div className="relative">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                  <Search size={14} className="text-slate-400" />
+                </span>
+                <input
+                  type="text"
+                  placeholder="Search by volunteer name..."
+                  value={pickerSearchTerm}
+                  onChange={(e) => setPickerSearchTerm(e.target.value)}
+                  className="w-full text-xs pl-9 pr-8 py-2 rounded-lg border border-[#e2dcd0] bg-white focus:outline-none focus:ring-1 focus:ring-[#856637] text-slate-800 placeholder-slate-400"
+                />
+                {pickerSearchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setPickerSearchTerm('')}
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Volunteers List */}
+            <div className="p-6 overflow-y-auto space-y-2 flex-1 min-h-0">
+              {filteredPickerVolunteers.length === 0 ? (
+                <p className="text-xs text-slate-450 italic text-center py-8">
+                  {pickerSearchTerm ? "No matching volunteers found." : "All registered volunteers are already rostered on this event."}
+                </p>
+              ) : (
+                filteredPickerVolunteers.map(vol => {
+                  const isChecked = pickerSelectedIds.includes(vol.id);
+                  return (
+                    <label 
+                      key={vol.id} 
+                      className={`flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer hover:bg-[#faf8f4]/50 ${
+                        isChecked ? 'border-[#856637] bg-[#faf8f4]/30' : 'border-[#e2dcd0] bg-white'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setPickerSelectedIds([...pickerSelectedIds, vol.id]);
+                          } else {
+                            setPickerSelectedIds(pickerSelectedIds.filter(id => id !== vol.id));
+                          }
+                        }}
+                        className="accent-[#856637] rounded cursor-pointer w-4 h-4 shrink-0"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold text-slate-800 truncate">{vol.name}</p>
+                        <p className="text-[10px] text-slate-500 truncate">{vol.email}</p>
+                        {vol.skills && (
+                          <p className="text-[9px] text-[#856637] font-mono mt-0.5 truncate">Skills: {vol.skills}</p>
+                        )}
+                      </div>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="bg-[#faf8f4] border-t border-[#e2dcd0] px-6 py-4 flex justify-between items-center shrink-0">
+              <span className="text-[10px] font-mono font-bold text-slate-500">
+                {pickerSelectedIds.length} Selected
+              </span>
+              <div className="flex gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setShowAddExistingModal(false)}
+                  className="px-4 py-2 border border-[#e2dcd0] hover:bg-white text-slate-650 text-xs font-semibold rounded-lg transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAddSelectedVolunteers}
+                  disabled={pickerSelectedIds.length === 0 || pickerSubmitting}
+                  className="px-4 py-2 bg-[#1e293b] hover:bg-[#0f172a] text-[#faf8f4] text-xs font-bold rounded-lg transition cursor-pointer shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {pickerSubmitting ? 'Adding...' : 'Add Selected'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       <ConfirmDialog

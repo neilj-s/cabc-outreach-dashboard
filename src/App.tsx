@@ -82,6 +82,18 @@ export function deduplicateVolunteers(vols: Volunteer[]): Volunteer[] {
   });
 }
 
+export function deduplicateEvents(evts: MinistryEvent[]): MinistryEvent[] {
+  const seenIds = new Set<string>();
+  return evts.filter((evt: MinistryEvent) => {
+    if (!evt || !evt.id) return false;
+    if (seenIds.has(evt.id)) {
+      return false;
+    }
+    seenIds.add(evt.id);
+    return true;
+  });
+}
+
 interface SummaryData {
   totalEvents: number;
   totalAssets: number;
@@ -364,7 +376,7 @@ function MainApp() {
                 const pendingIds = new Set<string>();
                 pendingEventsRef.current.forEach(val => pendingIds.add(val.event.id));
                 const filtered = incoming.filter((evt: MinistryEvent) => !pendingIds.has(evt.id));
-                setEvents(filtered);
+                setEvents(deduplicateEvents(filtered));
                 break;
               }
             }
@@ -476,7 +488,7 @@ function MainApp() {
         setSummary(resSummary);
       }
       if (Array.isArray(resEvents)) {
-        setEvents(resEvents);
+        setEvents(deduplicateEvents(resEvents));
         if (resEvents.length > 0 && !selectedEventId) {
           setSelectedEventId(resEvents[0].id);
         }
@@ -561,7 +573,7 @@ function MainApp() {
         setSummary(resSummary);
       }
       if (Array.isArray(resEvents)) {
-        setEvents(resEvents);
+        setEvents(deduplicateEvents(resEvents));
       }
       if (Array.isArray(resVolunteers)) {
         setVolunteers(deduplicateVolunteers(resVolunteers));
@@ -672,7 +684,6 @@ function MainApp() {
       });
       if (!res.ok) throw new Error("Could not create event timeline");
       const newEvt = await res.json();
-      setEvents(prev => [...prev, newEvt]);
       setSelectedEventId(newEvt.id);
       showNotification(`Event "${name}" generated successfully!`, 'success');
     } catch (err) {
@@ -690,7 +701,6 @@ function MainApp() {
       });
       if (!res.ok) throw new Error("Could not clone event");
       const newEvt = await res.json();
-      setEvents(prev => [...prev, newEvt]);
       setSelectedEventId(newEvt.id);
       setSelectedYear(new Date(newDate).getFullYear());
       showNotification(`Event cloned to ${newDate} successfully!`, 'success');
