@@ -192,6 +192,7 @@ function VolunteerTable({
 
   // Bulk Selection & Editing state
   const [selectedVolIds, setSelectedVolIds] = useState<string[]>([]);
+  const [bulkAction, setBulkAction] = useState<'none' | 'role' | 'station' | 'remove'>('none');
   const [bulkRole, setBulkRole] = useState('');
   const [bulkStation, setBulkStation] = useState('');
   const [bulkProcessing, setBulkProcessing] = useState(false);
@@ -728,10 +729,10 @@ function VolunteerTable({
     setNewEventNotes('');
   };
 
-  const handleBulkAssignRoleStation = async () => {
+  const handleBulkAssignField = async (field: 'role' | 'station', value: string) => {
     if (selectedVolIds.length === 0 || !activeEventId) return;
-    if (!bulkRole.trim() && !bulkStation.trim()) {
-      showNotification("Please specify a Role or a Station to assign.", "error");
+    if (!value.trim()) {
+      showNotification(`Please specify a ${field === 'role' ? 'Role' : 'Station'} to assign.`, "error");
       return;
     }
 
@@ -743,24 +744,54 @@ function VolunteerTable({
 
         const currentAssignments = vol.eventAssignments || {};
         const assignment = currentAssignments[activeEventId];
+        const existingStatus = assignment?.contactStatus || 'Not Contacted';
 
         const updatedAssignments = {
           ...currentAssignments,
           [activeEventId]: {
-            role: bulkRole.trim() ? bulkRole.trim() : (assignment?.role || 'General Helper'),
-            station: bulkStation.trim() ? bulkStation.trim() : (assignment?.station || 'General Area'),
-            notes: assignment?.notes || ''
+            role: field === 'role' ? value.trim() : (assignment?.role || 'General Helper'),
+            station: field === 'station' ? value.trim() : (assignment?.station || 'General Area'),
+            notes: assignment?.notes || '',
+            contactStatus: existingStatus
           }
         };
 
         await onUpdateVolunteer(volId, { eventAssignments: updatedAssignments });
       }
 
+      showNotification(`Successfully updated ${field} for selected volunteers.`, "success");
       setSelectedVolIds([]);
       setBulkRole('');
       setBulkStation('');
+      setBulkAction('none');
     } catch (err) {
       console.error(err);
+      showNotification(`Could not bulk update ${field}.`, "error");
+    } finally {
+      setBulkProcessing(false);
+    }
+  };
+
+  const handleBulkRemoveFromEvent = async () => {
+    if (selectedVolIds.length === 0 || !activeEventId) return;
+    setBulkProcessing(true);
+    try {
+      for (const volId of selectedVolIds) {
+        const vol = volunteers.find(v => v.id === volId);
+        if (!vol) continue;
+
+        const currentAssignments = vol.eventAssignments || {};
+        delete currentAssignments[activeEventId];
+
+        await onUpdateVolunteer(volId, { eventAssignments: currentAssignments });
+      }
+
+      showNotification(`Removed ${selectedVolIds.length} volunteer${selectedVolIds.length === 1 ? '' : 's'} from ${activeEvent?.name || 'event'}.`, "success");
+      setSelectedVolIds([]);
+      setBulkAction('none');
+    } catch (err) {
+      console.error(err);
+      showNotification("Could not bulk remove volunteers.", "error");
     } finally {
       setBulkProcessing(false);
     }
@@ -788,14 +819,18 @@ function VolunteerTable({
           const currentAssignments = vol.eventAssignments || {};
           const assignment = currentAssignments[activeEventId];
           
-          updatedData.eventAssignments = {
-            ...currentAssignments,
-            [activeEventId]: {
-              role: assignment?.role || 'General Helper',
-              station: assignment?.station || 'General Area',
-              notes: modalEventNotes.trim()
-            }
-          };
+          if (assignment) {
+            const existingStatus = (vol.eventAssignments?.[activeEventId]?.contactStatus) || 'Not Contacted';
+            updatedData.eventAssignments = {
+              ...currentAssignments,
+              [activeEventId]: {
+                role: assignment.role || 'General Helper',
+                station: assignment.station || 'General Area',
+                notes: modalEventNotes.trim(),
+                contactStatus: existingStatus
+              }
+            };
+          }
         }
 
         await onUpdateVolunteer(notesModalVolId, updatedData);
@@ -1260,54 +1295,150 @@ function VolunteerTable({
                 <Users size={16} />
               </div>
               <div>
-                <p className="text-xs font-serif font-black text-slate-800">
-                  Bulk Assignment Action <span className="ml-1 px-2.5 py-0.5 bg-[#856637] text-white text-[9px] font-bold rounded-full font-mono">{selectedVolIds.length} Selected</span>
+                <p className="text-xs font-serif font-black text-slate-800 flex items-center gap-2">
+                  <span>Bulk Roster Actions</span>
+                  <span className="px-2.5 py-0.5 bg-[#856637] text-white text-[9px] font-bold rounded-full font-mono">{selectedVolIds.length} Selected</span>
                 </p>
                 <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
-                  Assign all selected volunteers to a specific role and/or station for the event <span className="font-bold text-slate-700">{activeEvent?.name}</span>.
+                  {bulkAction === 'none' && `Select an action to perform on these volunteers for ${activeEvent?.name || 'the event'}.`}
+                  {bulkAction === 'role' && "Assign a specific role to all selected volunteers."}
+                  {bulkAction === 'station' && "Assign a specific station/location to all selected volunteers."}
+                  {bulkAction === 'remove' && "Remove selected volunteers from the roster of this event."}
                 </p>
               </div>
             </div>
             
-            <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <input
-                  type="text"
-                  placeholder="Bulk Role (e.g. Host)"
-                  value={bulkRole}
-                  onChange={e => setBulkRole(e.target.value)}
-                  className="text-xs p-2 rounded-lg border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-semibold placeholder:text-slate-400 w-full sm:w-44 shadow-xs"
-                />
-                <input
-                  type="text"
-                  placeholder="Bulk Station (e.g. Foyer)"
-                  value={bulkStation}
-                  onChange={e => setBulkStation(e.target.value)}
-                  className="text-xs p-2 rounded-lg border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-semibold placeholder:text-slate-400 w-full sm:w-44 shadow-xs"
-                />
-              </div>
-              
-              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedVolIds([]);
-                    setBulkRole('');
-                    setBulkStation('');
-                  }}
-                  className="px-3 py-2 border border-[#efe0c2] bg-white hover:bg-slate-50 text-slate-650 text-xs font-semibold rounded-lg transition cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleBulkAssignRoleStation}
-                  disabled={bulkProcessing}
-                  className="px-4 py-2 bg-[#1e293b] hover:bg-[#0f172a] disabled:bg-slate-400 text-[#faf8f4] text-xs font-bold rounded-lg transition cursor-pointer shadow-sm flex items-center gap-1.5 whitespace-nowrap"
-                >
-                  {bulkProcessing ? 'Applying...' : 'Apply Assignment'}
-                </button>
-              </div>
+            <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto justify-end">
+              {bulkAction === 'none' && (
+                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setBulkAction('role')}
+                    className="px-3 py-1.5 bg-white hover:bg-[#faf8f4] text-slate-700 border border-[#e2dcd0] text-xs font-semibold rounded-lg transition cursor-pointer flex items-center gap-1 shadow-xs"
+                  >
+                    <span>Set role</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBulkAction('station')}
+                    className="px-3 py-1.5 bg-white hover:bg-[#faf8f4] text-slate-700 border border-[#e2dcd0] text-xs font-semibold rounded-lg transition cursor-pointer flex items-center gap-1 shadow-xs"
+                  >
+                    <span>Set station</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBulkAction('remove')}
+                    className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold rounded-lg transition cursor-pointer flex items-center gap-1 shadow-xs"
+                  >
+                    <span>Remove from event</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedVolIds([]);
+                      setBulkAction('none');
+                    }}
+                    className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-500 text-xs font-semibold rounded-lg transition cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
+
+              {bulkAction === 'role' && (
+                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+                  <input
+                    type="text"
+                    list="bulk-role-options"
+                    placeholder="Type or select role..."
+                    value={bulkRole}
+                    onChange={e => setBulkRole(e.target.value)}
+                    className="text-xs p-2 rounded-lg border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-semibold placeholder:text-slate-400 w-full sm:w-48 shadow-xs"
+                    autoFocus
+                  />
+                  <datalist id="bulk-role-options">
+                    {allUniqueRoles.map(role => (
+                      <option key={role} value={role} />
+                    ))}
+                  </datalist>
+                  
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBulkAction('none');
+                      setBulkRole('');
+                    }}
+                    className="px-3 py-1.5 border border-[#efe0c2] bg-white hover:bg-slate-50 text-slate-650 text-xs font-semibold rounded-lg transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleBulkAssignField('role', bulkRole)}
+                    disabled={bulkProcessing || !bulkRole.trim()}
+                    className="px-4 py-1.5 bg-[#1e293b] hover:bg-[#0f172a] disabled:bg-slate-400 text-[#faf8f4] text-xs font-bold rounded-lg transition cursor-pointer shadow-sm"
+                  >
+                    {bulkProcessing ? 'Applying...' : `Apply to ${selectedVolIds.length}`}
+                  </button>
+                </div>
+              )}
+
+              {bulkAction === 'station' && (
+                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+                  <input
+                    type="text"
+                    placeholder="Enter station name..."
+                    value={bulkStation}
+                    onChange={e => setBulkStation(e.target.value)}
+                    className="text-xs p-2 rounded-lg border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-semibold placeholder:text-slate-400 w-full sm:w-48 shadow-xs"
+                    autoFocus
+                  />
+                  
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBulkAction('none');
+                      setBulkStation('');
+                    }}
+                    className="px-3 py-1.5 border border-[#efe0c2] bg-white hover:bg-slate-50 text-slate-650 text-xs font-semibold rounded-lg transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleBulkAssignField('station', bulkStation)}
+                    disabled={bulkProcessing || !bulkStation.trim()}
+                    className="px-4 py-1.5 bg-[#1e293b] hover:bg-[#0f172a] disabled:bg-slate-400 text-[#faf8f4] text-xs font-bold rounded-lg transition cursor-pointer shadow-sm"
+                  >
+                    {bulkProcessing ? 'Applying...' : `Apply to ${selectedVolIds.length}`}
+                  </button>
+                </div>
+              )}
+
+              {bulkAction === 'remove' && (
+                <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end">
+                  <span className="text-xs font-medium text-rose-700">
+                    Remove these {selectedVolIds.length} from {activeEvent?.name || 'event'}? They stay in the directory.
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setBulkAction('none')}
+                      className="px-3 py-1.5 border border-[#efe0c2] bg-white hover:bg-slate-50 text-slate-650 text-xs font-semibold rounded-lg transition cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleBulkRemoveFromEvent}
+                      disabled={bulkProcessing}
+                      className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-400 text-white text-xs font-bold rounded-lg transition cursor-pointer shadow-sm"
+                    >
+                      {bulkProcessing ? 'Removing...' : 'Remove from event'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
