@@ -11,7 +11,7 @@ router.get('/', (req, res) => {
 
 router.post('/', (req, res) => {
   const db = getDb();
-  const { name, email, phone, roles, skills, notes, emails, eventAssignments } = req.body;
+  const { name, email, phone, roles, skills, ministry, notes, emails, eventAssignments } = req.body;
   if (!name) {
     return res.status(400).json({ error: 'Name is required.' });
   }
@@ -23,6 +23,7 @@ router.post('/', (req, res) => {
     phone: phone || '',
     roles: roles || [],
     skills: skills || '',
+    ministry: ministry || '',
     notes: notes || '',
     emails: emails || [],
     eventAssignments: eventAssignments || {}
@@ -47,7 +48,7 @@ router.post('/', (req, res) => {
 router.patch('/:id', (req, res) => {
   const db = getDb();
   const { id } = req.params;
-  const { name, email, phone, roles, skills, notes, emails, eventAssignments } = req.body;
+  const { name, email, phone, roles, skills, ministry, notes, emails, eventAssignments } = req.body;
 
   const vol = db.volunteers.find((v: Volunteer) => v.id === id);
   if (!vol) {
@@ -59,6 +60,7 @@ router.patch('/:id', (req, res) => {
   if (phone !== undefined) vol.phone = phone;
   if (roles !== undefined) vol.roles = roles;
   if (skills !== undefined) vol.skills = skills;
+  if (ministry !== undefined) vol.ministry = ministry;
   if (notes !== undefined) vol.notes = notes;
   if (emails !== undefined) vol.emails = emails;
   if (eventAssignments !== undefined) vol.eventAssignments = eventAssignments;

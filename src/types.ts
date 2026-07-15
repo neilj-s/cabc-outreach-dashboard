@@ -125,6 +125,7 @@ export interface Volunteer {
   phone: string;
   roles: string[]; // List of currently assigned Roles/Stations
   skills?: string; // Foundational skills/interests
+  ministry?: string; // Primary ministry / department affiliation
   notes?: string;
   emails?: EmailCommunication[]; // Email communication tracker entries (deprecated)
   eventAssignments?: Record<string, VolunteerEventAssignment>; // map of eventId -> assignment

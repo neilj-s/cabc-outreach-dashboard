@@ -173,6 +173,7 @@ function VolunteerTable({
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [skills, setSkills] = useState('');
+  const [ministry, setMinistry] = useState('');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [assignToActiveEvent, setAssignToActiveEvent] = useState(true);
@@ -680,6 +681,7 @@ function VolunteerTable({
         phone,
         roles: [],
         skills: skills.trim(),
+        ministry: ministry.trim(),
         notes: notes.trim(),
         emails: [],
         eventAssignments: initialAssignments
@@ -688,6 +690,7 @@ function VolunteerTable({
       setEmail('');
       setPhone('');
       setSkills('');
+      setMinistry('');
       setNotes('');
       setAssignToActiveEvent(true);
       setShowAddForm(false);
@@ -965,6 +968,17 @@ function VolunteerTable({
                 className="w-full text-xs p-2.5 rounded-lg border border-[#efe0c2] bg-[#faf8f4] focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-medium"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-450 mb-1">Ministry</label>
+            <input
+              type="text"
+              placeholder="e.g. Worship, Children's, Hospitality, Outreach"
+              value={ministry}
+              onChange={e => setMinistry(e.target.value)}
+              className="w-full text-xs p-2.5 rounded-lg border border-[#efe0c2] bg-[#faf8f4] focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-medium"
+            />
           </div>
 
           <div>
@@ -2067,7 +2081,7 @@ function VolunteerTable({
                     <th className="py-2.5 px-3 min-w-[180px]">
                       {renderSortHeader('name', 'Volunteer')}
                     </th>
-                    <th className="py-2.5 px-3 min-w-[200px]">Skills / Interests</th>
+                    <th className="py-2.5 px-3 min-w-[200px]">Ministry / Skills</th>
                     <th className="py-2.5 px-3 min-w-[120px]">
                       {renderSortHeader('engagement', 'Engagement')}
                     </th>
@@ -2194,6 +2208,13 @@ function VolunteerTable({
 
                             {/* Skills / Interests */}
                             <td className="py-2.5 px-3">
+                              {vol.ministry && vol.ministry.trim() !== '' && (
+                                <div className="mb-1">
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#f3ead6] text-[#856637] border border-[#e6d3a8]">
+                                    {vol.ministry}
+                                  </span>
+                                </div>
+                              )}
                               {vol.skills && vol.skills.trim() !== '' ? (
                                 <div className="flex flex-wrap gap-1 max-w-[240px]">
                                   {vol.skills.split(',').map(s => s.trim()).filter(Boolean).map((skill, i) => (
