@@ -641,6 +641,53 @@ SEED_DATA.events[1].tasks = generateTasksForEvent(SEED_DATA.events[1].name, SEED
 SEED_DATA.events[2].tasks = generateTasksForEvent(SEED_DATA.events[2].name, SEED_DATA.events[2].date);
 
 // --- Database Helper Functions ---
+// Build a canonical-casing map for ministry values: group by lowercase,
+// pick the most common original casing (ties broken alphabetically).
+export function buildMinistryCanonicalMap(volunteers: Volunteer[]): Map<string, string> {
+  const counts = new Map<string, Map<string, number>>();
+  for (const v of volunteers) {
+    if (!v.ministry) continue;
+    for (const raw of v.ministry.split(',')) {
+      const token = raw.trim();
+      if (!token) continue;
+      const key = token.toLowerCase();
+      if (!counts.has(key)) counts.set(key, new Map());
+      const inner = counts.get(key)!;
+      inner.set(token, (inner.get(token) || 0) + 1);
+    }
+  }
+  const canonical = new Map<string, string>();
+  for (const [key, inner] of counts) {
+    let best = '';
+    let bestCount = -1;
+    for (const [casing, count] of inner) {
+      if (count > bestCount || (count === bestCount && casing.localeCompare(best) < 0)) {
+        best = casing;
+        bestCount = count;
+      }
+    }
+    canonical.set(key, best);
+  }
+  return canonical;
+}
+
+// Normalize one ministry field string: trim tokens, drop blanks, snap casing to
+// the canonical map, and dedupe within the field (case-insensitive, order kept).
+export function normalizeMinistryField(field: string | undefined, canonical: Map<string, string>): string {
+  if (!field) return '';
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of field.split(',')) {
+    const token = raw.trim();
+    if (!token) continue;
+    const key = token.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(canonical.get(key) || token);
+  }
+  return out.join(', ');
+}
+
 export function normalizeDb(db: any): DatabaseShape {
   // Ensure lists are initialized
   if (!db.events) db.events = [];
@@ -698,6 +745,12 @@ export function normalizeDb(db: any): DatabaseShape {
       else if (evt.id === 'evt_3') evt.budgetCap = 300;
       else evt.budgetCap = 500; // Default budget cap
     }
+  });
+
+  // One-time (idempotent) ministry hygiene: fold casing/whitespace dupes across all volunteers.
+  const ministryCanonical = buildMinistryCanonicalMap(db.volunteers);
+  db.volunteers.forEach((v: Volunteer) => {
+    if (v.ministry) v.ministry = normalizeMinistryField(v.ministry, ministryCanonical);
   });
 
   return db as DatabaseShape;

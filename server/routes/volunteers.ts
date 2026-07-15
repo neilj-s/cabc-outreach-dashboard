@@ -1,5 +1,5 @@
 import express from 'express';
-import { getDb, saveDb, logActivity, broadcast } from '../storage';
+import { getDb, saveDb, logActivity, broadcast, buildMinistryCanonicalMap, normalizeMinistryField } from '../storage';
 import { Volunteer } from '../../src/types';
 
 const router = express.Router();
@@ -16,6 +16,8 @@ router.post('/', (req, res) => {
     return res.status(400).json({ error: 'Name is required.' });
   }
 
+  const ministryCanonical = buildMinistryCanonicalMap(db.volunteers);
+
   const newVolunteer: Volunteer = {
     id: `vol_${Date.now()}`,
     name,
@@ -23,7 +25,7 @@ router.post('/', (req, res) => {
     phone: phone || '',
     roles: roles || [],
     skills: skills || '',
-    ministry: ministry || '',
+    ministry: normalizeMinistryField(ministry, ministryCanonical),
     notes: notes || '',
     emails: emails || [],
     eventAssignments: eventAssignments || {}
@@ -60,7 +62,10 @@ router.patch('/:id', (req, res) => {
   if (phone !== undefined) vol.phone = phone;
   if (roles !== undefined) vol.roles = roles;
   if (skills !== undefined) vol.skills = skills;
-  if (ministry !== undefined) vol.ministry = ministry;
+  if (ministry !== undefined) {
+    const ministryCanonical = buildMinistryCanonicalMap(db.volunteers);
+    vol.ministry = normalizeMinistryField(ministry, ministryCanonical);
+  }
   if (notes !== undefined) vol.notes = notes;
   if (emails !== undefined) vol.emails = emails;
   if (eventAssignments !== undefined) vol.eventAssignments = eventAssignments;
