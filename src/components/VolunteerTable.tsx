@@ -977,7 +977,7 @@ function VolunteerTable({
           </div>
 
           <div>
-            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-450 mb-1">Ministry</label>
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-450 mb-1">Ministry &amp; Small Group</label>
             <input
               type="text"
               placeholder="e.g. Worship, Children's, Hospitality, Outreach"
@@ -2087,7 +2087,7 @@ function VolunteerTable({
                     <th className="py-2.5 px-3 min-w-[180px]">
                       {renderSortHeader('name', 'Volunteer')}
                     </th>
-                    <th className="py-2.5 px-3 min-w-[200px]">Ministry / Skills</th>
+                    <th className="py-2.5 px-3 min-w-[200px]">Ministry / Skills / Small Group</th>
                     <th className="py-2.5 px-3 min-w-[120px]">
                       {renderSortHeader('engagement', 'Engagement')}
                     </th>
@@ -2504,7 +2504,7 @@ function VolunteerTable({
                                     <div className="space-y-1.5 border-t border-slate-100 pt-5">
                                       {isEditingProfile ? (
                                         <div className="space-y-2">
-                                          <label className="block text-[10px] font-bold uppercase text-slate-400">Ministry</label>
+                                          <label className="block text-[10px] font-bold uppercase text-slate-400">Ministry &amp; Small Group</label>
                                           <input
                                             type="text"
                                             value={editMinistry}
@@ -2515,7 +2515,7 @@ function VolunteerTable({
                                         </div>
                                       ) : (
                                         <>
-                                          <span className="text-[10px] font-bold uppercase text-slate-400 block">Ministry</span>
+                                          <span className="text-[10px] font-bold uppercase text-slate-400 block">Ministry &amp; Small Group</span>
                                           {vol.ministry && vol.ministry.trim() !== '' ? (
                                             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold border border-[#efe0c2] bg-amber-50/40 text-[#856637] shadow-xs">
                                               {vol.ministry}
