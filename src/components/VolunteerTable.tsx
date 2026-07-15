@@ -208,7 +208,7 @@ function VolunteerTable({
   // --- REDESIGNED HIGH-DENSITY DIRECTORY STATE & HELPERS ---
   const [selectedLetter, setSelectedLetter] = useState<string | null>(null);
   const [selectedVolId, setSelectedVolId] = useState<string | null>(null);
-  const [sortField, setSortField] = useState<'name' | 'email' | 'role' | 'station' | 'contactStatus' | 'lastContacted'>('name');
+  const [sortField, setSortField] = useState<'name' | 'email' | 'role' | 'station' | 'contactStatus' | 'lastContacted' | 'engagement'>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   
   // Profile Inline Editor State
@@ -398,6 +398,9 @@ function VolunteerTable({
       } else if (sortField === 'lastContacted') {
         valA = a.lastContacted || '';
         valB = b.lastContacted || '';
+      } else if (sortField === 'engagement') {
+        valA = Object.keys(a.eventAssignments || {}).length;
+        valB = Object.keys(b.eventAssignments || {}).length;
       }
 
       if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
@@ -636,7 +639,7 @@ function VolunteerTable({
     }
   };
 
-  const renderSortHeader = (field: 'name' | 'email' | 'role' | 'station' | 'contactStatus' | 'lastContacted', label: string) => {
+  const renderSortHeader = (field: 'name' | 'email' | 'role' | 'station' | 'contactStatus' | 'lastContacted' | 'engagement', label: string) => {
     const isSorted = sortField === field;
     return (
       <button
@@ -782,7 +785,7 @@ function VolunteerTable({
         const vol = volunteers.find(v => v.id === volId);
         if (!vol) continue;
 
-        const currentAssignments = vol.eventAssignments || {};
+        const currentAssignments = { ...vol.eventAssignments };
         delete currentAssignments[activeEventId];
 
         await onUpdateVolunteer(volId, { eventAssignments: currentAssignments });
@@ -2023,7 +2026,7 @@ function VolunteerTable({
                   <Users size={18} className="text-[#856637]" /> Volunteer Registry Directory
                 </h3>
                 <p className="text-[10px] text-slate-500 font-medium mt-0.5">
-                  High-volume data-dense table view designed for scaling beyond 60 volunteers. Click "Manage" to configure placements and outreach.
+                  Global roster of every volunteer &mdash; skills and lifetime engagement across all events. Click "Manage" to configure a specific event placement.
                 </p>
               </div>
               <div className="flex items-center gap-3">
@@ -2064,14 +2067,9 @@ function VolunteerTable({
                     <th className="py-2.5 px-3 min-w-[180px]">
                       {renderSortHeader('name', 'Volunteer')}
                     </th>
-                    <th className="py-2.5 px-3 min-w-[140px]">
-                      {renderSortHeader('role', 'Event Role')}
-                    </th>
-                    <th className="py-2.5 px-3 min-w-[140px]">
-                      {renderSortHeader('station', 'Station')}
-                    </th>
-                    <th className="py-2.5 px-3 min-w-[150px]">
-                      {renderSortHeader('contactStatus', 'Outreach / Contact Status')}
+                    <th className="py-2.5 px-3 min-w-[200px]">Skills / Interests</th>
+                    <th className="py-2.5 px-3 min-w-[120px]">
+                      {renderSortHeader('engagement', 'Engagement')}
                     </th>
                     <th className="py-2.5 px-3 min-w-[120px]">
                       {renderSortHeader('lastContacted', 'Last Contacted')}
@@ -2112,7 +2110,7 @@ function VolunteerTable({
                     ))
                   ) : sortedDirectoryVolunteers.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-12 text-center text-slate-450 italic text-xs">
+                      <td colSpan={6} className="py-12 text-center text-slate-450 italic text-xs">
                         No volunteers match the selected filter criteria.
                       </td>
                     </tr>
@@ -2120,8 +2118,6 @@ function VolunteerTable({
                     sortedDirectoryVolunteers.map((vol, index) => {
                       const isExpanded = selectedVolId === vol.id;
                       const assignment = vol.eventAssignments?.[activeEventId];
-                      const role = assignment?.role || 'Unassigned';
-                      const station = assignment?.station || 'None';
                       const status = assignment?.contactStatus || 'Not Contacted';
                       const hasSkills = vol.skills && vol.skills.trim() !== '';
                       const hasNotes = vol.notes && vol.notes.trim() !== '';
@@ -2196,49 +2192,34 @@ function VolunteerTable({
                               </div>
                             </td>
 
-                            {/* Event Role Badge */}
+                            {/* Skills / Interests */}
                             <td className="py-2.5 px-3">
-                              {role !== 'Unassigned' ? (
-                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border shadow-xs ${getRoleBadgeColors(role)}`}>
-                                  <span className="w-1 h-1 rounded-full bg-current opacity-80" />
-                                  {role}
-                                </span>
+                              {vol.skills && vol.skills.trim() !== '' ? (
+                                <div className="flex flex-wrap gap-1 max-w-[240px]">
+                                  {vol.skills.split(',').map(s => s.trim()).filter(Boolean).map((skill, i) => (
+                                    <span
+                                      key={i}
+                                      className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-50 text-slate-600 border border-slate-100"
+                                    >
+                                      {skill}
+                                    </span>
+                                  ))}
+                                </div>
                               ) : (
-                                <span className="text-[10px] text-slate-400 italic font-medium">Unassigned</span>
+                                <span className="text-[10px] text-slate-400 italic font-medium">No skills listed</span>
                               )}
                             </td>
 
-                            {/* Assigned Station */}
+                            {/* Engagement — lifetime events served */}
                             <td className="py-2.5 px-3">
-                              {station !== 'None' ? (
-                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-50 text-slate-600 border border-slate-100">
-                                  <MapPin size={9} className="text-[#856637]" />
-                                  {station}
+                              {assignedEventsCount > 0 ? (
+                                <span className="inline-flex items-center gap-1.5 text-[11px] text-[#5c4424]">
+                                  <span className="font-mono font-bold">{assignedEventsCount}</span>
+                                  <span className="text-slate-500">event{assignedEventsCount === 1 ? '' : 's'}</span>
                                 </span>
                               ) : (
-                                <span className="text-[10px] text-slate-400 font-medium">-</span>
+                                <span className="text-[10px] text-slate-400 font-medium">—</span>
                               )}
-                            </td>
-
-                            {/* Outreach Status Selector - INLINE TOGGLE */}
-                            <td className="py-2.5 px-3">
-                              <select
-                                value={status}
-                                onChange={(e) => handleUpdateContactStatus(vol.id, e.target.value)}
-                                className={`text-[10px] font-bold px-2 py-0.5 rounded-full border cursor-pointer focus:outline-none shadow-xs transition ${
-                                  status === 'Confirmed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100/70' :
-                                  status === 'Declined' ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100/70' :
-                                  status === 'Awaiting Reply' ? 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100/70' :
-                                  status === 'Contacted' ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100/70' :
-                                  'bg-slate-50 text-slate-650 border-slate-200 hover:bg-slate-100/70'
-                                }`}
-                              >
-                                <option value="Not Contacted">⚪ Not Contacted</option>
-                                <option value="Contacted">🔵 Contacted</option>
-                                <option value="Awaiting Reply">🟡 Awaiting Reply</option>
-                                <option value="Confirmed">🟢 Confirmed</option>
-                                <option value="Declined">🔴 Declined</option>
-                              </select>
                             </td>
 
                             {/* Contact Outreach Last Date & Notes */}
@@ -2305,7 +2286,7 @@ function VolunteerTable({
                           {/* Expanded Workspace Sub-Row */}
                           {isExpanded && (
                             <tr className="bg-[#faf8f4]/30">
-                              <td colSpan={7} className="p-6 border-l-2 border-l-[#856637] bg-slate-50/10">
+                              <td colSpan={6} className="p-6 border-l-2 border-l-[#856637] bg-slate-50/10">
                                 <motion.div
                                   initial={{ opacity: 0, y: -4 }}
                                   animate={{ opacity: 1, y: 0 }}
