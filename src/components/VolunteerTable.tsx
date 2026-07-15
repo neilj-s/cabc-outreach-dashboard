@@ -206,6 +206,8 @@ function VolunteerTable({
   const [showRoleDropdown, setShowRoleDropdown] = useState(false);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [showSkillDropdown, setShowSkillDropdown] = useState(false);
+  const [selectedMinistries, setSelectedMinistries] = useState<string[]>([]);
+  const [showMinistryDropdown, setShowMinistryDropdown] = useState(false);
 
   // --- REDESIGNED HIGH-DENSITY DIRECTORY STATE & HELPERS ---
   const [selectedLetter, setSelectedLetter] = useState<string | null>(null);
@@ -320,6 +322,36 @@ function VolunteerTable({
     return Array.from(skillsSet).sort((a, b) => a.localeCompare(b));
   }, [volunteers]);
 
+  // Distinct ministries, grouped case-insensitively. Display the most common
+  // original casing (ties broken alphabetically) so acronyms like "AWANA" survive.
+  const allUniqueMinistries = React.useMemo(() => {
+    const casingCounts = new Map<string, Map<string, number>>();
+    volunteers.forEach(v => {
+      if (!v.ministry) return;
+      v.ministry.split(',').forEach(m => {
+        const token = m.trim();
+        if (!token) return;
+        const key = token.toLowerCase();
+        if (!casingCounts.has(key)) casingCounts.set(key, new Map());
+        const inner = casingCounts.get(key)!;
+        inner.set(token, (inner.get(token) || 0) + 1);
+      });
+    });
+    const result: string[] = [];
+    casingCounts.forEach(inner => {
+      let best = '';
+      let bestCount = -1;
+      inner.forEach((count, casing) => {
+        if (count > bestCount || (count === bestCount && casing.localeCompare(best) < 0)) {
+          best = casing;
+          bestCount = count;
+        }
+      });
+      result.push(best);
+    });
+    return result.sort((a, b) => a.localeCompare(b));
+  }, [volunteers]);
+
   const baseVolunteers = React.useMemo(() => {
     if (viewMode === 'roster') {
       if (!activeEventId) return [];
@@ -362,9 +394,18 @@ function VolunteerTable({
         if (!hasMatchingSkill) return false;
       }
 
+      // 4. Ministry filter match (case-insensitive)
+      if (selectedMinistries.length > 0) {
+        if (!vol.ministry) return false;
+        const volMinistries = vol.ministry.split(',').map(m => m.trim().toLowerCase()).filter(Boolean);
+        const selectedLower = selectedMinistries.map(m => m.toLowerCase());
+        const hasMatchingMinistry = selectedLower.some(m => volMinistries.includes(m));
+        if (!hasMatchingMinistry) return false;
+      }
+
       return true;
     });
-  }, [baseVolunteers, searchTerm, selectedRoles, selectedSkills, activeEventId]);
+  }, [baseVolunteers, searchTerm, selectedRoles, selectedSkills, selectedMinistries, activeEventId]);
 
   // Filter list by letter if selected
   const directoryVolunteers = React.useMemo(() => {
@@ -1265,14 +1306,85 @@ function VolunteerTable({
               </div>
             </div>
 
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-serif font-bold text-slate-500">Filter Ministry:</span>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowMinistryDropdown(!showMinistryDropdown)}
+                  className="flex items-center justify-between gap-2 px-3 py-2 bg-white border border-[#e2dcd0] rounded-lg text-xs font-semibold text-slate-700 hover:bg-[#faf8f4] transition cursor-pointer select-none min-w-[160px] shadow-sm"
+                >
+                  <span className="truncate">
+                    {selectedMinistries.length === 0
+                      ? 'All Ministries'
+                      : `${selectedMinistries.length} Ministr${selectedMinistries.length > 1 ? 'ies' : 'y'} Active`}
+                  </span>
+                  <span className="text-[10px] text-slate-400">▼</span>
+                </button>
+
+                {showMinistryDropdown && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-10"
+                      onClick={() => setShowMinistryDropdown(false)}
+                    />
+                    <div className="absolute right-0 mt-1 w-64 bg-[#fcfaf7] border border-[#e2dcd0] rounded-xl shadow-lg z-20 p-3 space-y-2 animate-fadeIn max-h-72 overflow-y-auto">
+                      <div className="flex items-center justify-between pb-1.5 border-b border-[#efe0c2]">
+                        <span className="text-[10px] font-bold uppercase text-slate-400">Volunteer Ministries</span>
+                        <div className="flex gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedMinistries([])}
+                            className="text-[9px] font-bold text-slate-500 hover:text-slate-800 hover:underline cursor-pointer"
+                          >
+                            Reset
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedMinistries([...allUniqueMinistries])}
+                            className="text-[9px] font-bold text-[#856637] hover:underline cursor-pointer"
+                          >
+                            Select All
+                          </button>
+                        </div>
+                      </div>
+                      <div className="space-y-1.5 pt-1">
+                        {allUniqueMinistries.map(ministry => (
+                          <label key={ministry} className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-[#faf8f4] cursor-pointer text-xs font-semibold text-slate-700 select-none">
+                            <input
+                              type="checkbox"
+                              checked={selectedMinistries.includes(ministry)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedMinistries([...selectedMinistries, ministry]);
+                                } else {
+                                  setSelectedMinistries(selectedMinistries.filter(m => m !== ministry));
+                                }
+                              }}
+                              className="accent-[#856637] cursor-pointer"
+                            />
+                            <span className="truncate">{ministry}</span>
+                          </label>
+                        ))}
+                        {allUniqueMinistries.length === 0 && (
+                          <p className="text-[10px] text-slate-400 italic text-center py-2">No ministries registered.</p>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
             {/* Clear Filters Button */}
-            {(searchTerm || selectedRoles.length > 0 || selectedSkills.length > 0) && (
+            {(searchTerm || selectedRoles.length > 0 || selectedSkills.length > 0 || selectedMinistries.length > 0) && (
               <button
                 type="button"
                 onClick={() => {
                   setSearchTerm('');
                   setSelectedRoles([]);
                   setSelectedSkills([]);
+                  setSelectedMinistries([]);
                 }}
                 className="text-xs font-semibold text-rose-600 hover:text-rose-700 hover:underline px-2 py-1 cursor-pointer"
               >
@@ -1283,11 +1395,11 @@ function VolunteerTable({
         </div>
 
         {/* Info label about active filters */}
-        {(searchTerm || selectedRoles.length > 0 || selectedSkills.length > 0) && (
+        {(searchTerm || selectedRoles.length > 0 || selectedSkills.length > 0 || selectedMinistries.length > 0) && (
           <div className="text-[11px] text-slate-500 flex items-center gap-1 bg-[#faf8f4] border border-[#efe0c2]/50 px-3 py-1.5 rounded-lg animate-fadeIn">
             <span className="font-semibold text-[#856637]">Active Filters:</span>
             {searchTerm && <span>Search for <strong className="text-slate-700">"{searchTerm}"</strong></span>}
-            {searchTerm && (selectedRoles.length > 0 || selectedSkills.length > 0) && <span className="mx-1">•</span>}
+            {searchTerm && (selectedRoles.length > 0 || selectedSkills.length > 0 || selectedMinistries.length > 0) && <span className="mx-1">•</span>}
             {selectedRoles.length > 0 && (
               <span className="truncate max-w-[200px]" title={selectedRoles.join(', ')}>
                 Roles: <strong className="text-slate-700">{selectedRoles.join(', ')}</strong>
@@ -1297,6 +1409,12 @@ function VolunteerTable({
             {selectedSkills.length > 0 && (
               <span className="truncate max-w-[200px]" title={selectedSkills.join(', ')}>
                 Skills: <strong className="text-slate-700">{selectedSkills.join(', ')}</strong>
+              </span>
+            )}
+            {(selectedRoles.length > 0 || selectedSkills.length > 0) && selectedMinistries.length > 0 && <span className="mx-1">•</span>}
+            {selectedMinistries.length > 0 && (
+              <span className="truncate max-w-[200px]" title={selectedMinistries.join(', ')}>
+                Ministries: <strong className="text-slate-700">{selectedMinistries.join(', ')}</strong>
               </span>
             )}
             <span className="ml-auto text-slate-400 font-mono text-[10px] shrink-0">
