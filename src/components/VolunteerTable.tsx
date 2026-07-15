@@ -660,7 +660,7 @@ function VolunteerTable({
 
   const handleCreateVolunteer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !email) return;
+    if (!name) return;
     setSubmitting(true);
     try {
       const initialAssignments = (assignToActiveEvent && activeEventId) ? {
@@ -943,14 +943,13 @@ function VolunteerTable({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-450 mb-1">Email Address</label>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-450 mb-1">Email Address <span className="normal-case font-medium text-slate-400">(optional)</span></label>
               <input
                 type="email"
                 placeholder="sarah.j@example.com"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 className="w-full text-xs p-2.5 rounded-lg border border-[#efe0c2] bg-[#faf8f4] focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-medium"
-                required
               />
             </div>
             <div>

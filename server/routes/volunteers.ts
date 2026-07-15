@@ -12,8 +12,8 @@ router.get('/', (req, res) => {
 router.post('/', (req, res) => {
   const db = getDb();
   const { name, email, phone, roles, skills, notes, emails, eventAssignments } = req.body;
-  if (!name || !email) {
-    return res.status(400).json({ error: 'Name and email are required.' });
+  if (!name) {
+    return res.status(400).json({ error: 'Name is required.' });
   }
 
   const newVolunteer: Volunteer = {
