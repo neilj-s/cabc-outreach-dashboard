@@ -175,6 +175,7 @@ function VolunteerTable({
   const [skills, setSkills] = useState('');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [assignToActiveEvent, setAssignToActiveEvent] = useState(true);
 
   // Expanded Roster Row State
   const [expandedRosterVolId, setExpandedRosterVolId] = useState<string | null>(null);
@@ -662,7 +663,7 @@ function VolunteerTable({
     if (!name || !email) return;
     setSubmitting(true);
     try {
-      const initialAssignments = activeEventId ? {
+      const initialAssignments = (assignToActiveEvent && activeEventId) ? {
         [activeEventId]: {
           role: 'General Helper',
           station: 'General Area',
@@ -685,6 +686,7 @@ function VolunteerTable({
       setPhone('');
       setSkills('');
       setNotes('');
+      setAssignToActiveEvent(true);
       setShowAddForm(false);
     } catch (err) {
       console.error(err);
@@ -984,6 +986,22 @@ function VolunteerTable({
               className="w-full text-xs p-2.5 rounded-lg border border-[#efe0c2] bg-[#faf8f4] focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-medium"
             />
           </div>
+
+          {activeEventId && activeEvent && (
+            <label className="flex items-start gap-2.5 p-3 rounded-lg border border-[#efe0c2] bg-[#faf8f4] cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={assignToActiveEvent}
+                onChange={e => setAssignToActiveEvent(e.target.checked)}
+                className="mt-0.5 accent-[#856637] cursor-pointer"
+              />
+              <span className="text-xs text-slate-600 leading-snug">
+                <span className="font-semibold text-[#1e293b]">Assign to {activeEvent.name} now</span>
+                <br />
+                Uncheck to add to the directory only &mdash; you can place them on an event later from the roster picker.
+              </span>
+            </label>
+          )}
 
           <div className="flex gap-2 justify-end pt-2">
             <button
