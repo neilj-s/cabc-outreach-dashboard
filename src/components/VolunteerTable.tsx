@@ -218,6 +218,7 @@ function VolunteerTable({
   const [editEmail, setEditEmail] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [editSkills, setEditSkills] = useState('');
+  const [editMinistry, setEditMinistry] = useState('');
 
   // Placement Editor State (within Detail Panel)
   const [isEditingPlacement, setIsEditingPlacement] = useState<boolean>(false);
@@ -460,7 +461,8 @@ function VolunteerTable({
       editName.trim() !== (selectedVol.name || '').trim() ||
       editEmail.trim() !== (selectedVol.email || '').trim() ||
       editPhone.trim() !== (selectedVol.phone || '').trim() ||
-      editSkills.trim() !== (selectedVol.skills || '').trim();
+      editSkills.trim() !== (selectedVol.skills || '').trim() ||
+      editMinistry.trim() !== (selectedVol.ministry || '').trim();
       
     const privateNotesChanged =
       detailPrivateNotes.trim() !== (selectedVol.notes || '').trim();
@@ -482,6 +484,7 @@ function VolunteerTable({
     editEmail,
     editPhone,
     editSkills,
+    editMinistry,
     detailPrivateNotes,
     detailLastContacted,
     detailContactNotes,
@@ -498,6 +501,7 @@ function VolunteerTable({
         email: editEmail.trim(),
         phone: editPhone.trim(),
         skills: editSkills.trim(),
+        ministry: editMinistry.trim(),
         notes: detailPrivateNotes.trim(),
         lastContacted: detailLastContacted,
         contactNotes: detailContactNotes.trim()
@@ -580,6 +584,7 @@ function VolunteerTable({
       setEditEmail(selectedVol.email || '');
       setEditPhone(selectedVol.phone || '');
       setEditSkills(selectedVol.skills || '');
+      setEditMinistry(selectedVol.ministry || '');
       setDetailPrivateNotes(selectedVol.notes || '');
       setDetailLastContacted(selectedVol.lastContacted || '');
       setDetailContactNotes(selectedVol.contactNotes || '');
@@ -593,6 +598,7 @@ function VolunteerTable({
       setEditEmail('');
       setEditPhone('');
       setEditSkills('');
+      setEditMinistry('');
       setDetailPrivateNotes('');
       setDetailLastContacted('');
       setDetailContactNotes('');
@@ -2492,6 +2498,33 @@ function VolunteerTable({
                                           <p className="text-xs text-slate-400 italic">No registered roles</p>
                                         );
                                       })()}
+                                    </div>
+
+                                    {/* 4b. Ministry */}
+                                    <div className="space-y-1.5 border-t border-slate-100 pt-5">
+                                      {isEditingProfile ? (
+                                        <div className="space-y-2">
+                                          <label className="block text-[10px] font-bold uppercase text-slate-400">Ministry</label>
+                                          <input
+                                            type="text"
+                                            value={editMinistry}
+                                            onChange={e => setEditMinistry(e.target.value)}
+                                            className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80]"
+                                            placeholder="e.g. Worship, Children's, Hospitality, Outreach"
+                                          />
+                                        </div>
+                                      ) : (
+                                        <>
+                                          <span className="text-[10px] font-bold uppercase text-slate-400 block">Ministry</span>
+                                          {vol.ministry && vol.ministry.trim() !== '' ? (
+                                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold border border-[#efe0c2] bg-amber-50/40 text-[#856637] shadow-xs">
+                                              {vol.ministry}
+                                            </span>
+                                          ) : (
+                                            <p className="text-xs text-slate-400 italic">No ministry assigned</p>
+                                          )}
+                                        </>
+                                      )}
                                     </div>
 
                                     {/* 5. Skills */}
