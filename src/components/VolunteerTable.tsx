@@ -2215,10 +2215,15 @@ function VolunteerTable({
                             {/* Skills / Interests */}
                             <td className="py-2.5 px-3">
                               {vol.ministry && vol.ministry.trim() !== '' && (
-                                <div className="mb-1">
-                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#f3ead6] text-[#856637] border border-[#e6d3a8]">
-                                    {vol.ministry}
-                                  </span>
+                                <div className="flex flex-wrap gap-1 mb-1">
+                                  {vol.ministry.split(',').map(m => m.trim()).filter(Boolean).map((grp, gIdx) => (
+                                    <span
+                                      key={gIdx}
+                                      className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#f3ead6] text-[#856637] border border-[#e6d3a8]"
+                                    >
+                                      {grp}
+                                    </span>
+                                  ))}
                                 </div>
                               )}
                               {vol.skills && vol.skills.trim() !== '' ? (
@@ -2226,7 +2231,7 @@ function VolunteerTable({
                                   {vol.skills.split(',').map(s => s.trim()).filter(Boolean).map((skill, i) => (
                                     <span
                                       key={i}
-                                      className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-50 text-slate-600 border border-slate-100"
+                                      className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#eef3f8] text-[#3f5b7a] border border-[#d4e2f0]"
                                     >
                                       {skill}
                                     </span>
@@ -2516,10 +2521,17 @@ function VolunteerTable({
                                       ) : (
                                         <>
                                           <span className="text-[10px] font-bold uppercase text-slate-400 block">Ministry &amp; Small Group</span>
-                                          {vol.ministry && vol.ministry.trim() !== '' ? (
-                                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold border border-[#efe0c2] bg-amber-50/40 text-[#856637] shadow-xs">
-                                              {vol.ministry}
-                                            </span>
+                                          {vol.ministry && vol.ministry.split(',').map(m => m.trim()).filter(Boolean).length > 0 ? (
+                                            <div className="flex flex-wrap gap-1.5">
+                                              {vol.ministry.split(',').map(m => m.trim()).filter(Boolean).map((grp, gIdx) => (
+                                                <span
+                                                  key={gIdx}
+                                                  className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold border border-[#efe0c2] bg-amber-50/40 text-[#856637] shadow-xs"
+                                                >
+                                                  {grp}
+                                                </span>
+                                              ))}
+                                            </div>
                                           ) : (
                                             <p className="text-xs text-slate-400 italic">No ministry assigned</p>
                                           )}
@@ -2548,7 +2560,7 @@ function VolunteerTable({
                                               {vol.skills.split(',').map(s => s.trim()).filter(s => s !== '').map((skill, sIdx) => (
                                                 <span
                                                   key={sIdx}
-                                                  className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-medium border border-slate-200 text-slate-600 bg-white shadow-xs"
+                                                  className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-medium border border-[#d4e2f0] text-[#3f5b7a] bg-[#eef3f8] shadow-xs"
                                                 >
                                                   {skill}
                                                 </span>
