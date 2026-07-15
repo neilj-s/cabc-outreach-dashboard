@@ -28,7 +28,8 @@ import {
   Info,
   Filter,
   Search,
-  ArrowRight
+  ArrowRight,
+  Copy
 } from 'lucide-react';
 import { Volunteer, EmailCommunication, MinistryEvent } from '../types';
 import ConfirmDialog from './ConfirmDialog';
@@ -666,6 +667,60 @@ function VolunteerTable({
         </span>
       </button>
     );
+  };
+
+  const handleCopyAllEmails = async () => {
+    // Respect the currently shown list (search + role + skill filters).
+    const withEmail = filteredVolunteers.filter(
+      v => v.email && v.email.trim() !== ''
+    );
+    const skipped = filteredVolunteers.length - withEmail.length;
+    const uniqueEmails = Array.from(
+      new Set(withEmail.map(v => v.email.trim()))
+    );
+
+    if (uniqueEmails.length === 0) {
+      showNotification('No email addresses to copy for the current list.', 'error');
+      return;
+    }
+
+    const text = uniqueEmails.join(', ');
+
+    // Try the async clipboard API, fall back to a temporary textarea
+    // (covers browsers where navigator.clipboard is blocked, e.g. non-HTTPS).
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(text);
+      copied = true;
+    } catch {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        copied = document.execCommand('copy');
+        document.body.removeChild(ta);
+      } catch {
+        copied = false;
+      }
+    }
+
+    if (copied) {
+      const plural = uniqueEmails.length === 1 ? 'email' : 'emails';
+      const suffix = skipped > 0 ? ` · ${skipped} had no email` : '';
+      showNotification(
+        `${uniqueEmails.length} ${plural} copied to clipboard${suffix}`,
+        'success'
+      );
+    } else {
+      showNotification(
+        'Could not access the clipboard. Please copy manually.',
+        'error'
+      );
+    }
   };
 
   const handleCreateVolunteer = async (e: React.FormEvent) => {
@@ -1324,6 +1379,15 @@ function VolunteerTable({
                   : `Showing ${filteredVolunteers.length} of ${baseVolunteers.length} rostered`
                 }
               </span>
+              <button
+                type="button"
+                onClick={handleCopyAllEmails}
+                title="Copy all shown volunteer emails, comma-separated, for pasting into Gmail"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#856637] text-[#fdfaf4] text-xs font-bold rounded-lg border border-[#6f5430] shadow-sm hover:bg-[#6f5430] transition cursor-pointer"
+              >
+                <Copy size={13} />
+                <span>Copy All Emails</span>
+              </button>
             </div>
           </div>
 
