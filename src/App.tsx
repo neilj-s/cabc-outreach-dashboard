@@ -1562,6 +1562,11 @@ function MainApp() {
           <h1 className="text-3xl md:text-4xl font-serif font-black tracking-tight text-[#0f172a]">
             Community Relations
           </h1>
+          <p className="mt-2 flex items-center gap-2 font-serif italic text-[13px] text-[#856637]">
+            <span className="inline-block w-4 h-px bg-[#c2aa80]" aria-hidden="true" />
+            To God Be The Glory
+            <span className="inline-block w-4 h-px bg-[#c2aa80]" aria-hidden="true" />
+          </p>
         </div>
         <div className="flex flex-col items-start sm:items-end gap-3 text-left sm:text-right">
           <EventScopeSelector
