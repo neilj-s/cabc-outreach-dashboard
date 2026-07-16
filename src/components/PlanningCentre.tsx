@@ -1,5 +1,5 @@
 import { apiFetch } from "../lib/api";
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNotification } from '../context/NotificationContext';
 import { useFocusTrap } from '../lib/useFocusTrap';
@@ -85,6 +85,7 @@ interface PlanningCentreProps {
   userColor: string;
   connectedUsers: any[];
   setConnectedUsers: React.Dispatch<React.SetStateAction<any[]>>;
+  scratchpadEditors: Record<string, boolean>;
   scratchpadText: string;
   setScratchpadText: React.Dispatch<React.SetStateAction<string>>;
   collabTable: CollabTable;
@@ -111,6 +112,7 @@ function PlanningCentre({
   userColor,
   connectedUsers,
   setConnectedUsers,
+  scratchpadEditors,
   scratchpadText,
   setScratchpadText,
   collabTable,
@@ -185,6 +187,10 @@ function PlanningCentre({
   const [isScratchpadFocused, setIsScratchpadFocused] = useState<boolean>(false);
   const [scratchpadSavedTime, setScratchpadSavedTime] = useState<string | null>(null);
   const saveTimeoutRef = useRef<any>(null);
+  const scratchpadRef = useRef<HTMLTextAreaElement>(null);
+  const lastLocalValueRef = useRef<string>(scratchpadText || '');
+  const caretRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 });
+  const prevScratchpadRef = useRef<string>(scratchpadText || '');
   const [timeTick, setTimeTick] = useState<number>(0);
 
   useEffect(() => {
@@ -529,6 +535,10 @@ function PlanningCentre({
   // Sync scratchpad edits to WS and save
   const handleScratchpadChange = (text: string) => {
     setScratchpadText(text);
+    lastLocalValueRef.current = text;
+    const ta = scratchpadRef.current;
+    if (ta) caretRef.current = { start: ta.selectionStart, end: ta.selectionEnd };
+
     setSavingScratchpad(true);
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
@@ -539,9 +549,48 @@ function PlanningCentre({
     handleSaveScratchpad(text);
   };
 
+  // Preserve caret position when a REMOTE edit replaces the scratchpad value.
+  useLayoutEffect(() => {
+    const ta = scratchpadRef.current;
+    const oldText = prevScratchpadRef.current;
+    const newText = scratchpadText || '';
+    prevScratchpadRef.current = newText;
+
+    if (!ta) return;
+    if (oldText === newText) return;
+    // Skip our own edit — the browser already placed the caret during native input.
+    if (newText === lastLocalValueRef.current) return;
+    // Only relevant if this user is currently focused in the textarea.
+    if (document.activeElement !== ta) return;
+
+    // Locate the changed region via common prefix + suffix.
+    const oldLen = oldText.length;
+    const newLen = newText.length;
+    let p = 0;
+    const maxP = Math.min(oldLen, newLen);
+    while (p < maxP && oldText[p] === newText[p]) p++;
+    let s = 0;
+    const maxS = Math.min(oldLen, newLen) - p;
+    while (s < maxS && oldText[oldLen - 1 - s] === newText[newLen - 1 - s]) s++;
+
+    const delta = newLen - oldLen;
+    const remap = (pos: number) => {
+      if (pos <= p) return pos;                    // before the change — unaffected
+      if (pos >= oldLen - s) return pos + delta;   // after the change — shift by delta
+      return Math.min(pos, newLen - s);            // inside the change — clamp to its end
+    };
+
+    const { start, end } = caretRef.current;
+    const newStart = remap(start);
+    const newEnd = remap(end);
+    ta.setSelectionRange(newStart, newEnd);
+    caretRef.current = { start: newStart, end: newEnd };
+  }, [scratchpadText]);
+
   // Sync cursor position over WS
   const handleTextareaSelectionChange = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
     const target = e.currentTarget;
+    caretRef.current = { start: target.selectionStart, end: target.selectionEnd };
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
         type: 'CURSOR_MOVE',
@@ -2024,7 +2073,7 @@ function PlanningCentre({
 
             {/* Presence cue for scratchpad editing */}
             {(() => {
-              const editors = connectedUsers.filter(u => u.cursor !== null && typeof u.cursor === 'number');
+              const editors = connectedUsers.filter(u => scratchpadEditors[u.id]);
               if (editors.length === 0) return null;
 
               return (
@@ -2112,6 +2161,7 @@ function PlanningCentre({
 
               {/* Text Area */}
               <textarea
+                ref={scratchpadRef}
                 id="scratchpad-textarea"
                 value={scratchpadText || ''}
                 onChange={(e) => handleScratchpadChange(e.target.value)}

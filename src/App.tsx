@@ -256,6 +256,16 @@ function MainApp() {
   });
 
   const [connectedUsers, setConnectedUsers] = useState<any[]>([]);
+  const [scratchpadEditors, setScratchpadEditors] = useState<Record<string, boolean>>({});
+  const editorTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  useEffect(() => {
+    const timeouts = editorTimeoutsRef.current;
+    return () => {
+      Object.values(timeouts).forEach(clearTimeout);
+    };
+  }, []);
+
   const [scratchpadText, setScratchpadText] = useState<string>('');
   const [collabTable, setCollabTable] = useState<CollabTable>({
     headers: ['Time', 'Session / Item', 'Lane', 'Lead Officer', 'Required Prep / Notes'],
@@ -337,6 +347,21 @@ function MainApp() {
               }
               case 'TEXT_EDIT': {
                 setScratchpadText(msg.payload.text);
+                const editorId = msg.payload.userId;
+                if (editorId) {
+                  setScratchpadEditors(prev => (prev[editorId] ? prev : { ...prev, [editorId]: true }));
+                  if (editorTimeoutsRef.current[editorId]) {
+                    clearTimeout(editorTimeoutsRef.current[editorId]);
+                  }
+                  editorTimeoutsRef.current[editorId] = setTimeout(() => {
+                    setScratchpadEditors(prev => {
+                      const next = { ...prev };
+                      delete next[editorId];
+                      return next;
+                    });
+                    delete editorTimeoutsRef.current[editorId];
+                  }, 2500);
+                }
                 break;
               }
               case 'TABLE_EDIT': {
@@ -1372,6 +1397,7 @@ function MainApp() {
             userColor={userColor}
             connectedUsers={connectedUsers}
             setConnectedUsers={setConnectedUsers}
+            scratchpadEditors={scratchpadEditors}
             scratchpadText={scratchpadText}
             setScratchpadText={setScratchpadText}
             collabTable={collabTable}
