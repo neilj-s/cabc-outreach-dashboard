@@ -25,6 +25,7 @@ import {
 import { MinistryEvent, Task, MinistryLane, MilestoneKey, EventDoc, LaneDetail, Volunteer } from '../types';
 import TaskCard from './TaskCard';
 import ConfirmDialog from './ConfirmDialog';
+import { getTodayISO } from '../lib/dates';
 
 interface ReverseTimelineProps {
   events: MinistryEvent[];
@@ -86,9 +87,9 @@ export default function ReverseTimeline({
   const [selectedAssigneeFilter, setSelectedAssigneeFilter] = useState<string>('All');
   const [taskSortOrder, setTaskSortOrder] = useState<'default' | 'priority-desc' | 'due-date'>('default');
   const [timelineViewMode, setTimelineViewMode] = useState<'list' | 'calendar'>('list');
-  const [calMonth, setCalMonth] = useState<number>(new Date('2026-07-08').getMonth()); // July (index 6)
-  const [calYear, setCalYear] = useState<number>(new Date('2026-07-08').getFullYear()); // 2026
-  const [selectedCalDay, setSelectedCalCalDay] = useState<string | null>('2026-07-08');
+  const [calMonth, setCalMonth] = useState<number>(new Date().getMonth());
+  const [calYear, setCalYear] = useState<number>(new Date().getFullYear());
+  const [selectedCalDay, setSelectedCalCalDay] = useState<string | null>(getTodayISO());
 
   // Custom task form state (for selected event)
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -163,7 +164,7 @@ export default function ReverseTimeline({
     };
 
     const taskDate = parseLocalDate(task.dueDate);
-    const todayDate = parseLocalDate('2026-07-08');
+    const todayDate = parseLocalDate(getTodayISO());
 
     return taskDate.getTime() < todayDate.getTime();
   };
@@ -1240,8 +1241,8 @@ export default function ReverseTimeline({
                   <button
                     type="button"
                     onClick={() => {
-                      setCalMonth(new Date('2026-07-08').getMonth());
-                      setCalYear(new Date('2026-07-08').getFullYear());
+                      setCalMonth(new Date().getMonth());
+                      setCalYear(new Date().getFullYear());
                     }}
                     className="px-2.5 py-1 text-[10px] uppercase font-bold hover:bg-[#f5ebd6]/50 rounded-lg border border-[#e2dcd0] transition text-slate-600 cursor-pointer"
                   >
@@ -1273,7 +1274,7 @@ export default function ReverseTimeline({
                     return <div key={`empty-${idx}`} className="aspect-square bg-slate-50/20 rounded-xl border border-dashed border-[#e2dcd0]/30" />;
                   }
 
-                  const isToday = cell.dateString === '2026-07-08';
+                  const isToday = cell.dateString === getTodayISO();
                   const isSelected = selectedCalDay === cell.dateString;
                   
                   // Filter events & tasks
@@ -1335,14 +1336,14 @@ export default function ReverseTimeline({
                     {selectedCalDay ? formatHumanDate(selectedCalDay) : 'Select a Day'}
                   </h4>
                   <p className="text-[9px] font-mono font-medium text-slate-400 mt-0.5">
-                    {selectedCalDay === '2026-07-08' ? '● Current Planning Today' : ''}
+                    {selectedCalDay === getTodayISO() ? '● Current Planning Today' : ''}
                   </p>
                 </div>
 
                 {/* Selected Day Content */}
                 <div className="mt-4 space-y-4 overflow-y-auto max-h-[340px] pr-1">
                   {(() => {
-                    const dayStr = selectedCalDay || '2026-07-08';
+                    const dayStr = selectedCalDay || getTodayISO();
                     const dayEvents = events.filter(e => e.date === dayStr);
                     const dayTasks = events.flatMap(evt => 
                       (evt.tasks || []).map(t => ({ ...t, eventName: evt.name, eventId: evt.id }))
