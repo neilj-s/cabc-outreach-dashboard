@@ -36,6 +36,7 @@ import {
 import { LaneDetail, MinistryEvent, RecentActivity, Volunteer, MilestoneKey, MinistryLane, Expense, Debrief } from '../types';
 import ConfirmDialog from './ConfirmDialog';
 import { apiFetch } from '../lib/api';
+import { getDaysOut, getTodayISO } from '../lib/dates';
 import {
   ResponsiveContainer,
   PieChart,
@@ -236,13 +237,7 @@ function DashboardOverview({
 
   const filteredEvents = React.useMemo(() => {
     return events.filter(event => {
-      const [y1, m1, dd1] = event.date.split('-');
-      const eventDate = new Date(parseInt(y1, 10), parseInt(m1, 10) - 1, parseInt(dd1, 10));
-      const today = new Date(2026, 6, 6); // July 6, 2026
-      const d1 = Date.UTC(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate());
-      const d2 = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
-      const diffDays = Math.ceil((d1 - d2) / (1000 * 60 * 60 * 24));
-      const daysOut = isNaN(diffDays) ? 0 : diffDays;
+      const daysOut = getDaysOut(event.date);
 
       if (eventStatusFilter === 'upcoming') {
         return daysOut >= 0;
@@ -414,7 +409,7 @@ function DashboardOverview({
   const getNextMajorEvent = () => {
     if (!events || events.length === 0) return null;
     const sorted = [...events].sort((a, b) => a.date.localeCompare(b.date));
-    const todayStr = '2026-07-08'; // System current local date
+    const todayStr = getTodayISO(); // System current local date
     const futureEvents = sorted.filter(e => e.date >= todayStr);
     return futureEvents.length > 0 ? futureEvents[0] : sorted[sorted.length - 1] || sorted[0];
   };
@@ -545,8 +540,7 @@ function DashboardOverview({
   const formatRelativeTime = (isoStr: string) => {
     try {
       const date = new Date(isoStr);
-      // July 7, 2026, 21:24:25 local time
-      const now = new Date('2026-07-07T21:24:25-07:00');
+      const now = new Date();
       const diffMs = now.getTime() - date.getTime();
       const diffMins = Math.floor(diffMs / (1000 * 60));
       const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
@@ -647,14 +641,7 @@ function DashboardOverview({
   const tickerEvent = events.find(e => e.id === selectedEventId) || events[0];
   let tickerDaysOut: number | null = null;
   if (tickerEvent) {
-    const [y1, m1, dd1] = tickerEvent.date.split('-');
-    const eventDate = new Date(parseInt(y1, 10), parseInt(m1, 10) - 1, parseInt(dd1, 10));
-    const today = new Date(2026, 6, 6); // July 6, 2026 for consistency with rest of app
-    
-    const d1 = Date.UTC(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate());
-    const d2 = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
-    const diffDays = Math.ceil((d1 - d2) / (1000 * 60 * 60 * 24));
-    tickerDaysOut = isNaN(diffDays) ? 0 : diffDays;
+    tickerDaysOut = getDaysOut(tickerEvent.date);
   }
 
   return (
@@ -733,14 +720,7 @@ function DashboardOverview({
                 ))
               ) : filteredEvents.map((event) => {
                 // Calculate days out relative to target date (2026-07-06)
-                const [y1, m1, dd1] = event.date.split('-');
-                const eventDate = new Date(parseInt(y1, 10), parseInt(m1, 10) - 1, parseInt(dd1, 10));
-                const today = new Date(2026, 6, 6); // July 6, 2026
-                
-                const d1 = Date.UTC(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate());
-                const d2 = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
-                const diffDays = Math.ceil((d1 - d2) / (1000 * 60 * 60 * 24));
-                const daysOut = isNaN(diffDays) ? 0 : diffDays;
+                const daysOut = getDaysOut(event.date);
 
                 // Active milestone step
                 const getActiveMilestone = (days: number) => {
@@ -905,14 +885,7 @@ function DashboardOverview({
                 const completedTasksCount = selectedEvent.tasks?.filter(t => t.completed).length || 0;
                 const taskPercent = totalTasksCount > 0 ? Math.round((completedTasksCount / totalTasksCount) * 100) : 0;
 
-                const [y1, m1, dd1] = selectedEvent.date.split('-');
-                const eventDate = new Date(parseInt(y1, 10), parseInt(m1, 10) - 1, parseInt(dd1, 10));
-                const today = new Date(2026, 6, 6); // July 6, 2026
-                
-                const d1 = Date.UTC(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate());
-                const d2 = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
-                const diffDays = Math.ceil((d1 - d2) / (1000 * 60 * 60 * 24));
-                const daysOut = isNaN(diffDays) ? 0 : diffDays;
+                const daysOut = getDaysOut(selectedEvent.date);
 
                 // Budget status details
                 let budgetStatusText = 'On track';

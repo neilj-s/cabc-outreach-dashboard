@@ -10,3 +10,23 @@ export function parseLocalDate(dateStr: string): Date {
   const [year, month, day] = dateStr.split('-').map(Number);
   return new Date(year, month - 1, day);
 }
+
+/**
+ * Whole days from today until the given YYYY-MM-DD event date.
+ * Positive = future, 0 = today, negative = past. Uses the REAL current
+ * date. Date.UTC on the y/m/d components gives a clean day delta that is
+ * immune to DST shifts.
+ */
+export function getDaysOut(eventDateStr: string): number {
+  const eventDate = parseLocalDate(eventDateStr);
+  const today = new Date();
+  const d1 = Date.UTC(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate());
+  const d2 = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const diffDays = Math.ceil((d1 - d2) / (1000 * 60 * 60 * 24));
+  return isNaN(diffDays) ? 0 : diffDays;
+}
+
+/** Real current date as a local YYYY-MM-DD string (for comparing against event.date). */
+export function getTodayISO(): string {
+  return new Date().toLocaleDateString('en-CA');
+}
