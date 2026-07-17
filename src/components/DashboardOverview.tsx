@@ -463,7 +463,7 @@ function DashboardOverview({
   // Computed values for KPI and Needs Attention sections
   const overdueTasksCount = events.reduce((count, event) => {
     if (!event.tasks) return count;
-    const overdueInEvent = event.tasks.filter(task => !task.completed && task.dueDate && task.dueDate < '2026-07-08');
+    const overdueInEvent = event.tasks.filter(task => !task.completed && task.dueDate && task.dueDate < getTodayISO());
     return count + overdueInEvent.length;
   }, 0);
 
