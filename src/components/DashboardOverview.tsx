@@ -409,7 +409,7 @@ function DashboardOverview({
   const getNextMajorEvent = () => {
     if (!events || events.length === 0) return null;
     const sorted = [...events].sort((a, b) => a.date.localeCompare(b.date));
-    const todayStr = getTodayISO(); // System current local date
+    const todayStr = getTodayISO();
     const futureEvents = sorted.filter(e => e.date >= todayStr);
     return futureEvents.length > 0 ? futureEvents[0] : sorted[sorted.length - 1] || sorted[0];
   };
@@ -719,7 +719,6 @@ function DashboardOverview({
                   </div>
                 ))
               ) : filteredEvents.map((event) => {
-                // Calculate days out relative to target date (2026-07-06)
                 const daysOut = getDaysOut(event.date);
 
                 // Active milestone step

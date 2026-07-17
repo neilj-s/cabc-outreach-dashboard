@@ -25,7 +25,7 @@ import {
 import { MinistryEvent, Task, MinistryLane, MilestoneKey, EventDoc, LaneDetail, Volunteer } from '../types';
 import TaskCard from './TaskCard';
 import ConfirmDialog from './ConfirmDialog';
-import { getTodayISO } from '../lib/dates';
+import { getTodayISO, parseLocalDate } from '../lib/dates';
 
 interface ReverseTimelineProps {
   events: MinistryEvent[];
@@ -89,7 +89,7 @@ export default function ReverseTimeline({
   const [timelineViewMode, setTimelineViewMode] = useState<'list' | 'calendar'>('list');
   const [calMonth, setCalMonth] = useState<number>(new Date().getMonth());
   const [calYear, setCalYear] = useState<number>(new Date().getFullYear());
-  const [selectedCalDay, setSelectedCalCalDay] = useState<string | null>(getTodayISO());
+  const [selectedCalDay, setSelectedCalDay] = useState<string | null>(getTodayISO());
 
   // Custom task form state (for selected event)
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -158,11 +158,6 @@ export default function ReverseTimeline({
     if (task.completed) return false;
     if (!task.dueDate) return false;
 
-    const parseLocalDate = (dateStr: string): Date => {
-      const [year, month, day] = dateStr.split('-').map(Number);
-      return new Date(year, month - 1, day);
-    };
-
     const taskDate = parseLocalDate(task.dueDate);
     const todayDate = parseLocalDate(getTodayISO());
 
@@ -176,10 +171,6 @@ export default function ReverseTimeline({
     if (!selectedEvent || !selectedEvent.tasks || selectedEvent.tasks.length === 0) return [];
 
     const eventDateStr = selectedEvent.date;
-    const parseLocalDate = (dateStr: string): Date => {
-      const [year, month, day] = dateStr.split('-').map(Number);
-      return new Date(year, month - 1, day);
-    };
 
     const formatLocalDate = (date: Date): string => {
       const y = date.getFullYear();
@@ -439,10 +430,6 @@ export default function ReverseTimeline({
   const getTimeOutLabel = (dueDateStr: string, eventDateStr: string): string => {
     if (!dueDateStr || !eventDateStr) return '';
     try {
-      const parseLocalDate = (dateStr: string): Date => {
-        const [year, month, day] = dateStr.split('-').map(Number);
-        return new Date(year, month - 1, day);
-      };
       const dateA = parseLocalDate(eventDateStr);
       const dateB = parseLocalDate(dueDateStr);
       const diffMs = dateA.getTime() - dateB.getTime();
@@ -507,7 +494,7 @@ export default function ReverseTimeline({
     } else {
       setCalMonth(m => m - 1);
     }
-    setSelectedCalCalDay(null);
+    setSelectedCalDay(null);
   };
 
   const handleNextMonth = () => {
@@ -517,7 +504,7 @@ export default function ReverseTimeline({
     } else {
       setCalMonth(m => m + 1);
     }
-    setSelectedCalCalDay(null);
+    setSelectedCalDay(null);
   };
 
   return (
@@ -1292,7 +1279,7 @@ export default function ReverseTimeline({
                     <button
                       key={`day-${cell.day}`}
                       type="button"
-                      onClick={() => setSelectedCalCalDay(cell.dateString)}
+                      onClick={() => setSelectedCalDay(cell.dateString)}
                       className={`aspect-square p-2 rounded-xl border flex flex-col justify-between transition-all cursor-pointer relative ${
                         isSelected
                           ? 'bg-[#efe9dc] border-[#c2aa80] ring-1 ring-[#c2aa80]'
