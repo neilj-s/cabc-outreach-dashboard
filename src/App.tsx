@@ -1,4 +1,5 @@
 import { apiFetch, auth } from "./lib/api";
+import { parseLocalDate } from './lib/dates';
 import { signInWithPopup, GoogleAuthProvider, User, onAuthStateChanged } from 'firebase/auth';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -465,14 +466,14 @@ function MainApp() {
   });
 
   const availableYears = Array.isArray(events)
-    ? Array.from(new Set(events.map(e => new Date(e.date).getFullYear()))).sort((a: number, b: number) => b - a)
+    ? Array.from(new Set(events.map(e => parseLocalDate(e.date).getFullYear()))).sort((a: number, b: number) => b - a)
     : [];
   if (!availableYears.includes(new Date().getFullYear())) {
     availableYears.unshift(new Date().getFullYear());
     availableYears.sort((a: number, b: number) => b - a);
   }
   const filteredEvents = Array.isArray(events)
-    ? events.filter(e => new Date(e.date).getFullYear() === selectedYear)
+    ? events.filter(e => parseLocalDate(e.date).getFullYear() === selectedYear)
     : [];
 
   const [loading, setLoading] = useState<boolean>(true);

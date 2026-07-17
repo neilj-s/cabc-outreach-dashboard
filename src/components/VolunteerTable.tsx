@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { parseLocalDate } from '../lib/dates';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { useNotification } from '../context/NotificationContext';
 import { 
@@ -1024,7 +1025,7 @@ function VolunteerTable({
             >
               {events.map((evt) => (
                 <option key={evt.id} value={evt.id}>
-                  {evt.name} • {new Date(evt.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  {evt.name} • {parseLocalDate(evt.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                 </option>
               ))}
             </select>

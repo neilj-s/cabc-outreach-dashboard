@@ -1,5 +1,6 @@
 import { apiFetch } from "../lib/api";
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { parseLocalDate } from '../lib/dates';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNotification } from '../context/NotificationContext';
 import { useFocusTrap } from '../lib/useFocusTrap';
@@ -1241,7 +1242,7 @@ function PlanningCentre({
                   <option value="" disabled>-- Select target event --</option>
                   {events.map(evt => (
                     <option key={evt.id} value={evt.id}>
-                      {evt.name} ({new Date(evt.date).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })})
+                      {evt.name} ({parseLocalDate(evt.date).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })})
                     </option>
                   ))}
                 </select>
@@ -1498,7 +1499,7 @@ function PlanningCentre({
                       <div className="bg-[#faf8f4]/60 border border-[#e2dcd0]/80 rounded-2xl p-5 space-y-1.5">
                         <div className="flex items-center gap-2 text-[10px] font-mono text-slate-400">
                           <Calendar size={11} />
-                          <span>{new Date(activeEvt.date).toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                          <span>{parseLocalDate(activeEvt.date).toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
                         </div>
                         <h3 className="text-lg font-serif font-black text-[#856637]">{activeEvt.name}</h3>
                         <p className="text-xs text-slate-500 leading-relaxed max-w-2xl">{activeEvt.description}</p>
@@ -2241,7 +2242,7 @@ function PlanningCentre({
                 {(() => {
                   const evt = events.find(e => e.id === selectedEventId);
                   if (!evt) return '';
-                  return new Date(evt.date).toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+                  return parseLocalDate(evt.date).toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
                 })()}
               </span>
             </div>

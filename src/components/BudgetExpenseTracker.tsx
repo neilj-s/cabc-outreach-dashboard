@@ -1,5 +1,6 @@
 import { apiFetch } from "../lib/api";
 import React, { useState, useEffect } from 'react';
+import { parseLocalDate } from '../lib/dates';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNotification } from '../context/NotificationContext';
 import { useFocusTrap } from '../lib/useFocusTrap';
@@ -1295,7 +1296,7 @@ function BudgetExpenseTracker({
                     else if (exp.category === 'Supplies') badgeStyle = 'bg-indigo-100 text-indigo-800';
                     else if (exp.category === 'Marketing') badgeStyle = 'bg-violet-100 text-violet-800';
 
-                    const formattedDate = exp.date ? new Date(exp.date + 'T12:00:00').toLocaleDateString('en-US', {
+                    const formattedDate = exp.date ? parseLocalDate(exp.date).toLocaleDateString('en-US', {
                       month: 'short',
                       day: 'numeric',
                       year: 'numeric'
