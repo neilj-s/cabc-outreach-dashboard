@@ -599,7 +599,18 @@ function VolunteerTable({
           contactStatus: status as any
         }
       };
-      await onUpdateVolunteer(vol.id, { eventAssignments: updatedAssignments });
+
+      let declinedEventIds = vol.declinedEventIds || [];
+      if (status === 'Declined') {
+        declinedEventIds = Array.from(new Set([...declinedEventIds, activeEventId]));
+      } else {
+        declinedEventIds = declinedEventIds.filter(id => id !== activeEventId);
+      }
+
+      await onUpdateVolunteer(vol.id, { 
+        eventAssignments: updatedAssignments,
+        declinedEventIds
+      });
     } catch (err) {
       console.error('Failed to update contact status:', err);
     }
@@ -834,7 +845,11 @@ function VolunteerTable({
     const currentAssignments = { ...(vol.eventAssignments || {}) };
     delete currentAssignments[activeEventId];
 
-    await onUpdateVolunteer(volId, { eventAssignments: currentAssignments });
+    const declinedEventIds = Array.from(
+      new Set([...(vol.declinedEventIds || []), activeEventId])
+    );
+
+    await onUpdateVolunteer(volId, { eventAssignments: currentAssignments, declinedEventIds });
     setNewRoleName('');
     setNewStationName('');
     setNewEventNotes('');
