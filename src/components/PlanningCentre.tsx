@@ -53,7 +53,8 @@ import {
   ShieldAlert,
   ShieldCheck,
   Lock,
-  Unlock
+  Unlock,
+  AlertTriangle
 } from 'lucide-react';
 import { MinistryEvent, LaneDetail, MilestoneKey, MinistryLane, EventDoc, AttachedDoc, CollabTable, RecentActivity } from '../types';
 import ConfirmDialog from './ConfirmDialog';
@@ -1387,6 +1388,10 @@ function PlanningCentre({
                       IconComponent = ThumbsUp;
                       iconColor = 'text-sky-600';
                       bgColor = 'bg-sky-50';
+                    } else if (act.type === 'signup_issue') {
+                      IconComponent = AlertTriangle;
+                      iconColor = 'text-amber-700';
+                      bgColor = 'bg-amber-50';
                     }
 
                     return (
