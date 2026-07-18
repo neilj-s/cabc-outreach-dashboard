@@ -27,6 +27,7 @@ import inventoryRouter from './server/routes/inventory';
 import reservationsRouter from './server/routes/reservations';
 import lanesRouter from './server/routes/lanes';
 import versesRouter from './server/routes/verses';
+import volunteerIntakeRouter from './server/routes/volunteerIntake';
 
 import { MinistryEvent, Asset, Volunteer, Task, LaneDetail } from './src/types';
 
@@ -39,6 +40,7 @@ async function startServer() {
 
   // --- PUBLIC ENDPOINTS (No firebaseAuth needed) ---
   app.use('/api/drive', driveRouter);
+  app.use('/api/volunteers/intake', volunteerIntakeRouter);
 
   // --- SECURED ENDPOINTS (Firebase requireAuth) ---
   app.use('/api', requireAuth);
