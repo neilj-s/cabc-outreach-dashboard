@@ -129,6 +129,7 @@ export interface Volunteer {
   notes?: string;
   emails?: EmailCommunication[]; // Email communication tracker entries (deprecated)
   eventAssignments?: Record<string, VolunteerEventAssignment>; // map of eventId -> assignment
+  declinedEventIds?: string[]; // events this volunteer withdrew from; blocks silent re-add
   lastContacted?: string; // YYYY-MM-DD
   contactNotes?: string;
 }
@@ -175,7 +176,7 @@ export interface CollabTable {
 
 export interface RecentActivity {
   id: string;
-  type: 'task_completed' | 'volunteer_registered' | 'event_updated' | 'event_created';
+  type: 'task_completed' | 'volunteer_registered' | 'event_updated' | 'event_created' | 'signup_issue';
   timestamp: string; // ISO string
   title: string;
   description: string;

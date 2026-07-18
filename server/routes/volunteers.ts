@@ -50,7 +50,7 @@ router.post('/', (req, res) => {
 router.patch('/:id', (req, res) => {
   const db = getDb();
   const { id } = req.params;
-  const { name, email, phone, roles, skills, ministry, notes, emails, eventAssignments } = req.body;
+  const { name, email, phone, roles, skills, ministry, notes, emails, eventAssignments, declinedEventIds } = req.body;
 
   const vol = db.volunteers.find((v: Volunteer) => v.id === id);
   if (!vol) {
@@ -69,6 +69,7 @@ router.patch('/:id', (req, res) => {
   if (notes !== undefined) vol.notes = notes;
   if (emails !== undefined) vol.emails = emails;
   if (eventAssignments !== undefined) vol.eventAssignments = eventAssignments;
+  if (declinedEventIds !== undefined) vol.declinedEventIds = declinedEventIds;
 
   saveDb(db);
   broadcast({
