@@ -38,6 +38,11 @@ async function startServer() {
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+  // Lightweight health check for uptime monitoring — no auth, no DB.
+  app.get('/healthz', (_req, res) => {
+    res.status(200).json({ status: 'ok', time: new Date().toISOString() });
+  });
+
   // --- PUBLIC ENDPOINTS (No firebaseAuth needed) ---
   app.use('/api/drive', driveRouter);
   app.use('/api/volunteers/intake', volunteerIntakeRouter);
