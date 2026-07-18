@@ -31,12 +31,14 @@ import {
   Upload, Copy,
   Coins,
   TrendingUp,
-  BookOpen
+  BookOpen,
+  Link2
 } from 'lucide-react';
 import { LaneDetail, MinistryEvent, RecentActivity, Volunteer, MilestoneKey, MinistryLane, Expense, Debrief } from '../types';
 import ConfirmDialog from './ConfirmDialog';
 import { apiFetch } from '../lib/api';
 import { getDaysOut, getTodayISO } from '../lib/dates';
+import { buildRegistrationLink } from '../lib/registration';
 import {
   ResponsiveContainer,
   PieChart,
@@ -210,6 +212,17 @@ function DashboardOverview({
   const [isCloning, setIsCloning] = React.useState(false);
   const [selectedVolIds, setSelectedVolIds] = React.useState<string[]>([]);
   const [copyEquipment, setCopyEquipment] = React.useState(true);
+
+  const [copiedRegId, setCopiedRegId] = React.useState<string | null>(null);
+
+  const handleCopyRegLink = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    const link = buildRegistrationLink(id);
+    if (!link) return;
+    navigator.clipboard.writeText(link);
+    setCopiedRegId(id);
+    setTimeout(() => setCopiedRegId(prev => (prev === id ? null : prev)), 1800);
+  };
 
   const assignedVolunteersForClone = React.useMemo(() => {
     if (!cloneEventTargetId || !volunteers) return [];
@@ -782,14 +795,26 @@ function DashboardOverview({
                       <span className="inline-flex items-center px-4 py-1.5 rounded-full text-xs font-semibold bg-[#f5ebd6]/80 text-[#856637] border border-[#efe0c2] shadow-sm">
                         Now: {activeMilestone}
                       </span>
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); setCloneEventTargetId(event.id); setCloneEventNewDate(''); }}
-                        className="p-1.5 text-slate-400 hover:text-[#856637] hover:bg-[#f5ebd6]/50 rounded-lg transition-colors "
-                        title="Clone to New Year"
-                      >
-                        <Copy size={16} />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        {buildRegistrationLink(event.id) && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleCopyRegLink(e, event.id)}
+                            className="p-1.5 text-slate-400 hover:text-[#856637] hover:bg-[#f5ebd6]/50 rounded-lg transition-colors"
+                            title={copiedRegId === event.id ? 'Link copied' : 'Copy registration link'}
+                          >
+                            {copiedRegId === event.id ? <Check size={16} /> : <Link2 size={16} />}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setCloneEventTargetId(event.id); setCloneEventNewDate(''); }}
+                          className="p-1.5 text-slate-400 hover:text-[#856637] hover:bg-[#f5ebd6]/50 rounded-lg transition-colors "
+                          title="Clone to New Year"
+                        >
+                          <Copy size={16} />
+                        </button>
+                      </div>
                     </div>
 
                     {/* Task Progress Footer Row */}
