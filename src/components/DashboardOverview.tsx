@@ -32,7 +32,8 @@ import {
   Coins,
   TrendingUp,
   BookOpen,
-  Link2
+  Link2,
+  QrCode
 } from 'lucide-react';
 import { LaneDetail, MinistryEvent, RecentActivity, Volunteer, MilestoneKey, MinistryLane, Expense, Debrief } from '../types';
 import ConfirmDialog from './ConfirmDialog';
@@ -222,6 +223,23 @@ function DashboardOverview({
     navigator.clipboard.writeText(link);
     setCopiedRegId(id);
     setTimeout(() => setCopiedRegId(prev => (prev === id ? null : prev)), 1800);
+  };
+
+  const handleDownloadQR = async (e: React.MouseEvent, ev: MinistryEvent) => {
+    e.stopPropagation();
+    const link = buildRegistrationLink(ev.id);
+    if (!link) return;
+    try {
+      const QR = await import('qrcode');
+      const dataUrl = await QR.toDataURL(link, { width: 512, margin: 2 });
+      const slug = ev.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `registration-qr-${slug || ev.id}.png`;
+      a.click();
+    } catch (err) {
+      console.error('QR generation failed:', err);
+    }
   };
 
   const assignedVolunteersForClone = React.useMemo(() => {
@@ -804,6 +822,16 @@ function DashboardOverview({
                             title={copiedRegId === event.id ? 'Link copied' : 'Copy registration link'}
                           >
                             {copiedRegId === event.id ? <Check size={16} /> : <Link2 size={16} />}
+                          </button>
+                        )}
+                        {buildRegistrationLink(event.id) && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleDownloadQR(e, event)}
+                            className="p-1.5 text-slate-400 hover:text-[#856637] hover:bg-[#f5ebd6]/50 rounded-lg transition-colors"
+                            title="Download QR code"
+                          >
+                            <QrCode size={16} />
                           </button>
                         )}
                         <button
