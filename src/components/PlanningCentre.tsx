@@ -252,7 +252,7 @@ function PlanningCentre({
     errorDrive, activeFolderId, currentFolderName, folderHistory, viewMode,
     setViewMode, configFolderId, setConfigFolderId, savedFolderDetails, isEditingFolder,
     setIsEditingFolder, isSimulation, setActiveFolderId, setFolderHistory,
-    fetchDriveStatus, fetchFolderSettings, fetchDriveFilesFromBackend,
+    fetchDriveFilesFromBackend,
     handleSaveFolderSettings, handleConnectDrive, handleDisconnectDrive, handleGoBack,
   } = useDriveIntegration(setUserName);
 
