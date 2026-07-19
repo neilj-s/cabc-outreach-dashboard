@@ -2,6 +2,7 @@ import React, { useState, useReducer } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { parseLocalDate } from '../lib/dates';
 import { useFocusTrap } from '../lib/useFocusTrap';
+import { useVolunteerFilters } from '../lib/useVolunteerFilters';
 import { useNotification } from '../context/NotificationContext';
 import { 
   Users, 
@@ -314,15 +315,6 @@ function VolunteerTable({
   const [bulkForm, dispatchBulkForm] = useReducer(bulkFormReducer, initialBulkForm);
   const [bulkProcessing, setBulkProcessing] = useState(false);
 
-  // Search & Filters state
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
-  const [showRoleDropdown, setShowRoleDropdown] = useState(false);
-  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
-  const [showSkillDropdown, setShowSkillDropdown] = useState(false);
-  const [selectedMinistries, setSelectedMinistries] = useState<string[]>([]);
-  const [showMinistryDropdown, setShowMinistryDropdown] = useState(false);
-
   // --- REDESIGNED HIGH-DENSITY DIRECTORY STATE & HELPERS ---
   const [selectedLetter, setSelectedLetter] = useState<string | null>(null);
   const [selectedVolId, setSelectedVolId] = useState<string | null>(null);
@@ -401,62 +393,6 @@ function VolunteerTable({
   }, [volunteers]);
   const activeEvent = events.find(e => e.id === activeEventId);
 
-  // Compile unique roles for active event scope
-  const allUniqueRoles = Array.from(new Set(
-    volunteers
-      .map(v => v.eventAssignments?.[activeEventId]?.role)
-      .filter((r): r is string => !!r && r.trim() !== '')
-  )).sort((a, b) => a.localeCompare(b));
-
-  const hasUnassigned = volunteers.some(v => !v.eventAssignments?.[activeEventId]?.role);
-
-  // Derive distinct skills across all volunteers
-  const allUniqueSkills = React.useMemo(() => {
-    const skillsSet = new Set<string>();
-    volunteers.forEach(v => {
-      if (v.skills) {
-        v.skills.split(',').forEach(s => {
-          const trimmed = s.trim();
-          if (trimmed) {
-            const formatted = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
-            skillsSet.add(formatted);
-          }
-        });
-      }
-    });
-    return Array.from(skillsSet).sort((a, b) => a.localeCompare(b));
-  }, [volunteers]);
-
-  // Distinct ministries, grouped case-insensitively. Display the most common
-  // original casing (ties broken alphabetically) so acronyms like "AWANA" survive.
-  const allUniqueMinistries = React.useMemo(() => {
-    const casingCounts = new Map<string, Map<string, number>>();
-    volunteers.forEach(v => {
-      if (!v.ministry) return;
-      v.ministry.split(',').forEach(m => {
-        const token = m.trim();
-        if (!token) return;
-        const key = token.toLowerCase();
-        if (!casingCounts.has(key)) casingCounts.set(key, new Map());
-        const inner = casingCounts.get(key)!;
-        inner.set(token, (inner.get(token) || 0) + 1);
-      });
-    });
-    const result: string[] = [];
-    casingCounts.forEach(inner => {
-      let best = '';
-      let bestCount = -1;
-      inner.forEach((count, casing) => {
-        if (count > bestCount || (count === bestCount && casing.localeCompare(best) < 0)) {
-          best = casing;
-          bestCount = count;
-        }
-      });
-      result.push(best);
-    });
-    return result.sort((a, b) => a.localeCompare(b));
-  }, [volunteers]);
-
   const baseVolunteers = React.useMemo(() => {
     if (viewMode === 'roster') {
       if (!activeEventId) return [];
@@ -465,52 +401,14 @@ function VolunteerTable({
     return volunteers;
   }, [volunteers, viewMode, activeEventId]);
 
-  // Apply search & multi-select role & skill filters
-  const filteredVolunteers = React.useMemo(() => {
-    return baseVolunteers.filter(vol => {
-      // 1. Search filter match
-      const query = searchTerm.toLowerCase().trim();
-      const matchesSearch = !query || 
-        vol.name.toLowerCase().includes(query) ||
-        vol.email.toLowerCase().includes(query) ||
-        (vol.phone && vol.phone.toLowerCase().includes(query)) ||
-        (vol.skills && vol.skills.toLowerCase().includes(query)) ||
-        (vol.notes && vol.notes.toLowerCase().includes(query)) ||
-        (vol.eventAssignments?.[activeEventId]?.station && vol.eventAssignments[activeEventId].station.toLowerCase().includes(query)) ||
-        (vol.eventAssignments?.[activeEventId]?.role && vol.eventAssignments[activeEventId].role.toLowerCase().includes(query));
-
-      if (!matchesSearch) return false;
-
-      // 2. Role filter match
-      if (selectedRoles.length > 0) {
-        const role = vol.eventAssignments?.[activeEventId]?.role;
-        const mappedRole = (!role || role.trim() === '') ? 'Unassigned' : role;
-        if (!selectedRoles.includes(mappedRole)) return false;
-      }
-
-      // 3. Skill filter match
-      if (selectedSkills.length > 0) {
-        if (!vol.skills) return false;
-        const volSkillsList = vol.skills.split(',').map(s => {
-          const trimmed = s.trim();
-          return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
-        });
-        const hasMatchingSkill = selectedSkills.some(skill => volSkillsList.includes(skill));
-        if (!hasMatchingSkill) return false;
-      }
-
-      // 4. Ministry filter match (case-insensitive)
-      if (selectedMinistries.length > 0) {
-        if (!vol.ministry) return false;
-        const volMinistries = vol.ministry.split(',').map(m => m.trim().toLowerCase()).filter(Boolean);
-        const selectedLower = selectedMinistries.map(m => m.toLowerCase());
-        const hasMatchingMinistry = selectedLower.some(m => volMinistries.includes(m));
-        if (!hasMatchingMinistry) return false;
-      }
-
-      return true;
-    });
-  }, [baseVolunteers, searchTerm, selectedRoles, selectedSkills, selectedMinistries, activeEventId]);
+  const {
+    searchTerm, setSearchTerm,
+    selectedRoles, setSelectedRoles, showRoleDropdown, setShowRoleDropdown,
+    selectedSkills, setSelectedSkills, showSkillDropdown, setShowSkillDropdown,
+    selectedMinistries, setSelectedMinistries, showMinistryDropdown, setShowMinistryDropdown,
+    allUniqueRoles, hasUnassigned, allUniqueSkills, allUniqueMinistries,
+    filteredVolunteers,
+  } = useVolunteerFilters(baseVolunteers, volunteers, activeEventId);
 
   // Filter list by letter if selected
   const directoryVolunteers = React.useMemo(() => {
