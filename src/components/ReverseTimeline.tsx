@@ -110,10 +110,7 @@ export default function ReverseTimeline({
   // Rescale Timeline modal & formula states
   const [showRescaleModal, setShowRescaleModal] = useState(false);
   const [rescaleConfirming, setRescaleConfirming] = useState(false);
-  const [planningStartDate, setPlanningStartDate] = useState(() => {
-    const d = new Date();
-    return d.toISOString().split('T')[0];
-  });
+  const [planningStartDate, setPlanningStartDate] = useState(() => getTodayISO());
 
   useEffect(() => {
     setRescaleConfirming(false);
@@ -746,8 +743,7 @@ export default function ReverseTimeline({
                         <button
                           type="button"
                           onClick={() => {
-                            const d = new Date();
-                            setPlanningStartDate(d.toISOString().split('T')[0]);
+                            setPlanningStartDate(getTodayISO());
                             setShowRescaleModal(true);
                           }}
                           className="flex items-center gap-1.5 px-3 py-1.5 border border-[#e2dcd0] bg-[#faf8f4] text-slate-700 text-[11px] font-bold uppercase tracking-wider rounded hover:bg-[#f5ebd6]/50 transition cursor-pointer"

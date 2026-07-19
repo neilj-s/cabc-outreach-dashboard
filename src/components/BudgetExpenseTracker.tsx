@@ -319,7 +319,7 @@ function BudgetExpenseTracker({
         setFormCategory(parsed.formCategory || 'Food');
         setFormCost(parsed.formCost || '');
         setFormPurchaser(parsed.formPurchaser || '');
-        setFormDate(parsed.formDate || new Date().toISOString().split('T')[0]);
+        setFormDate(parsed.formDate || getTodayISO());
         setAttachedFileName(parsed.attachedFileName || '');
         setAttachedFileData(parsed.attachedFileData || '');
         setFormPaidBy(parsed.formPaidBy || '');
@@ -329,7 +329,7 @@ function BudgetExpenseTracker({
         setFormCategory('Food');
         setFormCost('');
         setFormPurchaser('');
-        setFormDate(new Date().toISOString().split('T')[0]);
+        setFormDate(getTodayISO());
         setAttachedFileName('');
         setAttachedFileData('');
         setFormPaidBy('');
@@ -340,7 +340,7 @@ function BudgetExpenseTracker({
       setFormCategory('Food');
       setFormCost('');
       setFormPurchaser('');
-      setFormDate(new Date().toISOString().split('T')[0]);
+      setFormDate(getTodayISO());
       setAttachedFileName('');
       setAttachedFileData('');
       setFormPaidBy('');

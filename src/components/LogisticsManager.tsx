@@ -1,5 +1,6 @@
 import { apiFetch } from "../lib/api";
 import React, { useState, useEffect } from 'react';
+import { getTodayISO } from '../lib/dates';
 import { motion, AnimatePresence } from 'motion/react';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { useNotification } from '../context/NotificationContext';
@@ -846,7 +847,7 @@ function LogisticsManager({ selectedEventId, events, onUploadCompleted }: Logist
               ) : (
                 currentEventReservations.map(res => {
                   const maxAllowed = res.itemDetail ? getItemAvailability(res.itemDetail).availableStock + res.quantity : 0;
-                  const isPastEvent = res.eventDate && res.eventDate < new Date().toISOString().split('T')[0];
+                  const isPastEvent = res.eventDate && res.eventDate < getTodayISO();
                   const isUnreturnedHighValue = isPastEvent && res.itemDetail?.isHighValue && res.status !== 'Returned';
                   
                   return (
