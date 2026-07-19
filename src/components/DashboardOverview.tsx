@@ -38,7 +38,7 @@ import {
 import { LaneDetail, MinistryEvent, RecentActivity, Volunteer, MilestoneKey, MinistryLane, Expense, Debrief } from '../types';
 import ConfirmDialog from './ConfirmDialog';
 import { apiFetch } from '../lib/api';
-import { getDaysOut, getTodayISO, formatDisplayDate } from '../lib/dates';
+import { getDaysOut, getTodayISO, formatDisplayDate, getFutureISO } from '../lib/dates';
 import { buildRegistrationLink } from '../lib/registration';
 import {
   ResponsiveContainer,
@@ -296,9 +296,7 @@ function DashboardOverview({
       } else {
         setQuickTaskLane('Outreach');
       }
-      const d = new Date();
-      d.setDate(d.getDate() + 7);
-      setQuickTaskDueDate(d.toISOString().split('T')[0]);
+      setQuickTaskDueDate(getFutureISO(7));
       setQuickTaskTitle('');
       setQuickTaskDesc('');
       setQuickTaskAssignedTo('');
@@ -311,9 +309,7 @@ function DashboardOverview({
       setQuickVolNotes('');
     } else if (action === 'event') {
       setQuickEventName('');
-      const d = new Date();
-      d.setDate(d.getDate() + 14);
-      setQuickEventDate(d.toISOString().split('T')[0]);
+      setQuickEventDate(getFutureISO(14));
       setQuickEventDesc('');
     }
   };
