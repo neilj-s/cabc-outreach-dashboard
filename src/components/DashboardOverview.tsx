@@ -502,7 +502,7 @@ function DashboardOverview({
   const missingHighValueCount = summary.missingHighValueCount || 0;
 
   // Compute past events awaiting a debrief
-  const todayStr = new Date().toLocaleDateString('en-CA');
+  const todayStr = getTodayISO();
   const pastEventsAwaitingDebrief = (events || []).filter(evt => {
     const isPast = evt.date < todayStr;
     const hasDebrief = (debriefs || []).some(d => d.name.toLowerCase().trim() === evt.name.toLowerCase().trim());

@@ -1,5 +1,5 @@
 import { apiFetch, auth } from "./lib/api";
-import { parseLocalDate } from './lib/dates';
+import { parseLocalDate, getTodayISO } from './lib/dates';
 import { signInWithPopup, GoogleAuthProvider, User, onAuthStateChanged } from 'firebase/auth';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -1189,7 +1189,7 @@ function MainApp() {
       const blob = new Blob([jsonStr], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
-      const today = new Date().toISOString().split('T')[0];
+      const today = getTodayISO();
       link.href = url;
       link.download = `cabc-dashboard-backup-${today}.json`;
       document.body.appendChild(link);
@@ -1227,7 +1227,7 @@ function MainApp() {
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayISO();
     link.href = url;
     link.download = `cabc-volunteers-${today}.csv`;
     document.body.appendChild(link);

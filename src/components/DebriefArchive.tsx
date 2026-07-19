@@ -20,6 +20,7 @@ import {
 import { Debrief } from '../types';
 import ConfirmDialog from './ConfirmDialog';
 import { useNotification } from '../context/NotificationContext';
+import { getTodayISO } from '../lib/dates';
 
 interface DebriefArchiveProps {
   debriefs: Debrief[];
@@ -98,7 +99,7 @@ export default function DebriefArchive({
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayISO();
     link.href = url;
     link.download = `cabc-debriefs-${today}.csv`;
     document.body.appendChild(link);
@@ -181,7 +182,7 @@ export default function DebriefArchive({
   const handleOpenCreate = () => {
     setEditingDebrief(null);
     setName('');
-    setDate(new Date().toISOString().split('T')[0]);
+    setDate(getTodayISO());
     setAttendance('');
     setVolunteers('');
     setBudgetGiven('');

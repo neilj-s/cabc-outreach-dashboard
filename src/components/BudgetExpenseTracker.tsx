@@ -1,6 +1,6 @@
 import { apiFetch } from "../lib/api";
 import React, { useState, useEffect } from 'react';
-import { parseLocalDate } from '../lib/dates';
+import { parseLocalDate, getTodayISO } from '../lib/dates';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNotification } from '../context/NotificationContext';
 import { useFocusTrap } from '../lib/useFocusTrap';
@@ -672,7 +672,7 @@ function BudgetExpenseTracker({
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayISO();
     const eventNameSlug = activeEvent.name.replace(/[^a-zA-Z0-9_-]/g, '_');
     link.href = url;
     link.download = `cabc-expenses-${eventNameSlug}-${today}.csv`;
