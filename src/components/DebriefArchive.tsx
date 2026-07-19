@@ -20,7 +20,7 @@ import {
 import { Debrief } from '../types';
 import ConfirmDialog from './ConfirmDialog';
 import { useNotification } from '../context/NotificationContext';
-import { getTodayISO } from '../lib/dates';
+import { getTodayISO, formatDisplayDate } from '../lib/dates';
 
 interface DebriefArchiveProps {
   debriefs: Debrief[];
@@ -235,17 +235,7 @@ export default function DebriefArchive({
     }
   };
 
-  const formatHumanDate = (dateStr: string) => {
-    if (!dateStr) return 'Date TBD';
-    try {
-      const options: Intl.DateTimeFormatOptions = { month: 'long', day: 'numeric', year: 'numeric' };
-      const [year, month, day] = dateStr.split('-');
-      const d = new Date(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10));
-      return d.toLocaleDateString('en-US', options);
-    } catch (e) {
-      return dateStr;
-    }
-  };
+
 
   return (
     <div className="space-y-6">
@@ -525,7 +515,7 @@ export default function DebriefArchive({
                   <h3 className="text-base font-serif font-bold text-[#1e293b]">{d.name}</h3>
                   <p className="text-[11px] text-slate-450 mt-0.5 flex items-center gap-1 font-medium">
                     <Calendar size={12} className="text-[#856637]" />
-                    {formatHumanDate(d.date)}
+                    {formatDisplayDate(d.date)}
                   </p>
                 </div>
                 <div className="flex gap-1.5 opacity-60 group-hover:opacity-100 transition">
@@ -684,7 +674,7 @@ export default function DebriefArchive({
             </span>
             <h1 className="text-3xl font-serif font-black text-slate-950 mt-2 leading-none">{printDebrief.name}</h1>
             <p className="text-sm text-slate-600 mt-2 font-medium">
-              Event Date: {formatHumanDate(printDebrief.date)}
+              Event Date: {formatDisplayDate(printDebrief.date)}
             </p>
           </div>
 
@@ -739,7 +729,7 @@ export default function DebriefArchive({
             <span>
               Filed by: <strong className="text-slate-850 font-bold">{printDebrief.filedBy || '—'}</strong>
             </span>
-            <span>Printed: {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
+            <span>Printed: {formatDisplayDate(getTodayISO())}</span>
           </div>
         </div>
       )}

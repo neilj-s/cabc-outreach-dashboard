@@ -1,6 +1,6 @@
 import { apiFetch } from "../lib/api";
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
-import { parseLocalDate } from '../lib/dates';
+import { parseLocalDate, getTodayISO, formatDisplayDate } from '../lib/dates';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNotification } from '../context/NotificationContext';
 import { useFocusTrap } from '../lib/useFocusTrap';
@@ -2288,7 +2288,7 @@ function PlanningCentre({
           {/* Footer */}
           <div className="border-t border-slate-200 mt-12 pt-4 flex justify-between text-[10px] text-slate-400 font-bold uppercase tracking-wider">
             <span>Community Relations Planning Hub</span>
-            <span>Printed on {new Date().toLocaleDateString()}</span>
+            <span>Printed on {formatDisplayDate(getTodayISO())}</span>
           </div>
         </div>
 

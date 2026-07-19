@@ -38,7 +38,7 @@ import {
 import { LaneDetail, MinistryEvent, RecentActivity, Volunteer, MilestoneKey, MinistryLane, Expense, Debrief } from '../types';
 import ConfirmDialog from './ConfirmDialog';
 import { apiFetch } from '../lib/api';
-import { getDaysOut, getTodayISO } from '../lib/dates';
+import { getDaysOut, getTodayISO, formatDisplayDate } from '../lib/dates';
 import { buildRegistrationLink } from '../lib/registration';
 import {
   ResponsiveContainer,
@@ -424,17 +424,7 @@ function DashboardOverview({
     };
   };
 
-  // Reusable formatHumanDate helper
-  const formatHumanDate = (dateStr: string) => {
-    try {
-      const options: Intl.DateTimeFormatOptions = { month: 'long', day: 'numeric', year: 'numeric' };
-      const [year, month, day] = dateStr.split('-');
-      const d = new Date(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10));
-      return d.toLocaleDateString('en-US', options);
-    } catch (e) {
-      return dateStr;
-    }
-  };
+
 
   // Find the next major event
   const getNextMajorEvent = () => {
@@ -782,7 +772,7 @@ function DashboardOverview({
                           {event.name}
                         </h3>
                         <p className="text-xs text-slate-500 font-medium">
-                          {formatHumanDate(event.date)}
+                          {formatDisplayDate(event.date)}
                         </p>
                       </div>
                       <div className="text-right shrink-0 flex flex-col justify-end h-full">
@@ -967,7 +957,7 @@ function DashboardOverview({
                           {selectedEvent.name}
                         </h4>
                         <p className="text-[11px] text-slate-500 font-medium font-sans">
-                          Scheduled: {formatHumanDate(selectedEvent.date)}
+                          Scheduled: {formatDisplayDate(selectedEvent.date)}
                         </p>
                       </div>
                       <div className="shrink-0 flex items-center">
@@ -1210,7 +1200,7 @@ function DashboardOverview({
                                 <strong className="text-slate-800 truncate">{nextEvent.name}</strong>
                               </div>
                               <p className="text-[11px] text-slate-500 mt-0.5">
-                                Scheduled for {formatHumanDate(nextEvent.date)}
+                                Scheduled for {formatDisplayDate(nextEvent.date)}
                               </p>
                             </div>
 
@@ -1244,7 +1234,7 @@ function DashboardOverview({
                           <div className="min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                                Event Beyond 16-Day Range ({formatHumanDate(nextEvent.date)})
+                                Event Beyond 16-Day Range ({formatDisplayDate(nextEvent.date)})
                               </span>
                               <span className="text-xs font-medium text-slate-800 truncate">{nextEvent.name}</span>
                             </div>
