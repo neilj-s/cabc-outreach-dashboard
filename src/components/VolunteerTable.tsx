@@ -205,6 +205,34 @@ function detailFormReducer(state: DetailForm, action: DetailAction): DetailForm 
   }
 }
 
+type BulkActionMode = 'none' | 'role' | 'station' | 'remove';
+
+type BulkForm = {
+  action: BulkActionMode;
+  role: string;
+  station: string;
+};
+
+const initialBulkForm: BulkForm = { action: 'none', role: '', station: '' };
+
+type BulkFormAction =
+  | { type: 'setAction'; action: BulkActionMode }
+  | { type: 'setField'; field: 'role' | 'station'; value: string }
+  | { type: 'reset' };
+
+function bulkFormReducer(state: BulkForm, action: BulkFormAction): BulkForm {
+  switch (action.type) {
+    case 'setAction':
+      return { ...state, action: action.action };
+    case 'setField':
+      return { ...state, [action.field]: action.value };
+    case 'reset':
+      return initialBulkForm;
+    default:
+      return state;
+  }
+}
+
 interface VolunteerTableProps {
   volunteers: Volunteer[];
   events: MinistryEvent[];
@@ -283,9 +311,7 @@ function VolunteerTable({
 
   // Bulk Selection & Editing state
   const [selectedVolIds, setSelectedVolIds] = useState<string[]>([]);
-  const [bulkAction, setBulkAction] = useState<'none' | 'role' | 'station' | 'remove'>('none');
-  const [bulkRole, setBulkRole] = useState('');
-  const [bulkStation, setBulkStation] = useState('');
+  const [bulkForm, dispatchBulkForm] = useReducer(bulkFormReducer, initialBulkForm);
   const [bulkProcessing, setBulkProcessing] = useState(false);
 
   // Search & Filters state
@@ -955,9 +981,7 @@ function VolunteerTable({
 
       showNotification(`Successfully updated ${field} for selected volunteers.`, "success");
       setSelectedVolIds([]);
-      setBulkRole('');
-      setBulkStation('');
-      setBulkAction('none');
+      dispatchBulkForm({ type: 'reset' });
     } catch (err) {
       console.error(err);
       showNotification(`Could not bulk update ${field}.`, "error");
@@ -982,7 +1006,7 @@ function VolunteerTable({
 
       showNotification(`Removed ${selectedVolIds.length} volunteer${selectedVolIds.length === 1 ? '' : 's'} from ${activeEvent?.name || 'event'}.`, "success");
       setSelectedVolIds([]);
-      setBulkAction('none');
+      dispatchBulkForm({ type: 'reset' });
     } catch (err) {
       console.error(err);
       showNotification("Could not bulk remove volunteers.", "error");
@@ -1606,34 +1630,34 @@ function VolunteerTable({
                   <span className="px-2.5 py-0.5 bg-[#856637] text-white text-[9px] font-bold rounded-full font-mono">{selectedVolIds.length} Selected</span>
                 </p>
                 <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
-                  {bulkAction === 'none' && `Select an action to perform on these volunteers for ${activeEvent?.name || 'the event'}.`}
-                  {bulkAction === 'role' && "Assign a specific role to all selected volunteers."}
-                  {bulkAction === 'station' && "Assign a specific station/location to all selected volunteers."}
-                  {bulkAction === 'remove' && "Remove selected volunteers from the roster of this event."}
+                  {bulkForm.action === 'none' && `Select an action to perform on these volunteers for ${activeEvent?.name || 'the event'}.`}
+                  {bulkForm.action === 'role' && "Assign a specific role to all selected volunteers."}
+                  {bulkForm.action === 'station' && "Assign a specific station/location to all selected volunteers."}
+                  {bulkForm.action === 'remove' && "Remove selected volunteers from the roster of this event."}
                 </p>
               </div>
             </div>
             
             <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto justify-end">
-              {bulkAction === 'none' && (
+              {bulkForm.action === 'none' && (
                 <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
                   <button
                     type="button"
-                    onClick={() => setBulkAction('role')}
+                    onClick={() => dispatchBulkForm({ type: 'setAction', action: 'role' })}
                     className="px-3 py-1.5 bg-white hover:bg-[#faf8f4] text-slate-700 border border-[#e2dcd0] text-xs font-semibold rounded-lg transition cursor-pointer flex items-center gap-1 shadow-xs"
                   >
                     <span>Set role</span>
                   </button>
                   <button
                     type="button"
-                    onClick={() => setBulkAction('station')}
+                    onClick={() => dispatchBulkForm({ type: 'setAction', action: 'station' })}
                     className="px-3 py-1.5 bg-white hover:bg-[#faf8f4] text-slate-700 border border-[#e2dcd0] text-xs font-semibold rounded-lg transition cursor-pointer flex items-center gap-1 shadow-xs"
                   >
                     <span>Set station</span>
                   </button>
                   <button
                     type="button"
-                    onClick={() => setBulkAction('remove')}
+                    onClick={() => dispatchBulkForm({ type: 'setAction', action: 'remove' })}
                     className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold rounded-lg transition cursor-pointer flex items-center gap-1 shadow-xs"
                   >
                     <span>Remove from event</span>
@@ -1642,7 +1666,7 @@ function VolunteerTable({
                     type="button"
                     onClick={() => {
                       setSelectedVolIds([]);
-                      setBulkAction('none');
+                      dispatchBulkForm({ type: 'reset' });
                     }}
                     className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-500 text-xs font-semibold rounded-lg transition cursor-pointer"
                   >
@@ -1651,14 +1675,14 @@ function VolunteerTable({
                 </div>
               )}
 
-              {bulkAction === 'role' && (
+              {bulkForm.action === 'role' && (
                 <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
                   <input
                     type="text"
                     list="bulk-role-options"
                     placeholder="Type or select role..."
-                    value={bulkRole}
-                    onChange={e => setBulkRole(e.target.value)}
+                    value={bulkForm.role}
+                    onChange={e => dispatchBulkForm({ type: 'setField', field: 'role', value: e.target.value })}
                     className="text-xs p-2 rounded-lg border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-semibold placeholder:text-slate-400 w-full sm:w-48 shadow-xs"
                     autoFocus
                   />
@@ -1671,8 +1695,7 @@ function VolunteerTable({
                   <button
                     type="button"
                     onClick={() => {
-                      setBulkAction('none');
-                      setBulkRole('');
+                      dispatchBulkForm({ type: 'reset' });
                     }}
                     className="px-3 py-1.5 border border-[#efe0c2] bg-white hover:bg-slate-50 text-slate-650 text-xs font-semibold rounded-lg transition cursor-pointer"
                   >
@@ -1680,8 +1703,8 @@ function VolunteerTable({
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleBulkAssignField('role', bulkRole)}
-                    disabled={bulkProcessing || !bulkRole.trim()}
+                    onClick={() => handleBulkAssignField('role', bulkForm.role)}
+                    disabled={bulkProcessing || !bulkForm.role.trim()}
                     className="px-4 py-1.5 bg-[#1e293b] hover:bg-[#0f172a] disabled:bg-slate-400 text-[#faf8f4] text-xs font-bold rounded-lg transition cursor-pointer shadow-sm"
                   >
                     {bulkProcessing ? 'Applying...' : `Apply to ${selectedVolIds.length}`}
@@ -1689,13 +1712,13 @@ function VolunteerTable({
                 </div>
               )}
 
-              {bulkAction === 'station' && (
+              {bulkForm.action === 'station' && (
                 <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
                   <input
                     type="text"
                     placeholder="Enter station name..."
-                    value={bulkStation}
-                    onChange={e => setBulkStation(e.target.value)}
+                    value={bulkForm.station}
+                    onChange={e => dispatchBulkForm({ type: 'setField', field: 'station', value: e.target.value })}
                     className="text-xs p-2 rounded-lg border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-semibold placeholder:text-slate-400 w-full sm:w-48 shadow-xs"
                     autoFocus
                   />
@@ -1703,8 +1726,7 @@ function VolunteerTable({
                   <button
                     type="button"
                     onClick={() => {
-                      setBulkAction('none');
-                      setBulkStation('');
+                      dispatchBulkForm({ type: 'reset' });
                     }}
                     className="px-3 py-1.5 border border-[#efe0c2] bg-white hover:bg-slate-50 text-slate-650 text-xs font-semibold rounded-lg transition cursor-pointer"
                   >
@@ -1712,8 +1734,8 @@ function VolunteerTable({
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleBulkAssignField('station', bulkStation)}
-                    disabled={bulkProcessing || !bulkStation.trim()}
+                    onClick={() => handleBulkAssignField('station', bulkForm.station)}
+                    disabled={bulkProcessing || !bulkForm.station.trim()}
                     className="px-4 py-1.5 bg-[#1e293b] hover:bg-[#0f172a] disabled:bg-slate-400 text-[#faf8f4] text-xs font-bold rounded-lg transition cursor-pointer shadow-sm"
                   >
                     {bulkProcessing ? 'Applying...' : `Apply to ${selectedVolIds.length}`}
@@ -1721,7 +1743,7 @@ function VolunteerTable({
                 </div>
               )}
 
-              {bulkAction === 'remove' && (
+              {bulkForm.action === 'remove' && (
                 <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end">
                   <span className="text-xs font-medium text-rose-700">
                     Remove these {selectedVolIds.length} from {activeEvent?.name || 'event'}? They stay in the directory.
@@ -1729,7 +1751,7 @@ function VolunteerTable({
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => setBulkAction('none')}
+                      onClick={() => dispatchBulkForm({ type: 'reset' })}
                       className="px-3 py-1.5 border border-[#efe0c2] bg-white hover:bg-slate-50 text-slate-650 text-xs font-semibold rounded-lg transition cursor-pointer"
                     >
                       Cancel
