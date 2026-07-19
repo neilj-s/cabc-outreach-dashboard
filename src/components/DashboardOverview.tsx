@@ -1202,7 +1202,7 @@ function DashboardOverview({
 
                             <div className={`flex items-center gap-3 px-3 py-1.5 rounded-lg border ${details.bgColor} max-w-xs w-full sm:w-auto shrink-0`}>
                               <div className="shrink-0 scale-75 origin-left">
-                                {React.cloneElement(details.icon as React.ReactElement, { size: 16 })}
+                                {React.cloneElement(details.icon as React.ReactElement<any>, { size: 16 })}
                               </div>
                               <div className="min-w-0 leading-tight">
                                 <span className="text-[10px] font-extrabold block uppercase tracking-wide opacity-75">{details.label}</span>
@@ -1268,7 +1268,7 @@ function DashboardOverview({
                                   <span className="text-[9px] text-slate-400 block mt-0.5">{dayMonth}</span>
                                 </div>
                                 <div className="scale-75 my-0.5">
-                                  {React.cloneElement(details.icon as React.ReactElement, { size: 16 })}
+                                  {React.cloneElement(details.icon as React.ReactElement<any>, { size: 16 })}
                                 </div>
                                 <div className="leading-tight">
                                   <div className="text-[10px] font-mono font-bold text-slate-800">
@@ -1321,7 +1321,7 @@ function DashboardOverview({
                                 <span className="text-[9px] text-slate-400 block mt-0.5">{dayMonth}</span>
                               </div>
                               <div className="scale-75 my-0.5">
-                                {React.cloneElement(details.icon as React.ReactElement, { size: 16 })}
+                                {React.cloneElement(details.icon as React.ReactElement<any>, { size: 16 })}
                               </div>
                               <div className="leading-tight">
                                 <div className="text-[10px] font-mono font-bold text-slate-800">

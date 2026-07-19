@@ -2348,10 +2348,14 @@ function VolunteerTable({
                                   <div className="font-serif font-bold text-[#1e293b] leading-snug flex flex-wrap items-center gap-1.5">
                                     <span className="truncate max-w-[120px]" title={vol.name}>{vol.name}</span>
                                     {hasSkills && (
-                                      <Sparkles size={10} className="text-[#856637]" title={`Skills: ${vol.skills}`} />
+                                      <span title={`Skills: ${vol.skills}`}>
+                                        <Sparkles size={10} className="text-[#856637]" />
+                                      </span>
                                     )}
                                     {hasNotes && (
-                                      <StickyNote size={10} className="text-slate-400" title={`Notes: ${vol.notes}`} />
+                                      <span title={`Notes: ${vol.notes}`}>
+                                        <StickyNote size={10} className="text-slate-400" />
+                                      </span>
                                     )}
                                     {assignedEventsCount > 0 ? (
                                       <span className="inline-flex items-center px-1.5 py-0.2 rounded-full text-[8px] font-bold bg-[#efe5d3] text-[#5c4424] border border-[#d6c7ae]/30 shadow-xs shrink-0" title={`Assigned to ${assignedEventsCount} events`}>

@@ -39,6 +39,7 @@ import ReverseTimeline from './components/ReverseTimeline';
 import DebriefArchive from './components/DebriefArchive';
 import EventScopeSelector from './components/EventScopeSelector';
 import ConfirmDialog from './components/ConfirmDialog';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 const DashboardOverview = React.lazy(() => import('./components/DashboardOverview'));
 const VolunteerTable = React.lazy(() => import('./components/VolunteerTable'));
@@ -736,7 +737,7 @@ function MainApp() {
     }
   }, [showNotification]);
 
-  const handleDeleteEvent = useCallback((id: string) => {
+  const handleDeleteEvent = useCallback(async (id: string) => {
     const eventToDelete = events.find(evt => evt.id === id);
     if (!eventToDelete) return;
 
@@ -986,7 +987,7 @@ function MainApp() {
     }
   }, [showNotification]);
 
-  const handleRemoveVolunteer = useCallback((id: string) => {
+  const handleRemoveVolunteer = useCallback(async (id: string) => {
     const volunteerToDelete = volunteers.find(vol => vol.id === id);
     if (!volunteerToDelete) return;
 
@@ -1086,7 +1087,7 @@ function MainApp() {
     }
   }, [showNotification]);
 
-  const handleDeleteDebrief = useCallback((id: string) => {
+  const handleDeleteDebrief = useCallback(async (id: string) => {
     const debriefToDelete = debriefs.find(d => d.id === id);
     if (!debriefToDelete) return;
 
@@ -1748,9 +1749,11 @@ function MainApp() {
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
           >
-            <React.Suspense fallback={<LazyLoadingFallback />}>
-              {renderTabContent()}
-            </React.Suspense>
+            <ErrorBoundary section={activeTab}>
+              <React.Suspense fallback={<LazyLoadingFallback />}>
+                {renderTabContent()}
+              </React.Suspense>
+            </ErrorBoundary>
           </motion.div>
         </AnimatePresence>
       </main>

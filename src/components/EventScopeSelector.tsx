@@ -19,7 +19,7 @@ export default function EventScopeSelector({
   
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const optionsRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const optionsRefs = useRef<(HTMLElement | null)[]>([]);
 
   const activeEvent = events.find(e => e.id === selectedEventId) || events[0];
 
