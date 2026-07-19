@@ -147,6 +147,33 @@ function addVolFormReducer(state: AddVolForm, action: AddVolAction): AddVolForm 
   }
 }
 
+type EditProfileForm = {
+  name: string;
+  email: string;
+  phone: string;
+  skills: string;
+  ministry: string;
+};
+
+const emptyEditProfile: EditProfileForm = {
+  name: '', email: '', phone: '', skills: '', ministry: '',
+};
+
+type EditProfileAction =
+  | { type: 'setField'; field: keyof EditProfileForm; value: string }
+  | { type: 'load'; values: EditProfileForm };
+
+function editProfileReducer(state: EditProfileForm, action: EditProfileAction): EditProfileForm {
+  switch (action.type) {
+    case 'setField':
+      return { ...state, [action.field]: action.value };
+    case 'load':
+      return action.values;
+    default:
+      return state;
+  }
+}
+
 interface VolunteerTableProps {
   volunteers: Volunteer[];
   events: MinistryEvent[];
@@ -247,11 +274,7 @@ function VolunteerTable({
   
   // Profile Inline Editor State
   const [isEditingProfile, setIsEditingProfile] = useState<boolean>(false);
-  const [editName, setEditName] = useState('');
-  const [editEmail, setEditEmail] = useState('');
-  const [editPhone, setEditPhone] = useState('');
-  const [editSkills, setEditSkills] = useState('');
-  const [editMinistry, setEditMinistry] = useState('');
+  const [editProfile, dispatchEditProfile] = useReducer(editProfileReducer, emptyEditProfile);
 
   // Placement Editor State (within Detail Panel)
   const [isEditingPlacement, setIsEditingPlacement] = useState<boolean>(false);
@@ -530,11 +553,11 @@ function VolunteerTable({
     const assignment = selectedVol.eventAssignments?.[activeEventId];
     
     const profileChanged = 
-      editName.trim() !== (selectedVol.name || '').trim() ||
-      editEmail.trim() !== (selectedVol.email || '').trim() ||
-      editPhone.trim() !== (selectedVol.phone || '').trim() ||
-      editSkills.trim() !== (selectedVol.skills || '').trim() ||
-      editMinistry.trim() !== (selectedVol.ministry || '').trim();
+      editProfile.name.trim() !== (selectedVol.name || '').trim() ||
+      editProfile.email.trim() !== (selectedVol.email || '').trim() ||
+      editProfile.phone.trim() !== (selectedVol.phone || '').trim() ||
+      editProfile.skills.trim() !== (selectedVol.skills || '').trim() ||
+      editProfile.ministry.trim() !== (selectedVol.ministry || '').trim();
       
     const privateNotesChanged =
       detailPrivateNotes.trim() !== (selectedVol.notes || '').trim();
@@ -552,11 +575,7 @@ function VolunteerTable({
   }, [
     selectedVol,
     activeEventId,
-    editName,
-    editEmail,
-    editPhone,
-    editSkills,
-    editMinistry,
+    editProfile,
     detailPrivateNotes,
     detailLastContacted,
     detailContactNotes,
@@ -569,11 +588,11 @@ function VolunteerTable({
     if (!selectedVol) return;
     try {
       const updatePayload: Partial<Volunteer> = {
-        name: editName.trim(),
-        email: editEmail.trim(),
-        phone: editPhone.trim(),
-        skills: editSkills.trim(),
-        ministry: editMinistry.trim(),
+        name: editProfile.name.trim(),
+        email: editProfile.email.trim(),
+        phone: editProfile.phone.trim(),
+        skills: editProfile.skills.trim(),
+        ministry: editProfile.ministry.trim(),
         notes: detailPrivateNotes.trim(),
         lastContacted: detailLastContacted,
         contactNotes: detailContactNotes.trim()
@@ -663,11 +682,16 @@ function VolunteerTable({
   // Sync edit state when active volunteer changes
   React.useEffect(() => {
     if (selectedVol) {
-      setEditName(selectedVol.name || '');
-      setEditEmail(selectedVol.email || '');
-      setEditPhone(selectedVol.phone || '');
-      setEditSkills(selectedVol.skills || '');
-      setEditMinistry(selectedVol.ministry || '');
+      dispatchEditProfile({
+        type: 'load',
+        values: {
+          name: selectedVol.name || '',
+          email: selectedVol.email || '',
+          phone: selectedVol.phone || '',
+          skills: selectedVol.skills || '',
+          ministry: selectedVol.ministry || '',
+        }
+      });
       setDetailPrivateNotes(selectedVol.notes || '');
       setDetailLastContacted(selectedVol.lastContacted || '');
       setDetailContactNotes(selectedVol.contactNotes || '');
@@ -677,11 +701,16 @@ function VolunteerTable({
       setDetailStation(assignment?.station || '');
       setDetailNotes(assignment?.notes || '');
     } else {
-      setEditName('');
-      setEditEmail('');
-      setEditPhone('');
-      setEditSkills('');
-      setEditMinistry('');
+      dispatchEditProfile({
+        type: 'load',
+        values: {
+          name: '',
+          email: '',
+          phone: '',
+          skills: '',
+          ministry: '',
+        }
+      });
       setDetailPrivateNotes('');
       setDetailLastContacted('');
       setDetailContactNotes('');
@@ -2623,8 +2652,8 @@ function VolunteerTable({
                                           <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Full Name</label>
                                           <input
                                             type="text"
-                                            value={editName}
-                                            onChange={e => setEditName(e.target.value)}
+                                            value={editProfile.name}
+                                            onChange={e => dispatchEditProfile({ type: 'setField', field: 'name', value: e.target.value })}
                                             className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80]"
                                           />
                                         </div>
@@ -2633,8 +2662,8 @@ function VolunteerTable({
                                             <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Email</label>
                                             <input
                                               type="email"
-                                              value={editEmail}
-                                              onChange={e => setEditEmail(e.target.value)}
+                                              value={editProfile.email}
+                                              onChange={e => dispatchEditProfile({ type: 'setField', field: 'email', value: e.target.value })}
                                               className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80]"
                                             />
                                           </div>
@@ -2642,8 +2671,8 @@ function VolunteerTable({
                                             <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Phone Number</label>
                                             <input
                                               type="text"
-                                              value={editPhone}
-                                              onChange={e => setEditPhone(e.target.value)}
+                                              value={editProfile.phone}
+                                              onChange={e => dispatchEditProfile({ type: 'setField', field: 'phone', value: e.target.value })}
                                               className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80]"
                                             />
                                           </div>
@@ -2733,8 +2762,8 @@ function VolunteerTable({
                                           <label className="block text-[10px] font-bold uppercase text-slate-400">Ministry &amp; Small Group</label>
                                           <input
                                             type="text"
-                                            value={editMinistry}
-                                            onChange={e => setEditMinistry(e.target.value)}
+                                            value={editProfile.ministry}
+                                            onChange={e => dispatchEditProfile({ type: 'setField', field: 'ministry', value: e.target.value })}
                                             className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80]"
                                             placeholder="e.g. Worship, Children's, Hospitality, Outreach"
                                           />
@@ -2767,8 +2796,8 @@ function VolunteerTable({
                                           <label className="block text-[10px] font-bold uppercase text-slate-400">Skills Tagging (comma-separated)</label>
                                           <input
                                             type="text"
-                                            value={editSkills}
-                                            onChange={e => setEditSkills(e.target.value)}
+                                            value={editProfile.skills}
+                                            onChange={e => dispatchEditProfile({ type: 'setField', field: 'skills', value: e.target.value })}
                                             className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80]"
                                             placeholder="e.g. Cooking, AV Stage, Welcoming"
                                           />
