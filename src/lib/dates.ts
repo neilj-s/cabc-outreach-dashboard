@@ -30,3 +30,23 @@ export function getDaysOut(eventDateStr: string): number {
 export function getTodayISO(): string {
   return new Date().toLocaleDateString('en-CA');
 }
+
+/** Format a bare YYYY-MM-DD string as a long human date, e.g. "July 19, 2026".
+ *  Uses parseLocalDate so it never drifts a day across timezones. */
+export function formatDisplayDate(dateStr: string): string {
+  if (!dateStr) return 'Date TBD';
+  try {
+    return parseLocalDate(dateStr).toLocaleDateString('en-US', {
+      month: 'long', day: 'numeric', year: 'numeric',
+    });
+  } catch {
+    return dateStr;
+  }
+}
+
+/** Local YYYY-MM-DD for (today + daysFromToday). Local-safe; no UTC drift. */
+export function getFutureISO(daysFromToday: number): string {
+  const d = parseLocalDate(getTodayISO());
+  d.setDate(d.getDate() + daysFromToday);
+  return d.toLocaleDateString('en-CA');
+}
