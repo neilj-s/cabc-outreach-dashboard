@@ -12,6 +12,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { Task, MinistryLane, LaneDetail, Volunteer } from '../types';
+import { formatDisplayDate } from '../lib/dates';
 
 interface TaskCardProps {
   key?: string;
@@ -175,19 +176,6 @@ export default function TaskCard({
 
   const laneStyle = getLaneColors(task.lane);
 
-  // Parse human readable date
-  const formatHumanDate = (dateStr: string) => {
-    if (!dateStr) return '';
-    try {
-      const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' };
-      const [year, month, day] = dateStr.split('-');
-      const d = new Date(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10));
-      return d.toLocaleDateString('en-US', options);
-    } catch (e) {
-      return dateStr;
-    }
-  };
-
   return (
     <div 
       className={`p-4 rounded-xl border transition-all ${
@@ -249,7 +237,7 @@ export default function TaskCard({
               <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase ${laneStyle.badge}`}>
                 {task.lane} Lane
               </span>
-              <span className="text-[10px] text-slate-400">| Due: {formatHumanDate(task.dueDate)}</span>
+              <span className="text-[10px] text-slate-400">| Due: {formatDisplayDate(task.dueDate, { month: 'short', emptyLabel: '' })}</span>
               {isOverdue && (
                 <span className="inline-flex items-center text-[9px] font-semibold bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded border border-rose-200">
                   Overdue
