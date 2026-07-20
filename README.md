@@ -14,6 +14,7 @@ A full-stack operations and management dashboard designed for the Community Rela
 ```bash
 npm install
 ```
+> **Package manager:** This project standardizes on **npm** — `package-lock.json` is the single source of truth, matching the npm/node build scripts (`vite build`, `esbuild`, `node dist/server.cjs`). Please don't commit a `bun.lock` or other lockfile; installing with a different package manager can cause version drift.
 
 ### 2. Configure Environment Variables
 Create a `.env` file at the root of the project by copying the example template:
