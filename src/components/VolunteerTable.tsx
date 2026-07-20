@@ -174,37 +174,6 @@ function editProfileReducer(state: EditProfileForm, action: EditProfileAction): 
   }
 }
 
-type DetailForm = {
-  role: string;          // placement (event-scoped)
-  station: string;       // placement (event-scoped)
-  notes: string;         // placement notes (event-scoped)
-  privateNotes: string;  // volunteer-scoped
-  lastContacted: string; // volunteer-scoped
-  contactNotes: string;  // volunteer-scoped
-};
-
-const emptyDetailForm: DetailForm = {
-  role: '', station: '', notes: '', privateNotes: '', lastContacted: '', contactNotes: '',
-};
-
-type DetailAction =
-  | { type: 'setField'; field: keyof DetailForm; value: string }
-  | { type: 'load'; values: DetailForm }
-  | { type: 'clearPlacement' };
-
-function detailFormReducer(state: DetailForm, action: DetailAction): DetailForm {
-  switch (action.type) {
-    case 'setField':
-      return { ...state, [action.field]: action.value };
-    case 'load':
-      return action.values;
-    case 'clearPlacement':
-      return { ...state, role: '', station: '', notes: '' };
-    default:
-      return state;
-  }
-}
-
 interface VolunteerTableProps {
   volunteers: Volunteer[];
   events: MinistryEvent[];
@@ -309,12 +278,17 @@ function VolunteerTable({
 
   // Placement Editor State (within Detail Panel)
   const [isEditingPlacement, setIsEditingPlacement] = useState<boolean>(false);
+  const [detailRole, setDetailRole] = useState('');
+  const [detailStation, setDetailStation] = useState('');
+  const [detailNotes, setDetailNotes] = useState('');
 
   // Private Notes (within Detail Panel)
   const [isEditingPrivateNotes, setIsEditingPrivateNotes] = useState<boolean>(false);
+  const [detailPrivateNotes, setDetailPrivateNotes] = useState('');
 
-  // Detail panel form state (placement + private notes + outreach)
-  const [detailForm, dispatchDetailForm] = useReducer(detailFormReducer, emptyDetailForm);
+  // Contact Outreach form states (for Detail Panel)
+  const [detailLastContacted, setDetailLastContacted] = useState('');
+  const [detailContactNotes, setDetailContactNotes] = useState('');
 
   const activeEventId = selectedEventId || (events[0]?.id || '');
 
@@ -586,23 +560,28 @@ function VolunteerTable({
       editProfile.ministry.trim() !== (selectedVol.ministry || '').trim();
       
     const privateNotesChanged =
-      detailForm.privateNotes.trim() !== (selectedVol.notes || '').trim();
+      detailPrivateNotes.trim() !== (selectedVol.notes || '').trim();
       
     const outreachChanged =
-      detailForm.lastContacted !== (selectedVol.lastContacted || '') ||
-      detailForm.contactNotes.trim() !== (selectedVol.contactNotes || '').trim();
+      detailLastContacted !== (selectedVol.lastContacted || '') ||
+      detailContactNotes.trim() !== (selectedVol.contactNotes || '').trim();
       
     const placementChanged =
-      detailForm.role.trim() !== (assignment?.role || '').trim() ||
-      detailForm.station.trim() !== (assignment?.station || '').trim() ||
-      detailForm.notes.trim() !== (assignment?.notes || '').trim();
+      detailRole.trim() !== (assignment?.role || '').trim() ||
+      detailStation.trim() !== (assignment?.station || '').trim() ||
+      detailNotes.trim() !== (assignment?.notes || '').trim();
       
     return profileChanged || privateNotesChanged || outreachChanged || placementChanged;
   }, [
     selectedVol,
     activeEventId,
     editProfile,
-    detailForm
+    detailPrivateNotes,
+    detailLastContacted,
+    detailContactNotes,
+    detailRole,
+    detailStation,
+    detailNotes
   ]);
 
   const handleSaveChanges = async () => {
@@ -614,9 +593,9 @@ function VolunteerTable({
         phone: editProfile.phone.trim(),
         skills: editProfile.skills.trim(),
         ministry: editProfile.ministry.trim(),
-        notes: detailForm.privateNotes.trim(),
-        lastContacted: detailForm.lastContacted,
-        contactNotes: detailForm.contactNotes.trim()
+        notes: detailPrivateNotes.trim(),
+        lastContacted: detailLastContacted,
+        contactNotes: detailContactNotes.trim()
       };
 
       if (activeEventId) {
@@ -629,9 +608,9 @@ function VolunteerTable({
           updatePayload.eventAssignments = {
             ...currentAssignments,
             [activeEventId]: {
-              role: detailForm.role.trim() || 'General Helper',
-              station: detailForm.station.trim() || 'General Area',
-              notes: detailForm.notes.trim(),
+              role: detailRole.trim() || 'General Helper',
+              station: detailStation.trim() || 'General Area',
+              notes: detailNotes.trim(),
               contactStatus: existingStatus
             }
           };
@@ -691,7 +670,9 @@ function VolunteerTable({
       const currentAssignments = { ...(selectedVol.eventAssignments || {}) };
       delete currentAssignments[activeEventId];
       await onUpdateVolunteer(selectedVol.id, { eventAssignments: currentAssignments });
-      dispatchDetailForm({ type: 'clearPlacement' });
+      setDetailRole('');
+      setDetailStation('');
+      setDetailNotes('');
       setIsEditingPlacement(false);
     } catch (err) {
       console.error('Failed to clear placement:', err);
@@ -711,16 +692,14 @@ function VolunteerTable({
           ministry: selectedVol.ministry || '',
         }
       });
+      setDetailPrivateNotes(selectedVol.notes || '');
+      setDetailLastContacted(selectedVol.lastContacted || '');
+      setDetailContactNotes(selectedVol.contactNotes || '');
       
       const assignment = selectedVol.eventAssignments?.[activeEventId];
-      dispatchDetailForm({ type: 'load', values: {
-        role: assignment?.role || '',
-        station: assignment?.station || '',
-        notes: assignment?.notes || '',
-        privateNotes: selectedVol.notes || '',
-        lastContacted: selectedVol.lastContacted || '',
-        contactNotes: selectedVol.contactNotes || '',
-      }});
+      setDetailRole(assignment?.role || '');
+      setDetailStation(assignment?.station || '');
+      setDetailNotes(assignment?.notes || '');
     } else {
       dispatchEditProfile({
         type: 'load',
@@ -732,7 +711,12 @@ function VolunteerTable({
           ministry: '',
         }
       });
-      dispatchDetailForm({ type: 'load', values: emptyDetailForm });
+      setDetailPrivateNotes('');
+      setDetailLastContacted('');
+      setDetailContactNotes('');
+      setDetailRole('');
+      setDetailStation('');
+      setDetailNotes('');
     }
     setIsEditingProfile(false);
     setIsEditingPlacement(false);
@@ -2730,9 +2714,9 @@ function VolunteerTable({
                                           {isEditingPrivateNotes ? (
                                             <div className="space-y-2 animate-fadeIn">
                                               <textarea
-                                                value={detailForm.privateNotes}
+                                                value={detailPrivateNotes}
                                                 rows={2}
-                                                onChange={e => dispatchDetailForm({ type: 'setField', field: 'privateNotes', value: e.target.value })}
+                                                onChange={e => setDetailPrivateNotes(e.target.value)}
                                                 className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80]"
                                                 placeholder="Internal availability, private flags..."
                                               />
@@ -2865,8 +2849,8 @@ function VolunteerTable({
                                               <label className="block text-[9px] font-bold uppercase text-slate-400 mb-1">Assigned Role</label>
                                               <input
                                                 type="text"
-                                                value={detailForm.role}
-                                                onChange={e => dispatchDetailForm({ type: 'setField', field: 'role', value: e.target.value })}
+                                                value={detailRole}
+                                                onChange={e => setDetailRole(e.target.value)}
                                                 placeholder="e.g. Lead Host, Greeter"
                                                 className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none"
                                               />
@@ -2875,8 +2859,8 @@ function VolunteerTable({
                                               <label className="block text-[9px] font-bold uppercase text-slate-400 mb-1">Station / Spot</label>
                                               <input
                                                 type="text"
-                                                value={detailForm.station}
-                                                onChange={e => dispatchDetailForm({ type: 'setField', field: 'station', value: e.target.value })}
+                                                value={detailStation}
+                                                onChange={e => setDetailStation(e.target.value)}
                                                 placeholder="e.g. Main Lobby Stage"
                                                 className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none"
                                               />
@@ -2885,9 +2869,9 @@ function VolunteerTable({
                                           <div>
                                             <label className="block text-[9px] font-bold uppercase text-slate-400 mb-1">Placement Notes & Comments</label>
                                             <textarea
-                                              value={detailForm.notes}
+                                              value={detailNotes}
                                               rows={2}
-                                              onChange={e => dispatchDetailForm({ type: 'setField', field: 'notes', value: e.target.value })}
+                                              onChange={e => setDetailNotes(e.target.value)}
                                               placeholder="Specific timing details or accommodations..."
                                               className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none"
                                             />
@@ -2959,8 +2943,8 @@ function VolunteerTable({
                                           </label>
                                           <input
                                             type="date"
-                                            value={detailForm.lastContacted}
-                                            onChange={e => dispatchDetailForm({ type: 'setField', field: 'lastContacted', value: e.target.value })}
+                                            value={detailLastContacted}
+                                            onChange={e => setDetailLastContacted(e.target.value)}
                                             className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-medium text-slate-800"
                                           />
                                         </div>
@@ -2970,9 +2954,9 @@ function VolunteerTable({
                                             Contact Outreach Notes
                                           </label>
                                           <textarea
-                                            value={detailForm.contactNotes}
+                                            value={detailContactNotes}
                                             rows={3}
-                                            onChange={e => dispatchDetailForm({ type: 'setField', field: 'contactNotes', value: e.target.value })}
+                                            onChange={e => setDetailContactNotes(e.target.value)}
                                             className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80]"
                                             placeholder="Write summary of email conversations, direct contact details, or notes..."
                                           />
