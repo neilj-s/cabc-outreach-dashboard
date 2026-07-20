@@ -12,7 +12,7 @@ A full-stack operations and management dashboard designed for the Community Rela
 
 ### 1. Install Dependencies
 ```bash
-npm install
+bun install
 ```
 
 ### 2. Configure Environment Variables
@@ -29,6 +29,6 @@ Configure the following variables:
 
 ### 3. Run the App Locally
 ```bash
-npm run dev
+bun run dev
 ```
 Open `http://localhost:3000` in your browser.
