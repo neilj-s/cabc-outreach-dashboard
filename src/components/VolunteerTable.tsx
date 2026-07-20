@@ -1,4 +1,4 @@
-import React, { useState, useReducer } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { parseLocalDate } from '../lib/dates';
 import { useFocusTrap } from '../lib/useFocusTrap';
@@ -112,41 +112,6 @@ const getAvatarColor = (name: string) => {
   return colors[index];
 };
 
-type AddVolForm = {
-  name: string;
-  email: string;
-  phone: string;
-  skills: string;
-  ministry: string;
-  notes: string;
-  assignToActiveEvent: boolean;
-};
-
-const initialAddVolForm: AddVolForm = {
-  name: '',
-  email: '',
-  phone: '',
-  skills: '',
-  ministry: '',
-  notes: '',
-  assignToActiveEvent: true,
-};
-
-type AddVolAction =
-  | { type: 'setField'; field: keyof AddVolForm; value: string | boolean }
-  | { type: 'reset' };
-
-function addVolFormReducer(state: AddVolForm, action: AddVolAction): AddVolForm {
-  switch (action.type) {
-    case 'setField':
-      return { ...state, [action.field]: action.value };
-    case 'reset':
-      return initialAddVolForm;
-    default:
-      return state;
-  }
-}
-
 interface VolunteerTableProps {
   volunteers: Volunteer[];
   events: MinistryEvent[];
@@ -206,8 +171,14 @@ function VolunteerTable({
 
   // New volunteer form state
   const [showAddForm, setShowAddForm] = useState(false);
-  const [addForm, dispatchAddForm] = useReducer(addVolFormReducer, initialAddVolForm);
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [skills, setSkills] = useState('');
+  const [ministry, setMinistry] = useState('');
+  const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [assignToActiveEvent, setAssignToActiveEvent] = useState(true);
 
   // Expanded Roster Row State
   const [expandedRosterVolId, setExpandedRosterVolId] = useState<string | null>(null);
@@ -807,10 +778,10 @@ function VolunteerTable({
 
   const handleCreateVolunteer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!addForm.name) return;
+    if (!name) return;
     setSubmitting(true);
     try {
-      const initialAssignments = (addForm.assignToActiveEvent && activeEventId) ? {
+      const initialAssignments = (assignToActiveEvent && activeEventId) ? {
         [activeEventId]: {
           role: 'General Helper',
           station: 'General Area',
@@ -819,17 +790,23 @@ function VolunteerTable({
         }
       } : {};
       await onCreateVolunteer({
-        name: addForm.name,
-        email: addForm.email,
-        phone: addForm.phone,
+        name,
+        email,
+        phone,
         roles: [],
-        skills: addForm.skills.trim(),
-        ministry: addForm.ministry.trim(),
-        notes: addForm.notes.trim(),
+        skills: skills.trim(),
+        ministry: ministry.trim(),
+        notes: notes.trim(),
         emails: [],
         eventAssignments: initialAssignments
       });
-      dispatchAddForm({ type: 'reset' });
+      setName('');
+      setEmail('');
+      setPhone('');
+      setSkills('');
+      setMinistry('');
+      setNotes('');
+      setAssignToActiveEvent(true);
       setShowAddForm(false);
     } catch (err) {
       console.error(err);
@@ -1081,8 +1058,8 @@ function VolunteerTable({
             <input
               type="text"
               placeholder="Sarah Jenkins"
-              value={addForm.name}
-              onChange={e => dispatchAddForm({ type: 'setField', field: 'name', value: e.target.value })}
+              value={name}
+              onChange={e => setName(e.target.value)}
               className="w-full text-xs p-2.5 rounded-lg border border-[#efe0c2] bg-[#faf8f4] focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-medium"
               required
             />
@@ -1094,8 +1071,8 @@ function VolunteerTable({
               <input
                 type="email"
                 placeholder="sarah.j@example.com"
-                value={addForm.email}
-                onChange={e => dispatchAddForm({ type: 'setField', field: 'email', value: e.target.value })}
+                value={email}
+                onChange={e => setEmail(e.target.value)}
                 className="w-full text-xs p-2.5 rounded-lg border border-[#efe0c2] bg-[#faf8f4] focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-medium"
               />
             </div>
@@ -1104,8 +1081,8 @@ function VolunteerTable({
               <input
                 type="tel"
                 placeholder="+1 555-0192"
-                value={addForm.phone}
-                onChange={e => dispatchAddForm({ type: 'setField', field: 'phone', value: e.target.value })}
+                value={phone}
+                onChange={e => setPhone(e.target.value)}
                 className="w-full text-xs p-2.5 rounded-lg border border-[#efe0c2] bg-[#faf8f4] focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-medium"
               />
             </div>
@@ -1116,8 +1093,8 @@ function VolunteerTable({
             <input
               type="text"
               placeholder="e.g. Worship, Children's, Hospitality, Outreach"
-              value={addForm.ministry}
-              onChange={e => dispatchAddForm({ type: 'setField', field: 'ministry', value: e.target.value })}
+              value={ministry}
+              onChange={e => setMinistry(e.target.value)}
               className="w-full text-xs p-2.5 rounded-lg border border-[#efe0c2] bg-[#faf8f4] focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-medium"
             />
           </div>
@@ -1127,8 +1104,8 @@ function VolunteerTable({
             <input
               type="text"
               placeholder="e.g. Greeting, Hospitality, Cooking, AV Board, First Aid"
-              value={addForm.skills}
-              onChange={e => dispatchAddForm({ type: 'setField', field: 'skills', value: e.target.value })}
+              value={skills}
+              onChange={e => setSkills(e.target.value)}
               className="w-full text-xs p-2.5 rounded-lg border border-[#efe0c2] bg-[#faf8f4] focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-medium"
             />
           </div>
@@ -1138,8 +1115,8 @@ function VolunteerTable({
             <textarea
               placeholder="Any additional notes on availability, past experience, or role placement restrictions..."
               rows={2}
-              value={addForm.notes}
-              onChange={e => dispatchAddForm({ type: 'setField', field: 'notes', value: e.target.value })}
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
               className="w-full text-xs p-2.5 rounded-lg border border-[#efe0c2] bg-[#faf8f4] focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-medium"
             />
           </div>
@@ -1148,8 +1125,8 @@ function VolunteerTable({
             <label className="flex items-start gap-2.5 p-3 rounded-lg border border-[#efe0c2] bg-[#faf8f4] cursor-pointer select-none">
               <input
                 type="checkbox"
-                checked={addForm.assignToActiveEvent}
-                onChange={e => dispatchAddForm({ type: 'setField', field: 'assignToActiveEvent', value: e.target.checked })}
+                checked={assignToActiveEvent}
+                onChange={e => setAssignToActiveEvent(e.target.checked)}
                 className="mt-0.5 accent-[#856637] cursor-pointer"
               />
               <span className="text-xs text-slate-600 leading-snug">
