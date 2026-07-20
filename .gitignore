@@ -18,5 +18,3 @@ test_*.cjs
 test_*.js
 brace_count.cjs
 import_event.cjs
-bun.lock
-bun.lock

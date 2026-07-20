@@ -240,6 +240,16 @@ async function startServer() {
     });
   }
 
+  // --- Global error handler (must be registered last, after all routes) ---
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error(`[API error] ${req.method} ${req.originalUrl}:`, err);
+    if (res.headersSent) return next(err); // response already started — defer to Express default
+    const status = err?.status || err?.statusCode || 500;
+    res.status(status).json({
+      error: status >= 500 ? 'Internal server error' : (err?.message || 'Request failed'),
+    });
+  });
+
   const server = http.createServer(app);
   const wss = new WebSocketServer({ server });
 
