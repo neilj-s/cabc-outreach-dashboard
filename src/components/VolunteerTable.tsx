@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useReducer } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { parseLocalDate } from '../lib/dates';
 import { useFocusTrap } from '../lib/useFocusTrap';
+import { useVolunteerFilters } from '../lib/useVolunteerFilters';
 import { useNotification } from '../context/NotificationContext';
 import { 
   Users, 
@@ -112,6 +113,127 @@ const getAvatarColor = (name: string) => {
   return colors[index];
 };
 
+type AddVolForm = {
+  name: string;
+  email: string;
+  phone: string;
+  skills: string;
+  ministry: string;
+  notes: string;
+  assignToActiveEvent: boolean;
+};
+
+const initialAddVolForm: AddVolForm = {
+  name: '',
+  email: '',
+  phone: '',
+  skills: '',
+  ministry: '',
+  notes: '',
+  assignToActiveEvent: true,
+};
+
+type AddVolAction =
+  | { type: 'setField'; field: keyof AddVolForm; value: string | boolean }
+  | { type: 'reset' };
+
+function addVolFormReducer(state: AddVolForm, action: AddVolAction): AddVolForm {
+  switch (action.type) {
+    case 'setField':
+      return { ...state, [action.field]: action.value };
+    case 'reset':
+      return initialAddVolForm;
+    default:
+      return state;
+  }
+}
+
+type EditProfileForm = {
+  name: string;
+  email: string;
+  phone: string;
+  skills: string;
+  ministry: string;
+};
+
+const emptyEditProfile: EditProfileForm = {
+  name: '', email: '', phone: '', skills: '', ministry: '',
+};
+
+type EditProfileAction =
+  | { type: 'setField'; field: keyof EditProfileForm; value: string }
+  | { type: 'load'; values: EditProfileForm };
+
+function editProfileReducer(state: EditProfileForm, action: EditProfileAction): EditProfileForm {
+  switch (action.type) {
+    case 'setField':
+      return { ...state, [action.field]: action.value };
+    case 'load':
+      return action.values;
+    default:
+      return state;
+  }
+}
+
+type DetailForm = {
+  role: string;          // placement (event-scoped)
+  station: string;       // placement (event-scoped)
+  notes: string;         // placement notes (event-scoped)
+  privateNotes: string;  // volunteer-scoped
+  lastContacted: string; // volunteer-scoped
+  contactNotes: string;  // volunteer-scoped
+};
+
+const emptyDetailForm: DetailForm = {
+  role: '', station: '', notes: '', privateNotes: '', lastContacted: '', contactNotes: '',
+};
+
+type DetailAction =
+  | { type: 'setField'; field: keyof DetailForm; value: string }
+  | { type: 'load'; values: DetailForm }
+  | { type: 'clearPlacement' };
+
+function detailFormReducer(state: DetailForm, action: DetailAction): DetailForm {
+  switch (action.type) {
+    case 'setField':
+      return { ...state, [action.field]: action.value };
+    case 'load':
+      return action.values;
+    case 'clearPlacement':
+      return { ...state, role: '', station: '', notes: '' };
+    default:
+      return state;
+  }
+}
+
+type BulkActionMode = 'none' | 'role' | 'station' | 'remove';
+
+type BulkForm = {
+  action: BulkActionMode;
+  role: string;
+  station: string;
+};
+
+const initialBulkForm: BulkForm = { action: 'none', role: '', station: '' };
+
+type BulkFormAction =
+  | { type: 'setAction'; action: BulkActionMode }
+  | { type: 'setField'; field: 'role' | 'station'; value: string }
+  | { type: 'reset' };
+
+function bulkFormReducer(state: BulkForm, action: BulkFormAction): BulkForm {
+  switch (action.type) {
+    case 'setAction':
+      return { ...state, action: action.action };
+    case 'setField':
+      return { ...state, [action.field]: action.value };
+    case 'reset':
+      return initialBulkForm;
+    default:
+      return state;
+  }
+}
+
 interface VolunteerTableProps {
   volunteers: Volunteer[];
   events: MinistryEvent[];
@@ -171,14 +293,8 @@ function VolunteerTable({
 
   // New volunteer form state
   const [showAddForm, setShowAddForm] = useState(false);
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [skills, setSkills] = useState('');
-  const [ministry, setMinistry] = useState('');
-  const [notes, setNotes] = useState('');
+  const [addForm, dispatchAddForm] = useReducer(addVolFormReducer, initialAddVolForm);
   const [submitting, setSubmitting] = useState(false);
-  const [assignToActiveEvent, setAssignToActiveEvent] = useState(true);
 
   // Expanded Roster Row State
   const [expandedRosterVolId, setExpandedRosterVolId] = useState<string | null>(null);
@@ -196,19 +312,8 @@ function VolunteerTable({
 
   // Bulk Selection & Editing state
   const [selectedVolIds, setSelectedVolIds] = useState<string[]>([]);
-  const [bulkAction, setBulkAction] = useState<'none' | 'role' | 'station' | 'remove'>('none');
-  const [bulkRole, setBulkRole] = useState('');
-  const [bulkStation, setBulkStation] = useState('');
+  const [bulkForm, dispatchBulkForm] = useReducer(bulkFormReducer, initialBulkForm);
   const [bulkProcessing, setBulkProcessing] = useState(false);
-
-  // Search & Filters state
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
-  const [showRoleDropdown, setShowRoleDropdown] = useState(false);
-  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
-  const [showSkillDropdown, setShowSkillDropdown] = useState(false);
-  const [selectedMinistries, setSelectedMinistries] = useState<string[]>([]);
-  const [showMinistryDropdown, setShowMinistryDropdown] = useState(false);
 
   // --- REDESIGNED HIGH-DENSITY DIRECTORY STATE & HELPERS ---
   const [selectedLetter, setSelectedLetter] = useState<string | null>(null);
@@ -218,25 +323,16 @@ function VolunteerTable({
   
   // Profile Inline Editor State
   const [isEditingProfile, setIsEditingProfile] = useState<boolean>(false);
-  const [editName, setEditName] = useState('');
-  const [editEmail, setEditEmail] = useState('');
-  const [editPhone, setEditPhone] = useState('');
-  const [editSkills, setEditSkills] = useState('');
-  const [editMinistry, setEditMinistry] = useState('');
+  const [editProfile, dispatchEditProfile] = useReducer(editProfileReducer, emptyEditProfile);
 
   // Placement Editor State (within Detail Panel)
   const [isEditingPlacement, setIsEditingPlacement] = useState<boolean>(false);
-  const [detailRole, setDetailRole] = useState('');
-  const [detailStation, setDetailStation] = useState('');
-  const [detailNotes, setDetailNotes] = useState('');
 
   // Private Notes (within Detail Panel)
   const [isEditingPrivateNotes, setIsEditingPrivateNotes] = useState<boolean>(false);
-  const [detailPrivateNotes, setDetailPrivateNotes] = useState('');
 
-  // Contact Outreach form states (for Detail Panel)
-  const [detailLastContacted, setDetailLastContacted] = useState('');
-  const [detailContactNotes, setDetailContactNotes] = useState('');
+  // Detail panel form state (placement + private notes + outreach)
+  const [detailForm, dispatchDetailForm] = useReducer(detailFormReducer, emptyDetailForm);
 
   const activeEventId = selectedEventId || (events[0]?.id || '');
 
@@ -297,62 +393,6 @@ function VolunteerTable({
   }, [volunteers]);
   const activeEvent = events.find(e => e.id === activeEventId);
 
-  // Compile unique roles for active event scope
-  const allUniqueRoles = Array.from(new Set(
-    volunteers
-      .map(v => v.eventAssignments?.[activeEventId]?.role)
-      .filter((r): r is string => !!r && r.trim() !== '')
-  )).sort((a, b) => a.localeCompare(b));
-
-  const hasUnassigned = volunteers.some(v => !v.eventAssignments?.[activeEventId]?.role);
-
-  // Derive distinct skills across all volunteers
-  const allUniqueSkills = React.useMemo(() => {
-    const skillsSet = new Set<string>();
-    volunteers.forEach(v => {
-      if (v.skills) {
-        v.skills.split(',').forEach(s => {
-          const trimmed = s.trim();
-          if (trimmed) {
-            const formatted = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
-            skillsSet.add(formatted);
-          }
-        });
-      }
-    });
-    return Array.from(skillsSet).sort((a, b) => a.localeCompare(b));
-  }, [volunteers]);
-
-  // Distinct ministries, grouped case-insensitively. Display the most common
-  // original casing (ties broken alphabetically) so acronyms like "AWANA" survive.
-  const allUniqueMinistries = React.useMemo(() => {
-    const casingCounts = new Map<string, Map<string, number>>();
-    volunteers.forEach(v => {
-      if (!v.ministry) return;
-      v.ministry.split(',').forEach(m => {
-        const token = m.trim();
-        if (!token) return;
-        const key = token.toLowerCase();
-        if (!casingCounts.has(key)) casingCounts.set(key, new Map());
-        const inner = casingCounts.get(key)!;
-        inner.set(token, (inner.get(token) || 0) + 1);
-      });
-    });
-    const result: string[] = [];
-    casingCounts.forEach(inner => {
-      let best = '';
-      let bestCount = -1;
-      inner.forEach((count, casing) => {
-        if (count > bestCount || (count === bestCount && casing.localeCompare(best) < 0)) {
-          best = casing;
-          bestCount = count;
-        }
-      });
-      result.push(best);
-    });
-    return result.sort((a, b) => a.localeCompare(b));
-  }, [volunteers]);
-
   const baseVolunteers = React.useMemo(() => {
     if (viewMode === 'roster') {
       if (!activeEventId) return [];
@@ -361,52 +401,14 @@ function VolunteerTable({
     return volunteers;
   }, [volunteers, viewMode, activeEventId]);
 
-  // Apply search & multi-select role & skill filters
-  const filteredVolunteers = React.useMemo(() => {
-    return baseVolunteers.filter(vol => {
-      // 1. Search filter match
-      const query = searchTerm.toLowerCase().trim();
-      const matchesSearch = !query || 
-        vol.name.toLowerCase().includes(query) ||
-        vol.email.toLowerCase().includes(query) ||
-        (vol.phone && vol.phone.toLowerCase().includes(query)) ||
-        (vol.skills && vol.skills.toLowerCase().includes(query)) ||
-        (vol.notes && vol.notes.toLowerCase().includes(query)) ||
-        (vol.eventAssignments?.[activeEventId]?.station && vol.eventAssignments[activeEventId].station.toLowerCase().includes(query)) ||
-        (vol.eventAssignments?.[activeEventId]?.role && vol.eventAssignments[activeEventId].role.toLowerCase().includes(query));
-
-      if (!matchesSearch) return false;
-
-      // 2. Role filter match
-      if (selectedRoles.length > 0) {
-        const role = vol.eventAssignments?.[activeEventId]?.role;
-        const mappedRole = (!role || role.trim() === '') ? 'Unassigned' : role;
-        if (!selectedRoles.includes(mappedRole)) return false;
-      }
-
-      // 3. Skill filter match
-      if (selectedSkills.length > 0) {
-        if (!vol.skills) return false;
-        const volSkillsList = vol.skills.split(',').map(s => {
-          const trimmed = s.trim();
-          return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
-        });
-        const hasMatchingSkill = selectedSkills.some(skill => volSkillsList.includes(skill));
-        if (!hasMatchingSkill) return false;
-      }
-
-      // 4. Ministry filter match (case-insensitive)
-      if (selectedMinistries.length > 0) {
-        if (!vol.ministry) return false;
-        const volMinistries = vol.ministry.split(',').map(m => m.trim().toLowerCase()).filter(Boolean);
-        const selectedLower = selectedMinistries.map(m => m.toLowerCase());
-        const hasMatchingMinistry = selectedLower.some(m => volMinistries.includes(m));
-        if (!hasMatchingMinistry) return false;
-      }
-
-      return true;
-    });
-  }, [baseVolunteers, searchTerm, selectedRoles, selectedSkills, selectedMinistries, activeEventId]);
+  const {
+    searchTerm, setSearchTerm,
+    selectedRoles, setSelectedRoles, showRoleDropdown, setShowRoleDropdown,
+    selectedSkills, setSelectedSkills, showSkillDropdown, setShowSkillDropdown,
+    selectedMinistries, setSelectedMinistries, showMinistryDropdown, setShowMinistryDropdown,
+    allUniqueRoles, hasUnassigned, allUniqueSkills, allUniqueMinistries,
+    filteredVolunteers,
+  } = useVolunteerFilters(baseVolunteers, volunteers, activeEventId);
 
   // Filter list by letter if selected
   const directoryVolunteers = React.useMemo(() => {
@@ -501,53 +503,44 @@ function VolunteerTable({
     const assignment = selectedVol.eventAssignments?.[activeEventId];
     
     const profileChanged = 
-      editName.trim() !== (selectedVol.name || '').trim() ||
-      editEmail.trim() !== (selectedVol.email || '').trim() ||
-      editPhone.trim() !== (selectedVol.phone || '').trim() ||
-      editSkills.trim() !== (selectedVol.skills || '').trim() ||
-      editMinistry.trim() !== (selectedVol.ministry || '').trim();
+      editProfile.name.trim() !== (selectedVol.name || '').trim() ||
+      editProfile.email.trim() !== (selectedVol.email || '').trim() ||
+      editProfile.phone.trim() !== (selectedVol.phone || '').trim() ||
+      editProfile.skills.trim() !== (selectedVol.skills || '').trim() ||
+      editProfile.ministry.trim() !== (selectedVol.ministry || '').trim();
       
     const privateNotesChanged =
-      detailPrivateNotes.trim() !== (selectedVol.notes || '').trim();
+      detailForm.privateNotes.trim() !== (selectedVol.notes || '').trim();
       
     const outreachChanged =
-      detailLastContacted !== (selectedVol.lastContacted || '') ||
-      detailContactNotes.trim() !== (selectedVol.contactNotes || '').trim();
+      detailForm.lastContacted !== (selectedVol.lastContacted || '') ||
+      detailForm.contactNotes.trim() !== (selectedVol.contactNotes || '').trim();
       
     const placementChanged =
-      detailRole.trim() !== (assignment?.role || '').trim() ||
-      detailStation.trim() !== (assignment?.station || '').trim() ||
-      detailNotes.trim() !== (assignment?.notes || '').trim();
+      detailForm.role.trim() !== (assignment?.role || '').trim() ||
+      detailForm.station.trim() !== (assignment?.station || '').trim() ||
+      detailForm.notes.trim() !== (assignment?.notes || '').trim();
       
     return profileChanged || privateNotesChanged || outreachChanged || placementChanged;
   }, [
     selectedVol,
     activeEventId,
-    editName,
-    editEmail,
-    editPhone,
-    editSkills,
-    editMinistry,
-    detailPrivateNotes,
-    detailLastContacted,
-    detailContactNotes,
-    detailRole,
-    detailStation,
-    detailNotes
+    editProfile,
+    detailForm
   ]);
 
   const handleSaveChanges = async () => {
     if (!selectedVol) return;
     try {
       const updatePayload: Partial<Volunteer> = {
-        name: editName.trim(),
-        email: editEmail.trim(),
-        phone: editPhone.trim(),
-        skills: editSkills.trim(),
-        ministry: editMinistry.trim(),
-        notes: detailPrivateNotes.trim(),
-        lastContacted: detailLastContacted,
-        contactNotes: detailContactNotes.trim()
+        name: editProfile.name.trim(),
+        email: editProfile.email.trim(),
+        phone: editProfile.phone.trim(),
+        skills: editProfile.skills.trim(),
+        ministry: editProfile.ministry.trim(),
+        notes: detailForm.privateNotes.trim(),
+        lastContacted: detailForm.lastContacted,
+        contactNotes: detailForm.contactNotes.trim()
       };
 
       if (activeEventId) {
@@ -560,9 +553,9 @@ function VolunteerTable({
           updatePayload.eventAssignments = {
             ...currentAssignments,
             [activeEventId]: {
-              role: detailRole.trim() || 'General Helper',
-              station: detailStation.trim() || 'General Area',
-              notes: detailNotes.trim(),
+              role: detailForm.role.trim() || 'General Helper',
+              station: detailForm.station.trim() || 'General Area',
+              notes: detailForm.notes.trim(),
               contactStatus: existingStatus
             }
           };
@@ -622,9 +615,7 @@ function VolunteerTable({
       const currentAssignments = { ...(selectedVol.eventAssignments || {}) };
       delete currentAssignments[activeEventId];
       await onUpdateVolunteer(selectedVol.id, { eventAssignments: currentAssignments });
-      setDetailRole('');
-      setDetailStation('');
-      setDetailNotes('');
+      dispatchDetailForm({ type: 'clearPlacement' });
       setIsEditingPlacement(false);
     } catch (err) {
       console.error('Failed to clear placement:', err);
@@ -634,31 +625,38 @@ function VolunteerTable({
   // Sync edit state when active volunteer changes
   React.useEffect(() => {
     if (selectedVol) {
-      setEditName(selectedVol.name || '');
-      setEditEmail(selectedVol.email || '');
-      setEditPhone(selectedVol.phone || '');
-      setEditSkills(selectedVol.skills || '');
-      setEditMinistry(selectedVol.ministry || '');
-      setDetailPrivateNotes(selectedVol.notes || '');
-      setDetailLastContacted(selectedVol.lastContacted || '');
-      setDetailContactNotes(selectedVol.contactNotes || '');
+      dispatchEditProfile({
+        type: 'load',
+        values: {
+          name: selectedVol.name || '',
+          email: selectedVol.email || '',
+          phone: selectedVol.phone || '',
+          skills: selectedVol.skills || '',
+          ministry: selectedVol.ministry || '',
+        }
+      });
       
       const assignment = selectedVol.eventAssignments?.[activeEventId];
-      setDetailRole(assignment?.role || '');
-      setDetailStation(assignment?.station || '');
-      setDetailNotes(assignment?.notes || '');
+      dispatchDetailForm({ type: 'load', values: {
+        role: assignment?.role || '',
+        station: assignment?.station || '',
+        notes: assignment?.notes || '',
+        privateNotes: selectedVol.notes || '',
+        lastContacted: selectedVol.lastContacted || '',
+        contactNotes: selectedVol.contactNotes || '',
+      }});
     } else {
-      setEditName('');
-      setEditEmail('');
-      setEditPhone('');
-      setEditSkills('');
-      setEditMinistry('');
-      setDetailPrivateNotes('');
-      setDetailLastContacted('');
-      setDetailContactNotes('');
-      setDetailRole('');
-      setDetailStation('');
-      setDetailNotes('');
+      dispatchEditProfile({
+        type: 'load',
+        values: {
+          name: '',
+          email: '',
+          phone: '',
+          skills: '',
+          ministry: '',
+        }
+      });
+      dispatchDetailForm({ type: 'load', values: emptyDetailForm });
     }
     setIsEditingProfile(false);
     setIsEditingPlacement(false);
@@ -778,10 +776,10 @@ function VolunteerTable({
 
   const handleCreateVolunteer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name) return;
+    if (!addForm.name) return;
     setSubmitting(true);
     try {
-      const initialAssignments = (assignToActiveEvent && activeEventId) ? {
+      const initialAssignments = (addForm.assignToActiveEvent && activeEventId) ? {
         [activeEventId]: {
           role: 'General Helper',
           station: 'General Area',
@@ -790,23 +788,17 @@ function VolunteerTable({
         }
       } : {};
       await onCreateVolunteer({
-        name,
-        email,
-        phone,
+        name: addForm.name,
+        email: addForm.email,
+        phone: addForm.phone,
         roles: [],
-        skills: skills.trim(),
-        ministry: ministry.trim(),
-        notes: notes.trim(),
+        skills: addForm.skills.trim(),
+        ministry: addForm.ministry.trim(),
+        notes: addForm.notes.trim(),
         emails: [],
         eventAssignments: initialAssignments
       });
-      setName('');
-      setEmail('');
-      setPhone('');
-      setSkills('');
-      setMinistry('');
-      setNotes('');
-      setAssignToActiveEvent(true);
+      dispatchAddForm({ type: 'reset' });
       setShowAddForm(false);
     } catch (err) {
       console.error(err);
@@ -887,9 +879,7 @@ function VolunteerTable({
 
       showNotification(`Successfully updated ${field} for selected volunteers.`, "success");
       setSelectedVolIds([]);
-      setBulkRole('');
-      setBulkStation('');
-      setBulkAction('none');
+      dispatchBulkForm({ type: 'reset' });
     } catch (err) {
       console.error(err);
       showNotification(`Could not bulk update ${field}.`, "error");
@@ -914,7 +904,7 @@ function VolunteerTable({
 
       showNotification(`Removed ${selectedVolIds.length} volunteer${selectedVolIds.length === 1 ? '' : 's'} from ${activeEvent?.name || 'event'}.`, "success");
       setSelectedVolIds([]);
-      setBulkAction('none');
+      dispatchBulkForm({ type: 'reset' });
     } catch (err) {
       console.error(err);
       showNotification("Could not bulk remove volunteers.", "error");
@@ -1058,8 +1048,8 @@ function VolunteerTable({
             <input
               type="text"
               placeholder="Sarah Jenkins"
-              value={name}
-              onChange={e => setName(e.target.value)}
+              value={addForm.name}
+              onChange={e => dispatchAddForm({ type: 'setField', field: 'name', value: e.target.value })}
               className="w-full text-xs p-2.5 rounded-lg border border-[#efe0c2] bg-[#faf8f4] focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-medium"
               required
             />
@@ -1071,8 +1061,8 @@ function VolunteerTable({
               <input
                 type="email"
                 placeholder="sarah.j@example.com"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
+                value={addForm.email}
+                onChange={e => dispatchAddForm({ type: 'setField', field: 'email', value: e.target.value })}
                 className="w-full text-xs p-2.5 rounded-lg border border-[#efe0c2] bg-[#faf8f4] focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-medium"
               />
             </div>
@@ -1081,8 +1071,8 @@ function VolunteerTable({
               <input
                 type="tel"
                 placeholder="+1 555-0192"
-                value={phone}
-                onChange={e => setPhone(e.target.value)}
+                value={addForm.phone}
+                onChange={e => dispatchAddForm({ type: 'setField', field: 'phone', value: e.target.value })}
                 className="w-full text-xs p-2.5 rounded-lg border border-[#efe0c2] bg-[#faf8f4] focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-medium"
               />
             </div>
@@ -1093,8 +1083,8 @@ function VolunteerTable({
             <input
               type="text"
               placeholder="e.g. Worship, Children's, Hospitality, Outreach"
-              value={ministry}
-              onChange={e => setMinistry(e.target.value)}
+              value={addForm.ministry}
+              onChange={e => dispatchAddForm({ type: 'setField', field: 'ministry', value: e.target.value })}
               className="w-full text-xs p-2.5 rounded-lg border border-[#efe0c2] bg-[#faf8f4] focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-medium"
             />
           </div>
@@ -1104,8 +1094,8 @@ function VolunteerTable({
             <input
               type="text"
               placeholder="e.g. Greeting, Hospitality, Cooking, AV Board, First Aid"
-              value={skills}
-              onChange={e => setSkills(e.target.value)}
+              value={addForm.skills}
+              onChange={e => dispatchAddForm({ type: 'setField', field: 'skills', value: e.target.value })}
               className="w-full text-xs p-2.5 rounded-lg border border-[#efe0c2] bg-[#faf8f4] focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-medium"
             />
           </div>
@@ -1115,8 +1105,8 @@ function VolunteerTable({
             <textarea
               placeholder="Any additional notes on availability, past experience, or role placement restrictions..."
               rows={2}
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
+              value={addForm.notes}
+              onChange={e => dispatchAddForm({ type: 'setField', field: 'notes', value: e.target.value })}
               className="w-full text-xs p-2.5 rounded-lg border border-[#efe0c2] bg-[#faf8f4] focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-medium"
             />
           </div>
@@ -1125,8 +1115,8 @@ function VolunteerTable({
             <label className="flex items-start gap-2.5 p-3 rounded-lg border border-[#efe0c2] bg-[#faf8f4] cursor-pointer select-none">
               <input
                 type="checkbox"
-                checked={assignToActiveEvent}
-                onChange={e => setAssignToActiveEvent(e.target.checked)}
+                checked={addForm.assignToActiveEvent}
+                onChange={e => dispatchAddForm({ type: 'setField', field: 'assignToActiveEvent', value: e.target.checked })}
                 className="mt-0.5 accent-[#856637] cursor-pointer"
               />
               <span className="text-xs text-slate-600 leading-snug">
@@ -1538,34 +1528,34 @@ function VolunteerTable({
                   <span className="px-2.5 py-0.5 bg-[#856637] text-white text-[9px] font-bold rounded-full font-mono">{selectedVolIds.length} Selected</span>
                 </p>
                 <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
-                  {bulkAction === 'none' && `Select an action to perform on these volunteers for ${activeEvent?.name || 'the event'}.`}
-                  {bulkAction === 'role' && "Assign a specific role to all selected volunteers."}
-                  {bulkAction === 'station' && "Assign a specific station/location to all selected volunteers."}
-                  {bulkAction === 'remove' && "Remove selected volunteers from the roster of this event."}
+                  {bulkForm.action === 'none' && `Select an action to perform on these volunteers for ${activeEvent?.name || 'the event'}.`}
+                  {bulkForm.action === 'role' && "Assign a specific role to all selected volunteers."}
+                  {bulkForm.action === 'station' && "Assign a specific station/location to all selected volunteers."}
+                  {bulkForm.action === 'remove' && "Remove selected volunteers from the roster of this event."}
                 </p>
               </div>
             </div>
             
             <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto justify-end">
-              {bulkAction === 'none' && (
+              {bulkForm.action === 'none' && (
                 <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
                   <button
                     type="button"
-                    onClick={() => setBulkAction('role')}
+                    onClick={() => dispatchBulkForm({ type: 'setAction', action: 'role' })}
                     className="px-3 py-1.5 bg-white hover:bg-[#faf8f4] text-slate-700 border border-[#e2dcd0] text-xs font-semibold rounded-lg transition cursor-pointer flex items-center gap-1 shadow-xs"
                   >
                     <span>Set role</span>
                   </button>
                   <button
                     type="button"
-                    onClick={() => setBulkAction('station')}
+                    onClick={() => dispatchBulkForm({ type: 'setAction', action: 'station' })}
                     className="px-3 py-1.5 bg-white hover:bg-[#faf8f4] text-slate-700 border border-[#e2dcd0] text-xs font-semibold rounded-lg transition cursor-pointer flex items-center gap-1 shadow-xs"
                   >
                     <span>Set station</span>
                   </button>
                   <button
                     type="button"
-                    onClick={() => setBulkAction('remove')}
+                    onClick={() => dispatchBulkForm({ type: 'setAction', action: 'remove' })}
                     className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold rounded-lg transition cursor-pointer flex items-center gap-1 shadow-xs"
                   >
                     <span>Remove from event</span>
@@ -1574,7 +1564,7 @@ function VolunteerTable({
                     type="button"
                     onClick={() => {
                       setSelectedVolIds([]);
-                      setBulkAction('none');
+                      dispatchBulkForm({ type: 'reset' });
                     }}
                     className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-500 text-xs font-semibold rounded-lg transition cursor-pointer"
                   >
@@ -1583,14 +1573,14 @@ function VolunteerTable({
                 </div>
               )}
 
-              {bulkAction === 'role' && (
+              {bulkForm.action === 'role' && (
                 <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
                   <input
                     type="text"
                     list="bulk-role-options"
                     placeholder="Type or select role..."
-                    value={bulkRole}
-                    onChange={e => setBulkRole(e.target.value)}
+                    value={bulkForm.role}
+                    onChange={e => dispatchBulkForm({ type: 'setField', field: 'role', value: e.target.value })}
                     className="text-xs p-2 rounded-lg border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-semibold placeholder:text-slate-400 w-full sm:w-48 shadow-xs"
                     autoFocus
                   />
@@ -1603,8 +1593,7 @@ function VolunteerTable({
                   <button
                     type="button"
                     onClick={() => {
-                      setBulkAction('none');
-                      setBulkRole('');
+                      dispatchBulkForm({ type: 'reset' });
                     }}
                     className="px-3 py-1.5 border border-[#efe0c2] bg-white hover:bg-slate-50 text-slate-650 text-xs font-semibold rounded-lg transition cursor-pointer"
                   >
@@ -1612,8 +1601,8 @@ function VolunteerTable({
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleBulkAssignField('role', bulkRole)}
-                    disabled={bulkProcessing || !bulkRole.trim()}
+                    onClick={() => handleBulkAssignField('role', bulkForm.role)}
+                    disabled={bulkProcessing || !bulkForm.role.trim()}
                     className="px-4 py-1.5 bg-[#1e293b] hover:bg-[#0f172a] disabled:bg-slate-400 text-[#faf8f4] text-xs font-bold rounded-lg transition cursor-pointer shadow-sm"
                   >
                     {bulkProcessing ? 'Applying...' : `Apply to ${selectedVolIds.length}`}
@@ -1621,13 +1610,13 @@ function VolunteerTable({
                 </div>
               )}
 
-              {bulkAction === 'station' && (
+              {bulkForm.action === 'station' && (
                 <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
                   <input
                     type="text"
                     placeholder="Enter station name..."
-                    value={bulkStation}
-                    onChange={e => setBulkStation(e.target.value)}
+                    value={bulkForm.station}
+                    onChange={e => dispatchBulkForm({ type: 'setField', field: 'station', value: e.target.value })}
                     className="text-xs p-2 rounded-lg border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-semibold placeholder:text-slate-400 w-full sm:w-48 shadow-xs"
                     autoFocus
                   />
@@ -1635,8 +1624,7 @@ function VolunteerTable({
                   <button
                     type="button"
                     onClick={() => {
-                      setBulkAction('none');
-                      setBulkStation('');
+                      dispatchBulkForm({ type: 'reset' });
                     }}
                     className="px-3 py-1.5 border border-[#efe0c2] bg-white hover:bg-slate-50 text-slate-650 text-xs font-semibold rounded-lg transition cursor-pointer"
                   >
@@ -1644,8 +1632,8 @@ function VolunteerTable({
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleBulkAssignField('station', bulkStation)}
-                    disabled={bulkProcessing || !bulkStation.trim()}
+                    onClick={() => handleBulkAssignField('station', bulkForm.station)}
+                    disabled={bulkProcessing || !bulkForm.station.trim()}
                     className="px-4 py-1.5 bg-[#1e293b] hover:bg-[#0f172a] disabled:bg-slate-400 text-[#faf8f4] text-xs font-bold rounded-lg transition cursor-pointer shadow-sm"
                   >
                     {bulkProcessing ? 'Applying...' : `Apply to ${selectedVolIds.length}`}
@@ -1653,7 +1641,7 @@ function VolunteerTable({
                 </div>
               )}
 
-              {bulkAction === 'remove' && (
+              {bulkForm.action === 'remove' && (
                 <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end">
                   <span className="text-xs font-medium text-rose-700">
                     Remove these {selectedVolIds.length} from {activeEvent?.name || 'event'}? They stay in the directory.
@@ -1661,7 +1649,7 @@ function VolunteerTable({
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => setBulkAction('none')}
+                      onClick={() => dispatchBulkForm({ type: 'reset' })}
                       className="px-3 py-1.5 border border-[#efe0c2] bg-white hover:bg-slate-50 text-slate-650 text-xs font-semibold rounded-lg transition cursor-pointer"
                     >
                       Cancel
@@ -2604,8 +2592,8 @@ function VolunteerTable({
                                           <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Full Name</label>
                                           <input
                                             type="text"
-                                            value={editName}
-                                            onChange={e => setEditName(e.target.value)}
+                                            value={editProfile.name}
+                                            onChange={e => dispatchEditProfile({ type: 'setField', field: 'name', value: e.target.value })}
                                             className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80]"
                                           />
                                         </div>
@@ -2614,8 +2602,8 @@ function VolunteerTable({
                                             <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Email</label>
                                             <input
                                               type="email"
-                                              value={editEmail}
-                                              onChange={e => setEditEmail(e.target.value)}
+                                              value={editProfile.email}
+                                              onChange={e => dispatchEditProfile({ type: 'setField', field: 'email', value: e.target.value })}
                                               className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80]"
                                             />
                                           </div>
@@ -2623,8 +2611,8 @@ function VolunteerTable({
                                             <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Phone Number</label>
                                             <input
                                               type="text"
-                                              value={editPhone}
-                                              onChange={e => setEditPhone(e.target.value)}
+                                              value={editProfile.phone}
+                                              onChange={e => dispatchEditProfile({ type: 'setField', field: 'phone', value: e.target.value })}
                                               className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80]"
                                             />
                                           </div>
@@ -2662,9 +2650,9 @@ function VolunteerTable({
                                           {isEditingPrivateNotes ? (
                                             <div className="space-y-2 animate-fadeIn">
                                               <textarea
-                                                value={detailPrivateNotes}
+                                                value={detailForm.privateNotes}
                                                 rows={2}
-                                                onChange={e => setDetailPrivateNotes(e.target.value)}
+                                                onChange={e => dispatchDetailForm({ type: 'setField', field: 'privateNotes', value: e.target.value })}
                                                 className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80]"
                                                 placeholder="Internal availability, private flags..."
                                               />
@@ -2714,8 +2702,8 @@ function VolunteerTable({
                                           <label className="block text-[10px] font-bold uppercase text-slate-400">Ministry &amp; Small Group</label>
                                           <input
                                             type="text"
-                                            value={editMinistry}
-                                            onChange={e => setEditMinistry(e.target.value)}
+                                            value={editProfile.ministry}
+                                            onChange={e => dispatchEditProfile({ type: 'setField', field: 'ministry', value: e.target.value })}
                                             className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80]"
                                             placeholder="e.g. Worship, Children's, Hospitality, Outreach"
                                           />
@@ -2748,8 +2736,8 @@ function VolunteerTable({
                                           <label className="block text-[10px] font-bold uppercase text-slate-400">Skills Tagging (comma-separated)</label>
                                           <input
                                             type="text"
-                                            value={editSkills}
-                                            onChange={e => setEditSkills(e.target.value)}
+                                            value={editProfile.skills}
+                                            onChange={e => dispatchEditProfile({ type: 'setField', field: 'skills', value: e.target.value })}
                                             className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80]"
                                             placeholder="e.g. Cooking, AV Stage, Welcoming"
                                           />
@@ -2797,8 +2785,8 @@ function VolunteerTable({
                                               <label className="block text-[9px] font-bold uppercase text-slate-400 mb-1">Assigned Role</label>
                                               <input
                                                 type="text"
-                                                value={detailRole}
-                                                onChange={e => setDetailRole(e.target.value)}
+                                                value={detailForm.role}
+                                                onChange={e => dispatchDetailForm({ type: 'setField', field: 'role', value: e.target.value })}
                                                 placeholder="e.g. Lead Host, Greeter"
                                                 className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none"
                                               />
@@ -2807,8 +2795,8 @@ function VolunteerTable({
                                               <label className="block text-[9px] font-bold uppercase text-slate-400 mb-1">Station / Spot</label>
                                               <input
                                                 type="text"
-                                                value={detailStation}
-                                                onChange={e => setDetailStation(e.target.value)}
+                                                value={detailForm.station}
+                                                onChange={e => dispatchDetailForm({ type: 'setField', field: 'station', value: e.target.value })}
                                                 placeholder="e.g. Main Lobby Stage"
                                                 className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none"
                                               />
@@ -2817,9 +2805,9 @@ function VolunteerTable({
                                           <div>
                                             <label className="block text-[9px] font-bold uppercase text-slate-400 mb-1">Placement Notes & Comments</label>
                                             <textarea
-                                              value={detailNotes}
+                                              value={detailForm.notes}
                                               rows={2}
-                                              onChange={e => setDetailNotes(e.target.value)}
+                                              onChange={e => dispatchDetailForm({ type: 'setField', field: 'notes', value: e.target.value })}
                                               placeholder="Specific timing details or accommodations..."
                                               className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none"
                                             />
@@ -2891,8 +2879,8 @@ function VolunteerTable({
                                           </label>
                                           <input
                                             type="date"
-                                            value={detailLastContacted}
-                                            onChange={e => setDetailLastContacted(e.target.value)}
+                                            value={detailForm.lastContacted}
+                                            onChange={e => dispatchDetailForm({ type: 'setField', field: 'lastContacted', value: e.target.value })}
                                             className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80] font-medium text-slate-800"
                                           />
                                         </div>
@@ -2902,9 +2890,9 @@ function VolunteerTable({
                                             Contact Outreach Notes
                                           </label>
                                           <textarea
-                                            value={detailContactNotes}
+                                            value={detailForm.contactNotes}
                                             rows={3}
-                                            onChange={e => setDetailContactNotes(e.target.value)}
+                                            onChange={e => dispatchDetailForm({ type: 'setField', field: 'contactNotes', value: e.target.value })}
                                             className="w-full text-xs p-2 rounded-xl border border-[#efe0c2] bg-white focus:outline-none focus:ring-1 focus:ring-[#c2aa80]"
                                             placeholder="Write summary of email conversations, direct contact details, or notes..."
                                           />

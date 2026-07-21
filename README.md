@@ -15,6 +15,10 @@ A full-stack operations and management dashboard designed for the Community Rela
 bun install
 ```
 
+> **Package manager:** This project standardizes on **bun** — `bun.lock` is the
+> single source of truth. Please don't commit a `package-lock.json` or other
+> lockfile; installing with a different package manager can cause version drift.
+
 ### 2. Configure Environment Variables
 Create a `.env` file at the root of the project by copying the example template:
 ```bash

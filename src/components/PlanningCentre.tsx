@@ -58,16 +58,8 @@ import {
 } from 'lucide-react';
 import { MinistryEvent, LaneDetail, MilestoneKey, MinistryLane, EventDoc, AttachedDoc, CollabTable, RecentActivity } from '../types';
 import ConfirmDialog from './ConfirmDialog';
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
-import firebaseConfig from '../../firebase-applet-config.json';
-
-
-// Initialize Firebase App and Google Provider
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-const auth = getAuth(app);
-const googleProvider = new GoogleAuthProvider();
-googleProvider.addScope('https://www.googleapis.com/auth/drive');
+import { useDriveIntegration } from '../lib/useDriveIntegration';
+import { useDocAudit } from '../lib/useDocAudit';
 
 interface PlanningCentreProps {
   events: MinistryEvent[];
@@ -254,36 +246,47 @@ function PlanningCentre({
 
   const [focusedCell, setFocusedCell] = useState<{ row: number; col: number } | null>(null);
 
-  // Google Drive Integration states
-  const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
-  const [googleAccessToken, setGoogleAccessToken] = useState<string | null>(null);
-  const [driveStatus, setDriveStatus] = useState<{ connected: boolean; expired: boolean; folderName: string | null } | null>(null);
-  const [driveFiles, setDriveFiles] = useState<any[]>([]);
-  const [loadingDrive, setLoadingDrive] = useState<boolean>(false);
+  // Google Drive Integration via custom hook
+  const {
+    firebaseUser, googleAccessToken, driveStatus, driveFiles, loadingDrive,
+    errorDrive, activeFolderId, currentFolderName, folderHistory, viewMode,
+    setViewMode, configFolderId, setConfigFolderId, savedFolderDetails, isEditingFolder,
+    setIsEditingFolder, isSimulation, setActiveFolderId, setFolderHistory,
+    fetchDriveFilesFromBackend,
+    handleSaveFolderSettings, handleConnectDrive, handleDisconnectDrive, handleGoBack,
+  } = useDriveIntegration(setUserName);
+
+  // Fetch initial ideas and scratchpad contents
+  const fetchPlanningData = async () => {
+    try {
+      setLoading(true);
+      const [docsRes] = await Promise.all([apiFetch('/api/planning/attached-docs').then(r => r.json())]);
+      if (docsRes) {
+        setAttachedDocs(docsRes);
+      }
+      setLoading(false);
+    } catch (err) {
+      console.error("Error loading planning center data", err);
+      showNotification("Failed to align planning data with MinistryOS Server.", 'error');
+      setLoading(false);
+    }
+  };
+
+  const {
+    auditingDocId, isAuditModalOpen, setIsAuditModalOpen,
+    activeAuditDoc, setActiveAuditDoc, manualAuditVerified, setManualAuditVerified,
+    expandedHistoryDocId, setExpandedHistoryDocId, expandedCardId, setExpandedCardId,
+    registeringWatchId, handleAuditDocument, handleWatchDocument, handleSaveManualAudit,
+  } = useDocAudit(googleAccessToken, setAttachedDocs, fetchPlanningData);
+
   const [unifiedSearch, setUnifiedSearch] = useState<string>('');
   const [selectedEmbedDoc, setSelectedEmbedDoc] = useState<AttachedDoc | null>(null);
 
-  // New Centralized Document Hub states
-  const [errorDrive, setErrorDrive] = useState<string | null>(null);
-  const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
-  const [currentFolderName, setCurrentFolderName] = useState<string>('Community Relations');
-  const [folderHistory, setFolderHistory] = useState<Array<{ id: string; name: string }>>([]);
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid');
-  const [configFolderId, setConfigFolderId] = useState<string>('');
-  const [savedFolderDetails, setSavedFolderDetails] = useState<{ id: string; name: string } | null>(null);
-  const [isEditingFolder, setIsEditingFolder] = useState<boolean>(false);
+  // New Centralized Document Hub states (non-Drive config)
   const [isEventFolderOverrideExpanded, setIsEventFolderOverrideExpanded] = useState<boolean>(false);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState<boolean>(false);
 
-  // Permission Audit states
-  const [auditingDocId, setAuditingDocId] = useState<string | null>(null);
-  const [isAuditModalOpen, setIsAuditModalOpen] = useState<boolean>(false);
-  const [activeAuditDoc, setActiveAuditDoc] = useState<AttachedDoc | null>(null);
-  const [manualAuditVerified, setManualAuditVerified] = useState<boolean>(false);
-  const [isSimulation, setIsSimulation] = useState<boolean>(false);
-  const [expandedHistoryDocId, setExpandedHistoryDocId] = useState<string | null>(null);
-  const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
-  const [registeringWatchId, setRegisteringWatchId] = useState<string | null>(null);
+
 
   const allEventDocs = selectedEventId ? attachedDocs.filter(d => d.eventId === selectedEventId) : [];
   const filteredEventDocs = unifiedSearch 
@@ -365,173 +368,6 @@ function PlanningCentre({
       }, 2000);
     };
     reader.readAsDataURL(file);
-  };
-
-  // Fetch Drive connection status
-  const fetchDriveStatus = async () => {
-    try {
-      const res = await apiFetch('/api/drive/status');
-      if (res.ok) {
-        const data = await res.json();
-        setDriveStatus(data);
-      } else {
-        setDriveStatus({ connected: false, expired: false, folderName: null });
-      }
-    } catch (err) {
-      console.error('Failed to fetch Drive status:', err);
-      setDriveStatus({ connected: false, expired: false, folderName: null });
-    }
-  };
-
-  // Fetch Drive folder settings from server
-  const fetchFolderSettings = async () => {
-    try {
-      const res = await apiFetch('/api/planning/drive-folder');
-      if (res.ok) {
-        const data = await res.json();
-        setConfigFolderId(data.folderId);
-        setSavedFolderDetails({ id: data.folderId, name: data.folderName });
-      }
-    } catch (err) {
-      console.error('Failed to fetch folder settings:', err);
-    }
-  };
-
-  // Fetch files from backend
-  const fetchDriveFilesFromBackend = async (subfolderId?: string) => {
-    try {
-      setLoadingDrive(true);
-      setErrorDrive(null);
-      
-      const query = subfolderId ? `?subfolderId=${subfolderId}` : '';
-      const response = await apiFetch(`/api/planning/drive-files${query}`);
-      
-      if (response.ok) {
-        const data = await response.json();
-        setDriveFiles(data.files || []);
-        setIsSimulation(!!data.isSimulation);
-        if (!data.isSimulation) {
-          if (googleAccessToken !== 'server_managed') {
-            setGoogleAccessToken('server_managed');
-          }
-        } else {
-          if (googleAccessToken === 'server_managed') {
-            setGoogleAccessToken(null);
-          }
-        }
-        if (data.folderId) {
-          setActiveFolderId(data.folderId);
-        }
-        if (data.folderName) {
-          setCurrentFolderName(data.folderName);
-        }
-      } else {
-        const errData = await response.json().catch(() => ({}));
-        setErrorDrive(errData.error || response.statusText || 'Failed to list files.');
-      }
-    } catch (err: any) {
-      console.error('Error fetching Drive files:', err);
-      setErrorDrive(err.message || 'Error connecting to the backend file hub.');
-    } finally {
-      setLoadingDrive(false);
-    }
-  };
-
-  // Update folder settings on backend
-  const handleSaveFolderSettings = async (folderIdToSave: string) => {
-    try {
-      let cleanId = folderIdToSave.trim();
-      // Parse out Google Drive Folder ID if they pasted a full URL
-      const match = cleanId.match(/folders\/([a-zA-Z0-9-_]+)/);
-      if (match && match[1]) {
-        cleanId = match[1];
-      }
-      
-      const res = await apiFetch('/api/planning/drive-folder', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ folderId: cleanId })
-      });
-      
-      if (res.ok) {
-        const data = await res.json();
-        setSavedFolderDetails({ id: data.folderId, name: data.folderName });
-        setConfigFolderId(data.folderId);
-        setIsEditingFolder(false);
-        showNotification(`Folder settings updated! Name: ${data.folderName}`, 'success');
-        
-        // Clear history and reload at new root
-        setFolderHistory([]);
-        setActiveFolderId(data.folderId);
-        fetchDriveFilesFromBackend(data.folderId);
-        fetchDriveStatus();
-      } else {
-        const err = await res.json();
-        showNotification(`Failed to save folder settings: ${err.error}`, 'error');
-      }
-    } catch (err: any) {
-      showNotification(`Error saving folder settings: ${err.message}`, 'error');
-    }
-  };
-
-  useEffect(() => {
-    fetchFolderSettings();
-    fetchDriveStatus();
-  }, []);
-
-  useEffect(() => {
-    fetchDriveFilesFromBackend(activeFolderId || undefined);
-    fetchDriveStatus();
-  }, [googleAccessToken]);
-
-
-
-  // Auth State Listener
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (usr) => {
-      if (usr) {
-        setFirebaseUser(usr);
-        if (usr.displayName) setUserName(usr.displayName);
-      } else {
-        setFirebaseUser(null);
-        setGoogleAccessToken(null);
-        setDriveFiles([]);
-      }
-    });
-    return () => unsubscribe();
-  }, []);
-
-  const handleConnectDrive = async () => {
-    try {
-      setLoadingDrive(true);
-      const idToken = await auth.currentUser?.getIdToken();
-      if (!idToken) {
-        showNotification('Please sign in to the app first.', 'error');
-        setLoadingDrive(false);
-        return;
-      }
-      window.location.href = `/api/drive/oauth/start?token=${encodeURIComponent(idToken)}`;
-    } catch (err: any) {
-      console.error('Error starting Google Drive OAuth flow:', err);
-      showNotification(`Failed to start Google Drive OAuth flow: ${err.message}`, 'error');
-      setLoadingDrive(false);
-    }
-  };
-
-  const handleDisconnectDrive = async () => {
-    try {
-      await apiFetch('/api/drive/disconnect', { method: 'POST' });
-    } catch (err) {
-      console.warn('Failed to disconnect Drive on server:', err);
-    }
-    await auth.signOut();
-    setFirebaseUser(null);
-    setGoogleAccessToken(null);
-    setDriveFiles([]);
-    setDriveStatus({ connected: false, expired: false, folderName: null });
-    showNotification('Google account disconnected.', 'success');
   };
 
   // Sync scratchpad edits to WS and save
@@ -619,7 +455,7 @@ function PlanningCentre({
 
   const parseSpreadsheet = (file: File) => {
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
         const XLSX = await import('xlsx');
         const bstr = evt.target?.result;
@@ -744,21 +580,7 @@ function PlanningCentre({
   const [convDocEventId, setConvDocEventId] = useState<string>('');
   
 
-  // Fetch initial ideas and scratchpad contents
-  const fetchPlanningData = async () => {
-    try {
-      setLoading(true);
-      const [docsRes] = await Promise.all([apiFetch('/api/planning/attached-docs').then(r => r.json())]);
-            if (docsRes) {
-        setAttachedDocs(docsRes);
-      }
-      setLoading(false);
-    } catch (err) {
-      console.error("Error loading planning center data", err);
-      showNotification("Failed to align planning data with MinistryOS Server.", 'error');
-      setLoading(false);
-    }
-  };
+
 
   useEffect(() => {
     fetchPlanningData();
@@ -998,184 +820,7 @@ function PlanningCentre({
   };
 
 
-  // Extract file ID from Google Drive URL
-  const extractFileId = (url?: string): string | null => {
-    if (!url) return null;
-    const match = url.match(/[-\w]{25,}/);
-    return match ? match[0] : null;
-  };
 
-  // Perform a permission audit on a document
-  const handleAuditDocument = async (doc: AttachedDoc) => {
-    const fileId = extractFileId(doc.url);
-    
-    // If not connected to Google Drive or file is a simulation file, open the interactive manual guide
-    if (!googleAccessToken || (doc.id && doc.id.startsWith('sim_')) || !fileId) {
-      setActiveAuditDoc(doc);
-      setManualAuditVerified(doc.auditStatus === 'ok');
-      setIsAuditModalOpen(true);
-      return;
-    }
-
-    setAuditingDocId(doc.id);
-    showNotification(`Auditing access permissions for "${doc.name}"...`, 'success');
-
-    try {
-      // Fetch permissions from the server-side Google Drive API proxy
-      const res = await apiFetch(`/api/drive/audit/${fileId}`);
-
-      let auditStatus: 'ok' | 'warning' | 'restricted' = 'restricted';
-      let auditDetails = '';
-      let auditSharedWithLink = false;
-      let auditAnyoneCanEdit = false;
-
-      if (res.ok) {
-        const data = await res.json();
-        const permissions = data.permissions || [];
-        
-        if (data.restricted || permissions.length === 0) {
-          auditStatus = 'restricted';
-          auditDetails = data.restricted 
-            ? 'Drive API returned restricted access (403/404). Only the owner has access to check permissions.'
-            : 'No permissions found. This file appears to be restricted or private.';
-        } else {
-          // Find if anyone with the link can access (type === 'anyone')
-          const anyonePermission = permissions.find((p: any) => p.type === 'anyone');
-          
-          if (anyonePermission) {
-            auditSharedWithLink = true;
-            if (anyonePermission.role === 'writer' || anyonePermission.role === 'organizer' || anyonePermission.role === 'fileOrganizer') {
-              auditStatus = 'ok';
-              auditAnyoneCanEdit = true;
-              auditDetails = 'Anyone with the link can EDIT. Perfect setup for collaborative meeting planning!';
-            } else {
-              auditStatus = 'warning';
-              auditDetails = 'Anyone with the link can VIEW but NOT edit. Change access level to Editor for meeting participation.';
-            }
-          } else {
-            auditStatus = 'restricted';
-            auditDetails = 'Access is RESTRICTED to specific users. This will block general team members from collaborating.';
-          }
-        }
-      } else {
-        if (res.status === 401) {
-          throw new Error('Authentication expired or missing on the server. Please reconnect Google Drive.');
-        } else {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.error || 'Server permission audit query failed');
-        }
-      }
-
-      // Save the audit results back to the database
-      const patchRes = await apiFetch(`/api/planning/attached-docs/${doc.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          auditStatus,
-          auditDetails,
-          auditCheckedAt: new Date().toISOString(),
-          auditSharedWithLink,
-          auditAnyoneCanEdit
-        })
-      });
-
-      if (patchRes.ok) {
-        const updatedDoc = await patchRes.json();
-        setAttachedDocs(prev => prev.map(d => d.id === doc.id ? updatedDoc : d));
-        showNotification(`Permission audit completed for "${doc.name}"! Status: ${auditStatus === 'ok' ? 'Public Editor' : auditStatus === 'warning' ? 'View Only' : 'Restricted'}`, 'success');
-      } else {
-        showNotification('Failed to update audit status on server.', 'error');
-      }
-
-    } catch (err: any) {
-      console.error('Audit failed:', err);
-      showNotification(`Audit query failed: ${err.message || err}`, 'error');
-    } finally {
-      setAuditingDocId(null);
-    }
-  };
-
-  // Register push notifications watch via Google Drive Webhook subscription
-  const handleWatchDocument = async (doc: AttachedDoc) => {
-    setRegisteringWatchId(doc.id);
-    showNotification(`Configuring real-time webhook push subscription for "${doc.name}"...`, 'success');
-
-    try {
-      const res = await apiFetch(`/api/planning/attached-docs/${doc.id}/watch`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.simulated) {
-          showNotification('Simulated real-time Webhook Watch registered successfully!', 'success');
-        } else {
-          showNotification('Real-time Google Drive Webhook subscription activated!', 'success');
-        }
-        await fetchPlanningData();
-      } else {
-        const err = await res.json();
-        showNotification(`Watch subscription failed: ${err.error}`, 'error');
-      }
-    } catch (err: any) {
-      console.error('Watch setup error:', err);
-      showNotification(`Failed to configure webhook watch: ${err.message}`, 'error');
-    } finally {
-      setRegisteringWatchId(null);
-    }
-  };
-
-  // Save manual verification from modal
-  const handleSaveManualAudit = async () => {
-    if (!activeAuditDoc) return;
-
-    try {
-      const auditStatus = manualAuditVerified ? 'ok' : 'restricted';
-      const auditDetails = manualAuditVerified 
-        ? 'Manually verified: Anyone with the link can edit.' 
-        : 'Access is Restricted. Need to configure "Anyone with the link can edit" in Google Drive.';
-
-      const patchRes = await apiFetch(`/api/planning/attached-docs/${activeAuditDoc.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          auditStatus,
-          auditDetails,
-          auditCheckedAt: new Date().toISOString(),
-          auditSharedWithLink: manualAuditVerified,
-          auditAnyoneCanEdit: manualAuditVerified
-        })
-      });
-
-      if (patchRes.ok) {
-        const updatedDoc = await patchRes.json();
-        setAttachedDocs(prev => prev.map(d => d.id === activeAuditDoc.id ? updatedDoc : d));
-        setIsAuditModalOpen(false);
-        setActiveAuditDoc(null);
-        showNotification(`Permissions manually updated for "${activeAuditDoc.name}"!`, 'success');
-      } else {
-        showNotification('Failed to save manual audit status.', 'error');
-      }
-    } catch (err: any) {
-      console.error('Manual save failed:', err);
-      showNotification(`Failed to save manual check: ${err.message}`, 'error');
-    }
-  };
-
-
-  const handleGoBack = () => {
-    if (folderHistory.length > 0) {
-      const newHistory = [...folderHistory];
-      newHistory.pop();
-      setFolderHistory(newHistory);
-      const parentFolderId = newHistory.length > 0 ? newHistory[newHistory.length - 1].id : null;
-      setActiveFolderId(parentFolderId);
-      fetchDriveFilesFromBackend(parentFolderId || undefined);
-    }
-  };
 
   return (
     <div className="space-y-6">

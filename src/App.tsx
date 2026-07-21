@@ -284,6 +284,8 @@ function MainApp() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<any>(null);
   const reconnectDelayRef = useRef<number>(1000);
+  const hasConnectedRef = useRef(false);
+  const triggerFreshSyncRef = useRef<() => void>(() => {});
 
   // Centralized WebSocket Connection with automatic reconnection and backoff
   useEffect(() => {
@@ -318,6 +320,11 @@ function MainApp() {
               color: userColor
             }
           }));
+          if (hasConnectedRef.current) {
+            triggerFreshSyncRef.current?.();
+          } else {
+            hasConnectedRef.current = true;
+          }
         };
 
         socket.onmessage = (event) => {
@@ -621,6 +628,7 @@ function MainApp() {
       console.error("Friction syncing background data", err);
     }
   }, []);
+  triggerFreshSyncRef.current = triggerFreshSync;
 
   // --- Lane & Lead Actions ---
   const handleCreateLane = useCallback(async (name: string, leadName: string) => {
