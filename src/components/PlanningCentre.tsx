@@ -61,7 +61,7 @@ import ConfirmDialog from './ConfirmDialog';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
-import * as XLSX from 'xlsx';
+
 
 // Initialize Firebase App and Google Provider
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
@@ -621,6 +621,7 @@ function PlanningCentre({
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
+        const XLSX = await import('xlsx');
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: 'binary' });
         const wsname = wb.SheetNames[0];
