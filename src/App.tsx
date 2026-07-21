@@ -35,8 +35,6 @@ import {
 } from './types';
 
 // Component imports
-import ReverseTimeline from './components/ReverseTimeline';
-import DebriefArchive from './components/DebriefArchive';
 import EventScopeSelector from './components/EventScopeSelector';
 import ConfirmDialog from './components/ConfirmDialog';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -46,6 +44,8 @@ const VolunteerTable = React.lazy(() => import('./components/VolunteerTable'));
 const PlanningCentre = React.lazy(() => import('./components/PlanningCentre'));
 const LogisticsManager = React.lazy(() => import('./components/LogisticsManager'));
 const BudgetExpenseTracker = React.lazy(() => import('./components/BudgetExpenseTracker'));
+const ReverseTimeline = React.lazy(() => import('./components/ReverseTimeline'));
+const DebriefArchive = React.lazy(() => import('./components/DebriefArchive'));
 
 const LazyLoadingFallback = () => (
   <div className="flex items-center justify-center min-h-[300px] w-full py-12">
