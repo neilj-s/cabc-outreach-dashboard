@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNotification } from '../context/NotificationContext';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { 
@@ -164,7 +164,7 @@ export default function ReverseTimeline({
   const briefingModalRef = useFocusTrap(showBriefingModal && !!selectedEvent, () => setShowBriefingModal(false));
   const rescaleModalRef = useFocusTrap(showRescaleModal && !!selectedEvent, () => setShowRescaleModal(false));
 
-  const getRescaledTasks = () => {
+  const rescaledTasks = useMemo(() => {
     if (!selectedEvent || !selectedEvent.tasks || selectedEvent.tasks.length === 0) return [];
 
     const eventDateStr = selectedEvent.date;
@@ -235,7 +235,7 @@ export default function ReverseTimeline({
         milestoneTitle: task.milestoneTitle || ''
       };
     });
-  };
+  }, [selectedEvent, planningStartDate]);
 
   const handleApplyRescale = () => {
     if (!selectedEvent || !onRescaleTimeline) return;
@@ -245,7 +245,7 @@ export default function ReverseTimeline({
   const handleConfirmRescale = async () => {
     if (!selectedEvent || !onRescaleTimeline) return;
 
-    const previewTasks = getRescaledTasks();
+    const previewTasks = rescaledTasks;
     const updates = previewTasks.map(t => ({
       taskId: t.taskId,
       dueDate: t.newDueDate
@@ -341,7 +341,7 @@ export default function ReverseTimeline({
   };
 
   // Group tasks by milestone
-  const getMilestoneGroups = (event: MinistryEvent) => {
+  const milestoneGroups = useMemo(() => {
     const groups: { key: MilestoneKey; title: string; tasks: Task[] }[] = [
       { key: '12_weeks_out', title: 'Vision & Scope (12 Weeks Out)', tasks: [] },
       { key: '10_weeks_out', title: 'Planning (10 Weeks Out)', tasks: [] },
@@ -350,7 +350,9 @@ export default function ReverseTimeline({
       { key: '2_weeks_out', title: 'Final Push (2 Weeks Out)', tasks: [] }
     ];
 
-    event.tasks.forEach(task => {
+    if (!selectedEvent) return groups;
+
+    selectedEvent.tasks.forEach(task => {
       const group = groups.find(g => g.key === task.milestoneKey);
       if (group) {
         const matchesLane = selectedLaneFilter === 'All' || task.lane === selectedLaneFilter;
@@ -384,7 +386,7 @@ export default function ReverseTimeline({
     });
 
     return groups;
-  };
+  }, [selectedEvent, selectedLaneFilter, selectedAssigneeFilter, taskSortOrder]);
 
   const getLaneColor = (lane: string) => {
     const key = (lane || '').toLowerCase();
@@ -433,7 +435,7 @@ export default function ReverseTimeline({
     }
   };
 
-  const getAssignedVolunteers = () => {
+  const assignedVolunteers = useMemo(() => {
     if (!selectedEvent) return [];
     
     // 1. Find all leads explicitly assigned to tasks in the selected event
@@ -453,7 +455,7 @@ export default function ReverseTimeline({
       
       return isLead || isRegistered;
     });
-  };
+  }, [selectedEvent, volunteers]);
 
   // Calendar calculations & navigation
   const monthNames = [
@@ -825,7 +827,7 @@ export default function ReverseTimeline({
                   <Users size={16} className="text-[#856637]" />
                   <span className="font-serif font-bold text-slate-800 text-sm">Team & Assignments</span>
                   <span className="text-[10px] bg-amber-100 text-[#856637] border border-[#efe0c2] px-2 py-0.5 rounded-full font-sans font-bold">
-                    {getAssignedVolunteers().length} Members
+                    {assignedVolunteers.length} Members
                   </span>
                 </div>
                 {isTeamSectionExpanded ? (
@@ -843,13 +845,13 @@ export default function ReverseTimeline({
                       <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                         <Users size={12} /> Team Members & Their Tasks
                       </h4>
-                      {getAssignedVolunteers().length === 0 ? (
+                      {assignedVolunteers.length === 0 ? (
                         <p className="text-xs text-slate-400 italic bg-white p-4 rounded-xl border border-[#efe0c2]/50">
                           No team members assigned or registered for this event.
                         </p>
                       ) : (
                         <div className="space-y-2.5">
-                          {getAssignedVolunteers().map(vol => {
+                          {assignedVolunteers.map(vol => {
                             const volTasks = selectedEvent.tasks.filter(t => t.assignedTo === vol.name);
                             return (
                               <div key={vol.id} className="bg-white border border-[#e2dcd0] rounded-xl p-3.5 space-y-2 shadow-xs">
@@ -1031,7 +1033,7 @@ export default function ReverseTimeline({
 
             {/* Timelines container */}
             <div className="relative border-l-2 border-[#e2dcd0] ml-4 pl-6 space-y-8">
-              {getMilestoneGroups(selectedEvent).map(group => {
+              {milestoneGroups.map(group => {
                 const totalInGroup = group.tasks.length;
                 const completedInGroup = group.tasks.filter(t => t.completed).length;
                 const groupDate = group.tasks[0]?.dueDate || selectedEvent.date;
@@ -1656,7 +1658,7 @@ export default function ReverseTimeline({
                 <h2 className="text-md font-serif font-extrabold text-slate-900 border-b border-[#e2dcd0] pb-1.5 uppercase tracking-wider">
                   2. Roster &amp; Assigned Volunteers
                 </h2>
-                {getAssignedVolunteers().length === 0 ? (
+                {assignedVolunteers.length === 0 ? (
                   <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-center text-xs text-slate-500 italic leading-relaxed">
                     No specific volunteer roster assignments logged yet for this event ID. Any coordinators assigned directly to timeline tasks above are listed here. You can assign additional volunteers in the Roster tab.
                   </div>
@@ -1672,7 +1674,7 @@ export default function ReverseTimeline({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#e2dcd0] text-slate-700">
-                        {getAssignedVolunteers().map((vol) => {
+                        {assignedVolunteers.map((vol) => {
                           const eventAssignment = vol.eventAssignments && vol.eventAssignments[selectedEvent.id];
                           return (
                             <tr key={vol.id} className="hover:bg-slate-50/50">
@@ -1823,7 +1825,7 @@ export default function ReverseTimeline({
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-xs">
                       {(() => {
-                        const previewTasks = getRescaledTasks();
+                        const previewTasks = rescaledTasks;
                         if (previewTasks.length === 0) {
                           return (
                             <tr>
@@ -1894,7 +1896,7 @@ export default function ReverseTimeline({
             {rescaleConfirming ? (
               <div className="bg-[#fcfaf7] border-t border-[#efe0c2] px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4 rounded-b-xl w-full">
                 <span className="text-xs font-medium text-slate-700">
-                  This will shift {getRescaledTasks().length} task dates for "{selectedEvent.name}". Apply?
+                  This will shift {rescaledTasks.length} task dates for "{selectedEvent.name}". Apply?
                 </span>
                 <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
                   <button
