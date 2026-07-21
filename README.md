@@ -29,6 +29,7 @@ Configure the following variables:
 - `GEMINI_API_KEY`: Required for AI planning features and suggestions.
 - `APP_URL`: The server URL (e.g., `http://localhost:3000`).
 - `PERSISTENT_DISK_PATH`: Optional path to persistent storage; defaults to the local `db_storage.json` file.
+- `MINISTRY_TIMEZONE`: Optional timezone for server-side calendar date calculations (defaults to `America/Toronto`).
 - `GOOGLE_SERVICE_ACCOUNT_EMAIL` / `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` / `GOOGLE_SERVICE_ACCOUNT_KEY`: Optional credentials for the Google Drive integration.
 
 ### 3. Run the App Locally

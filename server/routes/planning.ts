@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { getDb, saveDb, broadcast, logActivity } from '../storage';
 import { extractFileId, getOrRefreshDriveToken, getDriveAccessToken, ensureEventFolder } from '../driveHelpers';
 import { MinistryEvent, EventDoc, AttachedDoc } from '../../src/types';
+import { getTodayISO } from '../lib/dates';
 
 const router = express.Router();
 
@@ -38,7 +39,7 @@ router.post('/attached-docs', (req, res) => {
     url: url || '#',
     embedUrl,
     attachedBy: attachedBy || 'Team Member',
-    date: new Date().toISOString().split('T')[0],
+    date: getTodayISO(),
     eventId: eventId || '',
     category: category || 'Other'
   };
@@ -183,7 +184,7 @@ router.post('/attached-docs/upload', async (req, res) => {
       url: fileUrl,
       embedUrl: fileUrl,
       attachedBy: attachedBy || 'System Portal',
-      date: new Date().toISOString().split('T')[0],
+      date: getTodayISO(),
       eventId: eventId,
       category: finalCategory,
       auditStatus: auditStatus as AttachedDoc['auditStatus'],

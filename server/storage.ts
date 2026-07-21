@@ -23,6 +23,7 @@ import {
   CollabTable,
   AttachedDoc
 } from '../src/types';
+import { subtractWeeks } from './lib/dates';
 
 export interface DatabaseShape {
   events: MinistryEvent[];
@@ -128,13 +129,6 @@ const getDbFilePath = (): string => {
 };
 
 export const DB_FILE = getDbFilePath();
-
-// --- Helper Functions for Date Arithmetic ---
-export function subtractWeeks(dateStr: string, weeks: number): string {
-  const date = new Date(dateStr);
-  date.setDate(date.getDate() - (weeks * 7));
-  return date.toISOString().split('T')[0];
-}
 
 // --- Milestone Templates for Reverse-Timeline ---
 export const MILESTONE_TEMPLATES: MilestoneTemplate[] = [

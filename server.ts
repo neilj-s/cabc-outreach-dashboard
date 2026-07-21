@@ -16,6 +16,8 @@ import {
   verifyTokenAndEmail
 } from './server/storage';
 
+import { getTodayISO } from './server/lib/dates';
+
 import eventsRouter from './server/routes/events';
 import volunteersRouter from './server/routes/volunteers';
 import expensesRouter from './server/routes/expenses';
@@ -157,7 +159,7 @@ async function startServer() {
       // High value assets from reservations
       const reservationsList = Array.isArray(db.reservations) ? db.reservations : [];
       const inventoryList = Array.isArray(db.inventory) ? db.inventory : [];
-      const todayStr = new Date().toISOString().split('T')[0];
+      const todayStr = getTodayISO();
 
       const missingHighValueCount = reservationsList.filter((res: any) => {
         if (!res) return false;

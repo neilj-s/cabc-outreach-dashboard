@@ -1,6 +1,7 @@
 import express from 'express';
 import { getDb, saveDb } from '../storage';
 import { Debrief } from '../../src/types';
+import { getTodayISO } from '../lib/dates';
 
 const router = express.Router();
 
@@ -19,7 +20,7 @@ router.post('/', (req, res) => {
   const newDebrief: Debrief = {
     id: `db_${Date.now()}`,
     name,
-    date: date || new Date().toISOString().split('T')[0],
+    date: date || getTodayISO(),
     attendance: attendance || '',
     volunteers: volunteers || '',
     budgetGiven: budgetGiven || '',
