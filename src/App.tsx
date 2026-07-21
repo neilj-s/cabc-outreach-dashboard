@@ -258,6 +258,7 @@ function MainApp() {
   });
 
   const [connectedUsers, setConnectedUsers] = useState<any[]>([]);
+  const [wsStatus, setWsStatus] = useState<'connecting' | 'live' | 'reconnecting'>('connecting');
   const [scratchpadEditors, setScratchpadEditors] = useState<Record<string, boolean>>({});
   const editorTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
@@ -297,6 +298,7 @@ function MainApp() {
 
     const connect = () => {
       if (isUnmounted) return;
+      setWsStatus(hasConnectedRef.current ? 'reconnecting' : 'connecting');
 
       authUser.getIdToken().then((token) => {
         if (isUnmounted) return;
@@ -311,6 +313,7 @@ function MainApp() {
             return;
           }
           console.log('Connected to shared operations WS');
+          setWsStatus('live');
           reconnectDelayRef.current = 1000;
           socket.send(JSON.stringify({
             type: 'JOIN',
@@ -421,6 +424,7 @@ function MainApp() {
 
         socket.onclose = () => {
           if (isUnmounted) return;
+          setWsStatus('reconnecting');
           console.log(`Shared Operations WS disconnected. Reconnecting in ${reconnectDelayRef.current}ms...`);
           reconnectTimeoutRef.current = setTimeout(() => {
             reconnectDelayRef.current = Math.min(reconnectDelayRef.current * 2, 15000);
@@ -430,6 +434,7 @@ function MainApp() {
       }).catch((err) => {
         console.error('Error fetching ID token for WebSocket:', err);
         if (!isUnmounted) {
+          setWsStatus('reconnecting');
           reconnectTimeoutRef.current = setTimeout(connect, 5000);
         }
       });
@@ -1585,6 +1590,32 @@ function MainApp() {
             onSelectEvent={setSelectedEventId}
           />
           <div className="flex flex-wrap items-center gap-2 mt-1">
+            <div
+              className={`px-2.5 py-1.5 border text-xs font-medium rounded-lg shadow-xs flex items-center gap-1.5 transition-colors ${
+                wsStatus === 'live'
+                  ? 'border-emerald-200/80 bg-emerald-50/80 text-emerald-800'
+                  : 'border-amber-200/80 bg-amber-50/80 text-amber-800 animate-pulse'
+              }`}
+              title={
+                wsStatus === 'live'
+                  ? 'WebSocket connected — receiving real-time operations updates'
+                  : 'WebSocket disconnected — attempting to reconnect'
+              }
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  wsStatus === 'live' ? 'bg-emerald-500' : 'bg-amber-500 animate-ping'
+                }`}
+              />
+              <span>
+                {wsStatus === 'live'
+                  ? `Live · ${connectedUsers.length + 1} online`
+                  : wsStatus === 'connecting'
+                  ? 'Connecting…'
+                  : 'Reconnecting…'}
+              </span>
+            </div>
+
             <div className="relative">
               <select
                 value={selectedYear}
