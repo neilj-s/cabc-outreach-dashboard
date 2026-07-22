@@ -141,7 +141,7 @@ export default function ReverseTimeline({
 
   const selectedEvent = events.find(e => e.id === selectedEventId) || events[0];
 
-  const assigneeOptions = (() => {
+  const assigneeOptions = useMemo(() => {
     const allTasks = selectedEvent?.tasks || [];
     const uniqueAssignees = new Set<string>();
     allTasks.forEach(task => {
@@ -150,7 +150,15 @@ export default function ReverseTimeline({
       }
     });
     return Array.from(uniqueAssignees).sort();
-  })();
+  }, [selectedEvent]);
+
+  useEffect(() => {
+    if (!selectedEvent) return;
+    if (selectedAssigneeFilter === 'All' || selectedAssigneeFilter === 'Unassigned') return;
+    if (!assigneeOptions.includes(selectedAssigneeFilter)) {
+      setSelectedAssigneeFilter('All');
+    }
+  }, [selectedEvent, selectedAssigneeFilter, assigneeOptions]);
 
   const isOverdue = (task: Task) => {
     if (task.completed) return false;
