@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNotification } from '../context/NotificationContext';
 import { useFocusTrap } from '../lib/useFocusTrap';
+import { useLocalStorageState } from '../lib/useLocalStorageState';
 import { 
   Calendar, 
   Plus, 
@@ -83,10 +84,10 @@ export default function ReverseTimeline({
   const [editEventDesc, setEditEventDesc] = useState('');
 
   // Filter state
-  const [selectedLaneFilter, setSelectedLaneFilter] = useState<MinistryLane | 'All'>('All');
-  const [selectedAssigneeFilter, setSelectedAssigneeFilter] = useState<string>('All');
-  const [taskSortOrder, setTaskSortOrder] = useState<'default' | 'priority-desc' | 'due-date'>('default');
-  const [timelineViewMode, setTimelineViewMode] = useState<'list' | 'calendar'>('list');
+  const [selectedLaneFilter, setSelectedLaneFilter] = useLocalStorageState<MinistryLane | 'All'>('cabc.timeline.laneFilter', 'All');
+  const [selectedAssigneeFilter, setSelectedAssigneeFilter] = useLocalStorageState<string>('cabc.timeline.assigneeFilter', 'All');
+  const [taskSortOrder, setTaskSortOrder] = useLocalStorageState<'default' | 'priority-desc' | 'due-date'>('cabc.timeline.sortOrder', 'default');
+  const [timelineViewMode, setTimelineViewMode] = useLocalStorageState<'list' | 'calendar'>('cabc.timeline.viewMode', 'list');
   const [calMonth, setCalMonth] = useState<number>(new Date().getMonth());
   const [calYear, setCalYear] = useState<number>(new Date().getFullYear());
   const [selectedCalDay, setSelectedCalDay] = useState<string | null>(getTodayISO());
