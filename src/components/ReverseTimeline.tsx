@@ -466,17 +466,6 @@ export default function ReverseTimeline({
     });
   }, [selectedEvent, volunteers]);
 
-  // Names available for task assignment: everyone on the roster, plus anyone
-  // already assigned to a task in this event — so a reassign <select> always has
-  // a matching option even if that person isn't in the volunteers list. Replaces
-  // the old hardcoded fallback names (Joy/Bea/Iya/Neil/Sofiya).
-  const assignableNames = useMemo(() => {
-    const names = new Set<string>();
-    volunteers.forEach(v => { if (v.name?.trim()) names.add(v.name.trim()); });
-    selectedEvent?.tasks?.forEach(t => { if (t.assignedTo?.trim()) names.add(t.assignedTo.trim()); });
-    return Array.from(names).sort((a, b) => a.localeCompare(b));
-  }, [selectedEvent, volunteers]);
-
   // Calendar calculations & navigation
   const monthNames = [
     "January", "February", "March", "April", "May", "June",
@@ -920,9 +909,14 @@ export default function ReverseTimeline({
                                               className="text-[10px] border border-[#e2dcd0] bg-white rounded px-1.5 py-0.5 text-slate-700 cursor-pointer focus:ring-1 focus:ring-[#c2aa80] focus:outline-none font-semibold"
                                             >
                                               <option value="">Unassigned</option>
-                                              {assignableNames.map(name => (
-                                                <option key={name} value={name}>{name}</option>
+                                              {volunteers.map(v => (
+                                                <option key={v.id} value={v.name}>{v.name}</option>
                                               ))}
+                                              {!volunteers.some(v => v.name === 'Joy') && <option value="Joy">Joy</option>}
+                                              {!volunteers.some(v => v.name === 'Bea') && <option value="Bea">Bea</option>}
+                                              {!volunteers.some(v => v.name === 'Iya') && <option value="Iya">Iya</option>}
+                                              {!volunteers.some(v => v.name === 'Neil') && <option value="Neil">Neil</option>}
+                                              {!volunteers.some(v => v.name === 'Sofiya') && <option value="Sofiya">Sofiya</option>}
                                             </select>
                                           </div>
                                         </div>
@@ -988,9 +982,14 @@ export default function ReverseTimeline({
                                         className="text-[10px] border border-[#e2dcd0] bg-white rounded px-1.5 py-0.5 text-[#856637] cursor-pointer focus:ring-1 focus:ring-[#c2aa80] focus:outline-none font-semibold"
                                       >
                                         <option value="">Unassigned</option>
-                                        {assignableNames.map(name => (
-                                          <option key={name} value={name}>{name}</option>
+                                        {volunteers.map(v => (
+                                          <option key={v.id} value={v.name}>{v.name}</option>
                                         ))}
+                                        {!volunteers.some(v => v.name === 'Joy') && <option value="Joy">Joy</option>}
+                                        {!volunteers.some(v => v.name === 'Bea') && <option value="Bea">Bea</option>}
+                                        {!volunteers.some(v => v.name === 'Iya') && <option value="Iya">Iya</option>}
+                                        {!volunteers.some(v => v.name === 'Neil') && <option value="Neil">Neil</option>}
+                                        {!volunteers.some(v => v.name === 'Sofiya') && <option value="Sofiya">Sofiya</option>}
                                       </select>
                                     </div>
                                   </div>

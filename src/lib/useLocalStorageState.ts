@@ -2,8 +2,11 @@ import { useState, useEffect, Dispatch, SetStateAction } from 'react';
 
 /**
  * Custom hook for persisting React state in localStorage.
- * Standardizes hand-rolled localStorage persistence patterns found across
- * components such as BudgetExpenseTracker and LogisticsManager.
+ * Standardizes single-value persisted state such as LogisticsManager's reservedBy
+ * and ReverseTimeline filters.
+ *
+ * Note: BudgetExpenseTracker's multi-field autosave draft (with removeItem on submit)
+ * is a deliberately different pattern and is not migrated onto this hook.
  *
  * @param key LocalStorage key name
  * @param defaultValue Default initial state if key is missing or unparseable

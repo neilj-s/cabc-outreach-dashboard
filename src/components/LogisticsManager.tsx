@@ -1,6 +1,7 @@
 import { apiFetch } from "../lib/api";
 import React, { useState, useEffect } from 'react';
 import { getTodayISO } from '../lib/dates';
+import { useLocalStorageState } from '../lib/useLocalStorageState';
 import { motion, AnimatePresence } from 'motion/react';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { useNotification } from '../context/NotificationContext';
@@ -48,9 +49,7 @@ function LogisticsManager({ selectedEventId, events, onUploadCompleted }: Logist
   // Reservation Modal/Sidebar state
   const [selectedItemForReserve, setSelectedItemForReserve] = useState<InventoryItem | null>(null);
   const [reserveQuantity, setReserveQuantity] = useState<number>(1);
-  const [reservedBy, setReservedBy] = useState<string>(() => {
-    return localStorage.getItem('logistics_reservedBy') || 'Operations';
-  });
+  const [reservedBy, setReservedBy] = useLocalStorageState<string>('logistics_reservedBy', 'Operations');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   // New Asset creation state (for extra capability)
@@ -157,7 +156,6 @@ function LogisticsManager({ selectedEventId, events, onUploadCompleted }: Logist
     if (!selectedItemForReserve || !selectedEventId) return;
 
     setIsSubmitting(true);
-    localStorage.setItem('logistics_reservedBy', reservedBy);
     
     try {
       const res = await apiFetch('/api/reservations', {
@@ -1096,10 +1094,7 @@ function LogisticsManager({ selectedEventId, events, onUploadCompleted }: Logist
                       type="text" 
                       required
                       value={reservedBy}
-                      onChange={e => {
-                        setReservedBy(e.target.value);
-                        localStorage.setItem('logistics_reservedBy', e.target.value);
-                      }}
+                      onChange={e => setReservedBy(e.target.value)}
                       placeholder="e.g. Operations / Outreach Team"
                       className="w-full px-3 py-2 border border-[#e2dcd0] bg-[#faf8f4] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#856637] focus:bg-white text-xs transition"
                     />
