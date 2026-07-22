@@ -635,6 +635,22 @@ function MainApp() {
   }, []);
   triggerFreshSyncRef.current = triggerFreshSync;
 
+  // Catch up on state missed while the tab was backgrounded. A background tab's
+  // WebSocket can be throttled or silently half-closed without firing onclose,
+  // so re-sync when the tab becomes visible again — belt-and-suspenders over the
+  // WS reconnect resync. Routed through the ref so this stays a mount-once
+  // listener with no stale closure.
+  useEffect(() => {
+    if (!authUser) return;
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        triggerFreshSyncRef.current?.();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [authUser]);
+
   // --- Lane & Lead Actions ---
   const handleCreateLane = useCallback(async (name: string, leadName: string) => {
     try {
